@@ -103,7 +103,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 		inactivityTimer.Reset(time.Second * 120)
 
 		if cmd == nil {
-			log.Printf("Starting proxy: %s %s", config.Command, config.Args)
+			log.Printf("Starting service: %s %s", config.Command, config.Args)
 
 			cmd = exec.Command(config.Command, strings.Split(config.Args, " ")...)
 

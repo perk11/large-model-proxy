@@ -1,0 +1,4 @@
+add current dir to config
+handle errors/monitor command failures
+VRAM monitoring/logic for stopping based on VRAM/last used time
+    if there is an active connection, wait for it to end

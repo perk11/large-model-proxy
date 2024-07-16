@@ -140,7 +140,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 			continue
 		}
 
-		go connectAndForwardConnection(clientConnection, config.ProxyTargetPort, config.ProxyTargetPort)
+		go connectAndForwardConnection(clientConnection, config.ProxyTargetHost, config.ProxyTargetPort)
 	}
 }
 func connectAndForwardConnection(clientConn net.Conn, host string, servicePort string) {

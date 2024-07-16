@@ -92,7 +92,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 
 	for {
 		clientConnection, err := listener.Accept()
-		log.Printf("New connection on port %s", config.ListenPort)
+		log.Printf("New incoming connection on port %s", config.ListenPort)
 		if err != nil {
 			log.Printf("Warning: error accepting connection: %v", err)
 			continue
@@ -135,7 +135,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 				clientConnection.Close()
 				continue
 			}
-			log.Printf("Connection established on port %s\n", config.ProxyTargetPort)
+			log.Printf("Connection to service established on port %s\n", config.ProxyTargetPort)
 			go forwardConnection(clientConnection, serviceConnection)
 			continue
 		}

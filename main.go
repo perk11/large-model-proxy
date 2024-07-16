@@ -18,9 +18,10 @@ type ServiceConfig struct {
 	ListenPort      string // ListenPort for incoming connections
 	ProxyTargetHost string // Local port the service listens on
 	ProxyTargetPort string // Local port the service listens on
-	Command         string // Command to run when service is starting
-	Args            string // Arguments for command
+	Command         string
+	Args            string
 	LogFilePath     string // Path to the log file for this service
+	Workdir         string // Directory in which the command will run
 }
 
 func main() {
@@ -104,6 +105,10 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 			log.Printf("Starting proxy: %s %s", config.Command, config.Args)
 
 			cmd = exec.Command(config.Command, strings.Split(config.Args, " ")...)
+
+			if config.Workdir != "" {
+				cmd.Dir = config.Workdir
+			}
 
 			logFile, err := os.OpenFile(config.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {

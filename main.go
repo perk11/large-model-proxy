@@ -143,8 +143,9 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 		go connectAndForwardConnection(clientConnection, config.ProxyTargetPort, config.ProxyTargetPort)
 	}
 }
-func connectAndForwardConnection(clientConn net.Conn, servicePort string) {
-	serviceConn, err := net.Dial("tcp", "localhost:"+servicePort)
+func connectAndForwardConnection(clientConn net.Conn, host string, servicePort string) {
+
+	serviceConn, err := net.Dial("tcp", host+":"+servicePort)
 	if err != nil {
 		log.Printf("Error: failed to connect to service on port %s: %v", servicePort, err)
 		return

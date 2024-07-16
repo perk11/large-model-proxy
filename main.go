@@ -76,12 +76,12 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 
 	var cmd *exec.Cmd
 	var lastActivity time.Time
-	inactivityTimer := time.NewTimer(time.Second * 120)
+	inactivityTimer := time.NewTimer(time.Second * 3600)
 
 	// Service management in case of inactivity
 	go func() {
 		<-inactivityTimer.C
-		if cmd != nil && time.Since(lastActivity) >= time.Second*120 {
+		if cmd != nil && time.Since(lastActivity) >= time.Second*3600 {
 			if err := cmd.Process.Kill(); err != nil {
 				log.Printf("Warning: failed to kill process: %v", err)
 			}

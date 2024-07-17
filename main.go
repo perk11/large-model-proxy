@@ -14,45 +14,64 @@ import (
 	"time"
 )
 
+const IDLE_SHUTDOWN_TIMEOUT_SECONDS_DEFAULT time.Duration = 120
+
+type Config struct {
+	IdleShutdownTimeoutSeconds *time.Duration  `json:"IdleShutdownTimeoutSeconds"`
+	Services                   []ServiceConfig `json:"Services"`
+}
 type ServiceConfig struct {
-	Name            string // Human-readable name used in logs
-	ListenPort      string // ListenPort for incoming connections
-	ProxyTargetHost string // Local port the service listens on
-	ProxyTargetPort string // Local port the service listens on
-	Command         string
-	Args            string
-	LogFilePath     string // Path to the log file for this service, defaults to logs/{Name}.log
-	Workdir         string // Directory in which the command will run
+	Name                       string // Human-readable name used in logs
+	ListenPort                 string // ListenPort for incoming connections
+	ProxyTargetHost            string // Local port the service listens on
+	ProxyTargetPort            string // Local port the service listens on
+	Command                    string
+	Args                       string
+	LogFilePath                string // Path to the log file for this service, defaults to logs/{Name}.log
+	Workdir                    string // Directory in which the command will run
+	IdleShutdownTimeoutSeconds *time.Duration
 }
 
 func main() {
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
 
-	configs, err := loadConfig(*configFilePath)
+	config, err := loadConfig(*configFilePath)
 	if err != nil {
 		fmt.Println("Error loading config:", err)
 		os.Exit(1)
 	}
 
 	var wg sync.WaitGroup
-	for _, config := range configs {
+	for _, service := range config.Services {
 		wg.Add(1)
-		go startProxy(config, &wg)
+		if service.IdleShutdownTimeoutSeconds == nil {
+			if config.IdleShutdownTimeoutSeconds == nil {
+				service.IdleShutdownTimeoutSeconds = new(time.Duration)
+				*service.IdleShutdownTimeoutSeconds = IDLE_SHUTDOWN_TIMEOUT_SECONDS_DEFAULT
+			} else {
+				service.IdleShutdownTimeoutSeconds = config.IdleShutdownTimeoutSeconds
+			}
+		}
+		go startProxy(service, &wg)
 	}
 	wg.Wait()
 }
-func loadConfig(filePath string) ([]ServiceConfig, error) {
+
+func loadConfig(filePath string) (Config, error) {
+	var config Config
+
 	file, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return config, err
 	}
-	var configs []ServiceConfig
-	err = json.Unmarshal(file, &configs)
+
+	err = json.Unmarshal(file, &config)
 	if err != nil {
-		return nil, err
+		return config, err
 	}
-	return configs, nil
+
+	return config, nil
 }
 
 func connectWithWaiting(host string, port string, timeout time.Duration) net.Conn {
@@ -77,12 +96,15 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 
 	var cmd *exec.Cmd
 	var lastActivity time.Time
-	inactivityTimer := time.NewTimer(time.Second * 1200)
+	var inactivityTimer *time.Timer
+	if *config.IdleShutdownTimeoutSeconds > 0 {
+		inactivityTimer = time.NewTimer(time.Second * *config.IdleShutdownTimeoutSeconds)
+	}
 
 	// Service management in case of inactivity
 	go func() {
 		<-inactivityTimer.C
-		if cmd != nil && time.Since(lastActivity) >= time.Second*1200 {
+		if cmd != nil && time.Since(lastActivity) >= time.Second**config.IdleShutdownTimeoutSeconds {
 			if err := cmd.Process.Kill(); err != nil {
 				log.Printf("[%s] Warning: failed to kill process: %v", config.Name, err)
 			}
@@ -101,7 +123,9 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 
 		// Reset inactivity timer
 		lastActivity = time.Now()
-		inactivityTimer.Reset(time.Second * 1200)
+		if *config.IdleShutdownTimeoutSeconds > 0 {
+			inactivityTimer.Reset(time.Second * *config.IdleShutdownTimeoutSeconds)
+		}
 
 		if cmd == nil {
 			log.Printf("[%s] Starting service: %s %s", config.Name, config.Command, config.Args)

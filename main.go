@@ -15,12 +15,13 @@ import (
 )
 
 type ServiceConfig struct {
+	Name            string // Human-readable name used in logs
 	ListenPort      string // ListenPort for incoming connections
 	ProxyTargetHost string // Local port the service listens on
 	ProxyTargetPort string // Local port the service listens on
 	Command         string
 	Args            string
-	LogFilePath     string // Path to the log file for this service
+	LogFilePath     string // Path to the log file for this service, defaults to logs/{Name}.log
 	Workdir         string // Directory in which the command will run
 }
 
@@ -70,7 +71,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 
 	listener, err := net.Listen("tcp", ":"+config.ListenPort)
 	if err != nil {
-		log.Fatalf("Fatal error: cannot listen on port %s: %v", config.ListenPort, err)
+		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", config.Name, config.ListenPort, err)
 	}
 	defer listener.Close()
 
@@ -83,18 +84,18 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 		<-inactivityTimer.C
 		if cmd != nil && time.Since(lastActivity) >= time.Second*1200 {
 			if err := cmd.Process.Kill(); err != nil {
-				log.Printf("Warning: failed to kill process: %v", err)
+				log.Printf("[%s] Warning: failed to kill process: %v", config.Name, err)
 			}
 			cmd = nil
-			log.Printf("Service on port %s has been stopped due to inactivity.", config.ListenPort)
+			log.Printf("[%s] Proxied service stopped due to inactivity.", config.Name)
 		}
 	}()
 
 	for {
 		clientConnection, err := listener.Accept()
-		log.Printf("New incoming connection on port %s", config.ListenPort)
+		log.Printf("[%s] New incoming connection on port %s", config.Name, config.ListenPort)
 		if err != nil {
-			log.Printf("Warning: error accepting connection: %v", err)
+			log.Printf("[%s] Warning: error accepting connection: %v", config.Name, err)
 			continue
 		}
 
@@ -103,17 +104,19 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 		inactivityTimer.Reset(time.Second * 1200)
 
 		if cmd == nil {
-			log.Printf("Starting service: %s %s", config.Command, config.Args)
+			log.Printf("[%s] Starting service: %s %s", config.Name, config.Command, config.Args)
 
 			cmd = exec.Command(config.Command, strings.Split(config.Args, " ")...)
 
 			if config.Workdir != "" {
 				cmd.Dir = config.Workdir
 			}
-
+			if config.LogFilePath == "" {
+				config.LogFilePath = fmt.Sprintf("logs/%s", config.Name)
+			}
 			logFile, err := os.OpenFile(config.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
-				log.Printf("Error: failed to open log file %s: %v", config.LogFilePath, err)
+				log.Printf("[%s] Error: failed to open log file %s: %v", config.Name, config.LogFilePath, err)
 				clientConnection.Close()
 				continue
 			}
@@ -123,46 +126,46 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 			cmd.Stderr = logFile
 
 			if err := cmd.Start(); err != nil {
-				log.Printf("Error: failed to start service %s: %v", config.Command, err)
+				log.Printf("[%s] Error: failed to start %s: %v", config.Name, config.Command, err)
 				clientConnection.Close()
 				continue
 			}
 
 			var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, 30*time.Second)
 			if serviceConnection == nil {
-				log.Printf("Failed to connect to service on port %s\n", config.ProxyTargetPort)
+				log.Printf("[%s] Failed to connect to service on port %s\n", config.Name, config.ProxyTargetPort)
 				cmd.Process.Kill()
 				clientConnection.Close()
 				continue
 			}
-			log.Printf("Connection to service established on port %s\n", config.ProxyTargetPort)
-			go forwardConnection(clientConnection, serviceConnection)
+			log.Printf("[%s] Connection to service established on port %s\n", config.Name, config.ProxyTargetPort)
+			go forwardConnection(config.Name, clientConnection, serviceConnection)
 			continue
 		}
 
-		go connectAndForwardConnection(clientConnection, config.ProxyTargetHost, config.ProxyTargetPort)
+		go connectAndForwardConnection(clientConnection, config.Name, config.ProxyTargetHost, config.ProxyTargetPort)
 	}
 }
-func connectAndForwardConnection(clientConn net.Conn, serviceHost string, servicePort string) {
+func connectAndForwardConnection(clientConn net.Conn, serviceName string, serviceHost string, servicePort string) {
 
 	serviceConn, err := net.Dial("tcp", net.JoinHostPort(serviceHost, servicePort))
 	if err != nil {
-		log.Printf("Error: failed to connect to service on port %s: %v", servicePort, err)
+		log.Printf("[%s] Error: failed to connect to %s:%s: %v", serviceName, serviceHost, servicePort, err)
 		return
 	}
 	defer serviceConn.Close()
-	forwardConnection(clientConn, serviceConn)
+	forwardConnection(serviceName, clientConn, serviceConn)
 }
-func forwardConnection(clientConn net.Conn, serviceConn net.Conn) {
+func forwardConnection(serviceName string, clientConn net.Conn, serviceConn net.Conn) {
 	defer clientConn.Close()
 	defer serviceConn.Close()
 	// Relay data between client and service
-	go copyAndHandleErrors(serviceConn, clientConn, "service to client")
-	copyAndHandleErrors(clientConn, serviceConn, "client to service")
+	go copyAndHandleErrors(serviceConn, clientConn, "["+serviceName+"] (service to client)")
+	copyAndHandleErrors(clientConn, serviceConn, "["+serviceName+"] (client to service)")
 }
 
-func copyAndHandleErrors(dst io.Writer, src io.Reader, direction string) {
+func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {
 	if _, err := io.Copy(dst, src); err != nil {
-		log.Printf("Error during data transfer (%s): %v", direction, err)
+		log.Printf("%s Error during data transfer: %v", logPrefix, err)
 	}
 }

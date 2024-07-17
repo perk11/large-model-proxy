@@ -54,10 +54,10 @@ func loadConfig(filePath string) ([]ServiceConfig, error) {
 	return configs, nil
 }
 
-func connectWithWaiting(port string, timeout time.Duration) net.Conn {
+func connectWithWaiting(host string, port string, timeout time.Duration) net.Conn {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", port), time.Second)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
 		if err == nil {
 			return conn
 		}
@@ -128,7 +128,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 				continue
 			}
 
-			var serviceConnection = connectWithWaiting(config.ProxyTargetPort, 30*time.Second)
+			var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, 30*time.Second)
 			if serviceConnection == nil {
 				log.Printf("Failed to connect to service on port %s\n", config.ProxyTargetPort)
 				cmd.Process.Kill()
@@ -143,9 +143,9 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 		go connectAndForwardConnection(clientConnection, config.ProxyTargetHost, config.ProxyTargetPort)
 	}
 }
-func connectAndForwardConnection(clientConn net.Conn, host string, servicePort string) {
+func connectAndForwardConnection(clientConn net.Conn, serviceHost string, servicePort string) {
 
-	serviceConn, err := net.Dial("tcp", host+":"+servicePort)
+	serviceConn, err := net.Dial("tcp", net.JoinHostPort(serviceHost, servicePort))
 	if err != nil {
 		log.Printf("Error: failed to connect to service on port %s: %v", servicePort, err)
 		return

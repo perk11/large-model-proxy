@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -66,7 +67,10 @@ func loadConfig(filePath string) (Config, error) {
 		return config, err
 	}
 
-	err = json.Unmarshal(file, &config)
+	decoder := json.NewDecoder(bytes.NewReader(file))
+	decoder.DisallowUnknownFields()
+
+	err = decoder.Decode(&config)
 	if err != nil {
 		return config, err
 	}

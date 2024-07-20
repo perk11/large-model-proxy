@@ -167,6 +167,7 @@ func startProxy(config ServiceConfig, wg *sync.WaitGroup) {
 				continue
 			}
 			log.Printf("[%s] Connection to service established on port %s\n", config.Name, config.ProxyTargetPort)
+			time.Sleep(time.Second * 2) //TODO: replace with custom healthcheck
 			go forwardConnection(config.Name, clientConnection, serviceConnection)
 			continue
 		}

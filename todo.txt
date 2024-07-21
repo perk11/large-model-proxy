@@ -3,6 +3,7 @@ handle errors/monitor command failures
 autorestart when a service stops responding
 close connection on error
     if there is an active connection, wait for it to end
+Only stop service if it is using the resource
 
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
 

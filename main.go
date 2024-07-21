@@ -33,9 +33,9 @@ type ServiceConfig struct {
 	ResourceRequirements       map[string]int `json:"ResourceRequirements"`
 }
 type RunningService struct {
+	manageMutex          *sync.Mutex
 	cmd                  *exec.Cmd
 	activeConnections    int
-	started              bool
 	lastUsed             time.Time
 	resourceRequirements map[string]int
 }
@@ -135,20 +135,26 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 				return
 			}
 		}
+		resourceManager.runningServices[config.Name] = RunningService{
+			resourceRequirements: config.ResourceRequirements,
+			activeConnections:    0,
+			lastUsed:             time.Time{},
+			manageMutex:          &sync.Mutex{},
+		}
+		resourceManager.runningServices[config.Name].manageMutex.Lock()
+		defer resourceManager.runningServices[config.Name].manageMutex.Unlock()
+
 		var cmd = startService(config)
 		if cmd == nil {
 			releaseResources(config.ResourceRequirements)
 			return
 		}
-		resourceManager.runningServices[config.Name] = RunningService{
-			cmd:                  cmd,
-			started:              false,
-			resourceRequirements: config.ResourceRequirements,
-			activeConnections:    0,
-			lastUsed:             time.Time{},
-		}
 		serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
-		time.Sleep(2 * time.Second)
+		time.Sleep(2 * time.Second) //TODO: replace with a custom callback
+
+		runningService := resourceManager.runningServices[config.Name]
+		runningService.cmd = cmd
+		resourceManager.runningServices[config.Name] = runningService
 	} else {
 		serviceConnection = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
 	}
@@ -161,10 +167,6 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 			log.Printf("[%s] Failed to close service connection: %v", config.Name, err)
 		}
 	}(serviceConnection)
-
-	runningService := resourceManager.runningServices[config.Name]
-	runningService.started = true
-	resourceManager.runningServices[config.Name] = runningService
 	forwardConnection(clientConnection, serviceConnection, config.Name)
 }
 
@@ -249,9 +251,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 }
 func canBeStopped(serviceName string) bool {
 	runningService := resourceManager.runningServices[serviceName]
-	if !runningService.started {
+	if !runningService.manageMutex.TryLock() {
 		return false
 	}
+	runningService.manageMutex.Unlock()
 	return resourceManager.runningServices[serviceName].activeConnections == 0
 }
 

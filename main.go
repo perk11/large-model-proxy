@@ -197,18 +197,27 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		return true
 	}
 	var earliestLastUsedService string
-	earliestTime := time.Now()
-	for service := range resourceManager.runningServices {
-		if service != requestingService && canBeStopped(service) {
-			if resourceManager.runningServices[requestingService].lastUsed.Compare(earliestTime) == -1 {
-				earliestLastUsedService = service
-				earliestTime = resourceManager.runningServices[requestingService].lastUsed
+	maxWaitTime := 120 * time.Second
+	startTime := time.Now()
+	for time.Since(startTime) < maxWaitTime {
+		earliestTime := time.Now()
+		for service := range resourceManager.runningServices {
+			if service != requestingService && canBeStopped(service) {
+				if resourceManager.runningServices[requestingService].lastUsed.Compare(earliestTime) == -1 {
+					earliestLastUsedService = service
+					earliestTime = resourceManager.runningServices[requestingService].lastUsed
+				}
 			}
 		}
+		if earliestLastUsedService != "" {
+			break
+		}
+		log.Printf("[%s] Failed to find a service to stop, checking again in 1 second", requestingService)
+		time.Sleep(1 * time.Second)
 	}
 
 	if earliestLastUsedService == "" {
-		log.Printf("Failed to find a service to stop")
+		log.Printf("[%s] Failed to find a service to stop, closing client connection", requestingService)
 		return false
 	}
 	log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)

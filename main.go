@@ -180,7 +180,7 @@ func startService(config ServiceConfig) (net.Conn, error) {
 	if cmd == nil {
 		releaseResources(config.ResourceRequirements)
 		delete(resourceManager.runningServices, config.Name)
-		return nil, fmt.Errorf("failed to run command %s", config.Command)
+		return nil, fmt.Errorf("failed to run command \"%s %s\"", config.Command, config.Args)
 	}
 	var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
 	time.Sleep(2 * time.Second) //TODO: replace with a custom callback
@@ -296,14 +296,21 @@ func releaseResources(used map[string]int) {
 }
 
 func runServiceCommand(config ServiceConfig) *exec.Cmd {
-	log.Printf("[%s] Starting service: %s", config.Name, config.Command)
+	if config.LogFilePath == "" {
+		config.LogFilePath = "logs/" + config.Name + ".log"
+	}
+	log.Printf("[%s] Starting \"%s %s\", log file: %s, workdir: %s",
+		config.Name,
+		config.Command,
+		config.Args,
+		config.LogFilePath,
+		config.Workdir,
+	)
 	cmd := exec.Command(config.Command, strings.Split(config.Args, " ")...)
 	if config.Workdir != "" {
 		cmd.Dir = config.Workdir
 	}
-	if config.LogFilePath == "" {
-		config.LogFilePath = "logs/" + config.Name + ".log"
-	}
+
 	logFile, err := os.OpenFile(config.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Printf("[%s] Error opening log file: %v", config.Name, err)

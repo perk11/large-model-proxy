@@ -1,4 +1,12 @@
+
 handle errors/monitor command failures
+autorestart when a service stops responding
 close connection on error
-VRAM monitoring/logic for stopping based on VRAM/last used time
     if there is an active connection, wait for it to end
+
+custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
+
+license
+readme
+
+custom healthcheck

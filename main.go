@@ -16,9 +16,9 @@ import (
 )
 
 type Config struct {
-	IdleShutdownTimeoutSeconds *time.Duration  `json:"IdleShutdownTimeoutSeconds"`
-	Services                   []ServiceConfig `json:"Services"`
-	ResourcesAvailable         map[string]int  `json:"ResourcesAvailable"`
+	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *time.Duration
+	Services                                                      []ServiceConfig `json:"Services"`
+	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
 }
 
 type ServiceConfig struct {
@@ -31,7 +31,6 @@ type ServiceConfig struct {
 	LogFilePath                string
 	Workdir                    string
 	RestartOnConnectionFailure bool
-	IdleShutdownTimeoutSeconds *time.Duration
 	ResourceRequirements       map[string]int `json:"ResourceRequirements"`
 }
 type RunningService struct {
@@ -43,13 +42,12 @@ type RunningService struct {
 }
 
 type ResourceManager struct {
-	mutex              sync.Mutex
-	resourcesAvailable map[string]int
-	resourcesInUse     map[string]int
-	runningServices    map[string]RunningService
+	resourcesInUse  map[string]int
+	runningServices map[string]RunningService
 }
 
 var (
+	config          Config
 	resourceManager ResourceManager
 )
 
@@ -57,15 +55,15 @@ func main() {
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
 
-	config, err := loadConfig(*configFilePath)
+	localConfig, err := loadConfig(*configFilePath)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
+	config = localConfig
 
 	resourceManager = ResourceManager{
-		resourcesAvailable: config.ResourcesAvailable,
-		resourcesInUse:     make(map[string]int),
-		runningServices:    make(map[string]RunningService),
+		resourcesInUse:  make(map[string]int),
+		runningServices: make(map[string]RunningService),
 	}
 
 	var wg sync.WaitGroup
@@ -229,12 +227,12 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	// First, try to reserve resources directly
 	enoughResourcesAreAvailable := true
 	for resource, amount := range resourceRequirements {
-		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
+		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource] {
 			log.Printf(
 				"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",
 				requestingService,
 				resource,
-				resourceManager.resourcesAvailable[resource],
+				config.ResourcesAvailable[resource],
 				resourceManager.resourcesInUse[resource],
 				amount,
 			)
@@ -253,7 +251,12 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		return true
 	}
 	var earliestLastUsedService string
-	maxWaitTime := 120 * time.Second
+	var maxWaitTime time.Duration
+	if config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds == nil {
+		maxWaitTime = 120 * time.Second
+	} else {
+		maxWaitTime = *config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds * time.Second
+	}
 	startTime := time.Now()
 	for time.Since(startTime) < maxWaitTime {
 		earliestTime := time.Now()

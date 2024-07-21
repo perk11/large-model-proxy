@@ -1,10 +1,9 @@
 readme
-create log dir
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
-periodically check if commands stopped on their own
-support spaces in cmd args
 
+periodically check if commands stopped on their own
 JSON5
 logging level
 Idle shutdown
 bug? workdir not respected sometimes
+support spaces in cmd args

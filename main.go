@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -315,6 +316,12 @@ func releaseResources(used map[string]int) {
 func runServiceCommand(config ServiceConfig) *exec.Cmd {
 	if config.LogFilePath == "" {
 		config.LogFilePath = "logs/" + config.Name + ".log"
+	}
+	logDir := filepath.Dir(config.LogFilePath)
+	err := os.MkdirAll(logDir, os.ModePerm)
+	if err != nil {
+		log.Printf("[%s] Failed to create log directory %s: %v", config.Name, logDir, err)
+		return nil
 	}
 	log.Printf("[%s] Starting \"%s %s\", log file: %s, workdir: %s",
 		config.Name,

@@ -230,6 +230,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 
 	// First, try to reserve resources directly
 	enoughResourcesAreAvailable := true
+	var missingResource *string = nil
 	for resource, amount := range resourceRequirements {
 		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource] {
 			log.Printf(
@@ -240,6 +241,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 				resourceManager.resourcesInUse[resource],
 				amount,
 			)
+			missingResource = &resource
 			enoughResourcesAreAvailable = false
 			break
 		}
@@ -264,13 +266,21 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	startTime := time.Now()
 	for time.Since(startTime) < maxWaitTime {
 		earliestTime := time.Now()
-		for service := range resourceManager.runningServices {
-			if service != requestingService && canBeStopped(service) {
-				if resourceManager.runningServices[requestingService].lastUsed.Compare(earliestTime) == -1 {
-					earliestLastUsedService = service
-					earliestTime = resourceManager.runningServices[requestingService].lastUsed
-				}
+		for serviceName, service := range resourceManager.runningServices {
+			if serviceName == requestingService {
+				continue
 			}
+			if service.resourceRequirements[*missingResource] == 0 {
+				continue
+			}
+			if !canBeStopped(serviceName) {
+				continue
+			}
+			if resourceManager.runningServices[requestingService].lastUsed.Compare(earliestTime) == -1 {
+				earliestLastUsedService = serviceName
+				earliestTime = resourceManager.runningServices[requestingService].lastUsed
+			}
+
 		}
 		if earliestLastUsedService != "" {
 			break

@@ -1,11 +1,10 @@
 readme
-logging level
 create log dir
-Only stop service if it is using the resource
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
 periodically check if commands stopped on their own
 support spaces in cmd args
 
 JSON5
+logging level
 Idle shutdown
 bug? workdir not respected sometimes

@@ -30,6 +30,7 @@ type ServiceConfig struct {
 	Args                       string
 	LogFilePath                string
 	Workdir                    string
+	RestartOnConnectionFailure bool
 	IdleShutdownTimeoutSeconds *time.Duration
 	ResourceRequirements       map[string]int `json:"ResourceRequirements"`
 }
@@ -137,34 +138,14 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 	var serviceConnection net.Conn
 	_, found := resourceManager.runningServices[config.Name]
 	if !found {
-		if !reserveResources(config.ResourceRequirements, config.Name) {
-			{
-				log.Printf("[%s] Insufficient resources to start service", config.Name)
-				return
-			}
-		}
-		resourceManager.runningServices[config.Name] = RunningService{
-			resourceRequirements: config.ResourceRequirements,
-			activeConnections:    0,
-			lastUsed:             time.Time{},
-			manageMutex:          &sync.Mutex{},
-		}
-		resourceManager.runningServices[config.Name].manageMutex.Lock()
-		defer resourceManager.runningServices[config.Name].manageMutex.Unlock()
-
-		var cmd = startService(config)
-		if cmd == nil {
-			releaseResources(config.ResourceRequirements)
+		serviceConn, err := startService(config)
+		if err != nil {
+			log.Printf("[%s] Failed to start: %v", config.Name, err)
 			return
 		}
-		serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
-		time.Sleep(2 * time.Second) //TODO: replace with a custom callback
-
-		runningService := resourceManager.runningServices[config.Name]
-		runningService.cmd = cmd
-		resourceManager.runningServices[config.Name] = runningService
+		serviceConnection = serviceConn
 	} else {
-		serviceConnection = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
+		serviceConnection = connectToService(config)
 	}
 	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 
@@ -181,10 +162,49 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 	forwardConnection(clientConnection, serviceConnection, config.Name)
 }
 
-func connectToService(serviceHost string, servicePort string, serviceName string) net.Conn {
-	serviceConn, err := net.Dial("tcp", net.JoinHostPort(serviceHost, servicePort))
+func startService(config ServiceConfig) (net.Conn, error) {
+	resourceManager.runningServices[config.Name] = RunningService{
+		resourceRequirements: config.ResourceRequirements,
+		activeConnections:    0,
+		lastUsed:             time.Time{},
+		manageMutex:          &sync.Mutex{},
+	}
+	resourceManager.runningServices[config.Name].manageMutex.Lock()
+	defer resourceManager.runningServices[config.Name].manageMutex.Unlock()
+	if !reserveResources(config.ResourceRequirements, config.Name) {
+		delete(resourceManager.runningServices, config.Name)
+		return nil, fmt.Errorf("insufficient resources %s", config.Name)
+	}
+
+	var cmd = runServiceCommand(config)
+	if cmd == nil {
+		releaseResources(config.ResourceRequirements)
+		delete(resourceManager.runningServices, config.Name)
+		return nil, fmt.Errorf("failed to run command %s", config.Command)
+	}
+	var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
+	time.Sleep(2 * time.Second) //TODO: replace with a custom callback
+
+	runningService := resourceManager.runningServices[config.Name]
+	runningService.cmd = cmd
+	resourceManager.runningServices[config.Name] = runningService
+	return serviceConnection, nil
+}
+
+func connectToService(config ServiceConfig) net.Conn {
+	serviceConn, err := net.Dial("tcp", net.JoinHostPort(config.ProxyTargetHost, config.ProxyTargetPort))
 	if err != nil {
-		log.Printf("[%s] Error: failed to connect to %s:%s: %v", serviceName, serviceHost, servicePort, err)
+		log.Printf("[%s] Error: failed to connect to %s:%s: %v", config.Name, config.ProxyTargetHost, config.ProxyTargetPort, err)
+		if config.RestartOnConnectionFailure {
+			log.Printf("[%s] Restarting service due to connection error", config.Name)
+			stopService(config.Name)
+			serviceConn, err = startService(config)
+			if err != nil {
+				log.Printf("[%s] Failed to restart: %v", config.Name, err)
+				return nil
+			}
+			return serviceConn
+		}
 		return nil
 	}
 	return serviceConn
@@ -275,7 +295,7 @@ func releaseResources(used map[string]int) {
 	}
 }
 
-func startService(config ServiceConfig) *exec.Cmd {
+func runServiceCommand(config ServiceConfig) *exec.Cmd {
 	log.Printf("[%s] Starting service: %s", config.Name, config.Command)
 	cmd := exec.Command(config.Command, strings.Split(config.Args, " ")...)
 	if config.Workdir != "" {

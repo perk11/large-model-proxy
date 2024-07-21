@@ -1,6 +1,5 @@
 
 handle errors/monitor command failures
-autorestart when a service stops responding
 close connection on error
     if there is an active connection, wait for it to end
 Only stop service if it is using the resource
@@ -10,3 +9,5 @@ custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` r
 readme
 create log dir
 better output of resources to be reserved
+move wait timeout to config
+log args in "Starting service:"

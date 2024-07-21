@@ -106,7 +106,9 @@ func startProxy(config ServiceConfig) {
 	if err != nil {
 		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", config.Name, config.ListenPort, err)
 	}
-	defer listener.Close()
+	defer func(listener net.Listener) {
+		_ = listener.Close()
+	}(listener)
 
 	for {
 		clientConnection, err := listener.Accept()
@@ -118,16 +120,20 @@ func startProxy(config ServiceConfig) {
 	}
 }
 
-func handleConnection(clientConn net.Conn, config ServiceConfig) {
-	defer clientConn.Close()
+func handleConnection(clientConnection net.Conn, config ServiceConfig) {
+	defer func(clientConn net.Conn) {
+		err := clientConn.Close()
+		if err != nil {
+			log.Printf("[%s] Failed to close client connection: %v", config.Name, err)
+		}
+	}(clientConnection)
 
-	var serviceConn net.Conn
+	var serviceConnection net.Conn
 	_, found := resourceManager.runningServices[config.Name]
 	if !found {
 		if !reserveResources(config.ResourceRequirements, config.Name) {
 			{
 				log.Printf("[%s] Insufficient resources to start service", config.Name)
-				clientConn.Close()
 				return
 			}
 		}
@@ -143,19 +149,25 @@ func handleConnection(clientConn net.Conn, config ServiceConfig) {
 			activeConnections:    0,
 			lastUsed:             time.Time{},
 		}
-		serviceConn = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
+		serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
 		time.Sleep(2 * time.Second)
 	} else {
-		serviceConn = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
+		serviceConnection = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
 	}
-	if serviceConn == nil {
-		clientConn.Close()
+	if serviceConnection == nil {
 		return
 	}
+	defer func(serviceConnection net.Conn) {
+		err := serviceConnection.Close()
+		if err != nil {
+			log.Printf("[%s] Failed to close service connection: %v", config.Name, err)
+		}
+	}(serviceConnection)
+
 	runningService := resourceManager.runningServices[config.Name]
 	runningService.started = true
 	resourceManager.runningServices[config.Name] = runningService
-	forwardConnection(clientConn, serviceConn, config.Name)
+	forwardConnection(clientConnection, serviceConnection, config.Name)
 }
 
 func connectToService(serviceHost string, servicePort string, serviceName string) net.Conn {
@@ -275,9 +287,7 @@ func startService(config ServiceConfig) *exec.Cmd {
 	return cmd
 }
 
-func forwardConnection(clientConn, serviceConn net.Conn, serviceName string) {
-	defer clientConn.Close()
-	defer serviceConn.Close()
+func forwardConnection(clientConnection net.Conn, serviceConnection net.Conn, serviceName string) {
 	defer func() {
 		runningService := resourceManager.runningServices[serviceName]
 		runningService.activeConnections--
@@ -286,8 +296,8 @@ func forwardConnection(clientConn, serviceConn net.Conn, serviceName string) {
 	runningService := resourceManager.runningServices[serviceName]
 	runningService.activeConnections++
 	resourceManager.runningServices[serviceName] = runningService
-	go copyAndHandleErrors(serviceConn, clientConn, "["+serviceName+"] (service to client)")
-	copyAndHandleErrors(clientConn, serviceConn, "["+serviceName+"] (client to service)")
+	go copyAndHandleErrors(serviceConnection, clientConnection, "["+serviceName+"] (service to client)")
+	copyAndHandleErrors(clientConnection, serviceConnection, "["+serviceName+"] (client to service)")
 }
 
 func stopService(serviceName string) {
@@ -295,7 +305,11 @@ func stopService(serviceName string) {
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		log.Printf("[%s] Stopping service process: %d", serviceName, runningService.cmd.Process.Pid)
-		runningService.cmd.Process.Kill()
+		err := runningService.cmd.Process.Kill()
+		if err != nil {
+			log.Printf("[%s] Failed to stop service: %v", serviceName, err)
+			return
+		}
 	}
 
 	releaseResources(runningService.resourceRequirements)

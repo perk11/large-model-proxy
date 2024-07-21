@@ -9,4 +9,3 @@ custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` r
 
 readme
 
-custom healthcheck

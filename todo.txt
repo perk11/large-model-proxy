@@ -1,11 +1,11 @@
-
-handle errors/monitor command failures
-Only stop service if it is using the resource
-
-custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
-
-readme
-create log dir
-better output of resources to be reserved
 move wait timeout to config
-log args in "Starting service:"
+better output of resources to be reserved
+readme
+log args in "Starting service:" and other places where command is outputted
+logging level
+create log dir
+Only stop service if it is using the resource
+custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
+periodically check if commands stopped on their own
+
+bug? workdir not respected sometimes

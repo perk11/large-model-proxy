@@ -211,7 +211,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	for resource, amount := range resourceRequirements {
 		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
 			log.Printf(
-				"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d ",
+				"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",
 				requestingService,
 				resource,
 				resourceManager.resourcesAvailable[resource],

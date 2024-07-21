@@ -119,6 +119,9 @@ func startProxy(config ServiceConfig) {
 	}
 }
 func humanReadableConnection(conn net.Conn) string {
+	if conn == nil {
+		return "nil"
+	}
 	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 }
 func handleConnection(clientConnection net.Conn, config ServiceConfig) {

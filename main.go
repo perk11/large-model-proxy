@@ -102,6 +102,7 @@ func manageServiceLifecycle(service ServiceConfig, wg *sync.WaitGroup) {
 
 func startProxy(config ServiceConfig) {
 	listener, err := net.Listen("tcp", ":"+config.ListenPort)
+	log.Printf("[%s] Listening on port %s", config.Name, config.ListenPort)
 	if err != nil {
 		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", config.Name, config.ListenPort, err)
 	}

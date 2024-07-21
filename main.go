@@ -273,6 +273,7 @@ func stopService(serviceName string) {
 	}
 
 	releaseResources(runningService.resourceRequirements)
+	delete(resourceManager.runningServices, serviceName)
 }
 
 func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {

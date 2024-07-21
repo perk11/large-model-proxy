@@ -179,15 +179,15 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	log.Printf("[%s] Reserving %s", requestingService, resourceRequirements)
 
 	// First, try to reserve resources directly
-	allAvailable := true
+	enoughResourcesAreAvailable := true
 	for resource, amount := range resourceRequirements {
 		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
-			allAvailable = false
+			enoughResourcesAreAvailable = false
 			break
 		}
 	}
 
-	if allAvailable {
+	if enoughResourcesAreAvailable {
 		for resource, amount := range resourceRequirements {
 			resourceManager.resourcesInUse[resource] += amount
 		}

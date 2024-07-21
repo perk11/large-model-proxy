@@ -222,7 +222,11 @@ func connectWithWaiting(serviceHost string, servicePort string, serviceName stri
 }
 
 func reserveResources(resourceRequirements map[string]int, requestingService string) bool {
-	log.Printf("[%s] Reserving %s", requestingService, resourceRequirements)
+	var resourceList []string
+	for resource, amount := range resourceRequirements {
+		resourceList = append(resourceList, fmt.Sprintf("%s: %d", resource, amount))
+	}
+	log.Printf("[%s] Reserving %s", requestingService, strings.Join(resourceList, ", "))
 
 	// First, try to reserve resources directly
 	enoughResourcesAreAvailable := true

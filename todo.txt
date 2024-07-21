@@ -1,4 +1,3 @@
-better output of resources to be reserved
 readme
 logging level
 create log dir
@@ -7,5 +6,6 @@ custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` r
 periodically check if commands stopped on their own
 support spaces in cmd args
 
+JSON5
 Idle shutdown
 bug? workdir not respected sometimes

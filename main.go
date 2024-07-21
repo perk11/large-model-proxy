@@ -142,6 +142,7 @@ func handleConnection(clientConn net.Conn, config ServiceConfig) {
 			lastUsed:             time.Time{},
 		}
 		serviceConn = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
+		time.Sleep(2 * time.Second)
 	} else {
 		serviceConn = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
 	}

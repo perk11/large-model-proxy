@@ -328,7 +328,10 @@ func stopService(serviceName string) {
 		err := runningService.cmd.Process.Kill()
 		if err != nil {
 			log.Printf("[%s] Failed to stop service: %v", serviceName, err)
-			return
+			if runningService.cmd.ProcessState == nil {
+				//the process is still running
+				return
+			}
 		}
 	}
 

@@ -7,7 +7,6 @@ Only stop service if it is using the resource
 
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
 
-license
 readme
 
 custom healthcheck

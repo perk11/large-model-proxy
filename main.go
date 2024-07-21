@@ -10,9 +10,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -53,6 +55,9 @@ var (
 )
 
 func main() {
+	exit := make(chan os.Signal, 1)
+	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
+
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
 
@@ -67,12 +72,20 @@ func main() {
 		runningServices: make(map[string]RunningService),
 	}
 
-	var wg sync.WaitGroup
 	for _, service := range config.Services {
-		wg.Add(1)
-		go manageServiceLifecycle(service, &wg)
+		go startProxy(service)
 	}
-	wg.Wait()
+	for {
+		select {
+		case <-exit:
+			log.Printf("Received SIGTERM, stopping all services")
+			for name := range resourceManager.runningServices {
+				stopService(name)
+			}
+			log.Printf("Done, exiting")
+			os.Exit(0)
+		}
+	}
 }
 
 func loadConfig(filePath string) (Config, error) {
@@ -92,12 +105,6 @@ func loadConfig(filePath string) (Config, error) {
 	}
 
 	return config, nil
-}
-
-func manageServiceLifecycle(service ServiceConfig, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	startProxy(service)
 }
 
 func startProxy(config ServiceConfig) {
@@ -376,7 +383,14 @@ func stopService(serviceName string) {
 
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
-		log.Printf("[%s] Stopping service process: %d", serviceName, runningService.cmd.Process.Pid)
+		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
+		runningService.cmd.Process.Signal(syscall.SIGTERM)
+
+		// TODO: maybe check running PIDs and see if the process still exists or not?
+		// then timeout on that check before sending SIGKILL
+		time.Sleep(2 * time.Second)
+
+		log.Printf("[%s] Sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
 		err := runningService.cmd.Process.Kill()
 		if err != nil {
 			log.Printf("[%s] Failed to stop service: %v", serviceName, err)
@@ -385,6 +399,7 @@ func stopService(serviceName string) {
 				return
 			}
 		}
+		log.Printf("[%s] Done killing pid %d", serviceName, runningService.cmd.Process.Pid)
 	}
 
 	releaseResources(runningService.resourceRequirements)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -117,14 +118,18 @@ func startProxy(config ServiceConfig) {
 		handleConnection(clientConnection, config)
 	}
 }
-
+func humanReadableConnection(conn net.Conn) string {
+	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
+}
 func handleConnection(clientConnection net.Conn, config ServiceConfig) {
-	defer func(clientConn net.Conn) {
-		err := clientConn.Close()
+	defer func(clientConnection net.Conn, config ServiceConfig) {
+		log.Printf("[%s] Closing client connection %s on port %s", config.Name, humanReadableConnection(clientConnection), config.ListenPort)
+		err := clientConnection.Close()
 		if err != nil {
-			log.Printf("[%s] Failed to close client connection: %v", config.Name, err)
+			log.Printf("[%s] Failed to close client connection %s: %v", config.Name, humanReadableConnection(clientConnection), err)
 		}
-	}(clientConnection)
+	}(clientConnection, config)
+	log.Printf("[%s] New client connection received %s", config.Name, humanReadableConnection(clientConnection))
 
 	var serviceConnection net.Conn
 	_, found := resourceManager.runningServices[config.Name]
@@ -158,13 +163,16 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 	} else {
 		serviceConnection = connectToService(config.ProxyTargetHost, config.ProxyTargetPort, config.Name)
 	}
+	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
+
 	if serviceConnection == nil {
 		return
 	}
 	defer func(serviceConnection net.Conn) {
+		log.Printf("[%s] Closing service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 		err := serviceConnection.Close()
 		if err != nil {
-			log.Printf("[%s] Failed to close service connection: %v", config.Name, err)
+			log.Printf("[%s] Failed to close service connection %s: %v", config.Name, humanReadableConnection(serviceConnection), err)
 		}
 	}(serviceConnection)
 	forwardConnection(clientConnection, serviceConnection, config.Name)
@@ -297,8 +305,16 @@ func forwardConnection(clientConnection net.Conn, serviceConnection net.Conn, se
 	runningService := resourceManager.runningServices[serviceName]
 	runningService.activeConnections++
 	resourceManager.runningServices[serviceName] = runningService
-	go copyAndHandleErrors(serviceConnection, clientConnection, "["+serviceName+"] (service to client)")
-	copyAndHandleErrors(clientConnection, serviceConnection, "["+serviceName+"] (client to service)")
+	go copyAndHandleErrors(
+		serviceConnection,
+		clientConnection,
+		fmt.Sprintf("[%s] (service (%s) to client (%s))", serviceName, humanReadableConnection(serviceConnection), humanReadableConnection(clientConnection)),
+	)
+	copyAndHandleErrors(
+		clientConnection,
+		serviceConnection,
+		fmt.Sprintf("[%s] (client (%s) to service (%s))", serviceName, humanReadableConnection(clientConnection), humanReadableConnection(serviceConnection)),
+	)
 }
 
 func stopService(serviceName string) {

@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-const IDLE_SHUTDOWN_TIMEOUT_SECONDS_DEFAULT time.Duration = 120
-
 type Config struct {
 	IdleShutdownTimeoutSeconds *time.Duration  `json:"IdleShutdownTimeoutSeconds"`
 	Services                   []ServiceConfig `json:"Services"`

@@ -37,6 +37,7 @@ type ServiceConfig struct {
 type RunningService struct {
 	cmd                  *exec.Cmd
 	activeConnections    int
+	started              bool
 	lastUsed             time.Time
 	resourceRequirements map[string]int
 }
@@ -137,6 +138,7 @@ func handleConnection(clientConn net.Conn, config ServiceConfig) {
 		}
 		resourceManager.runningServices[config.Name] = RunningService{
 			cmd:                  cmd,
+			started:              false,
 			resourceRequirements: config.ResourceRequirements,
 			activeConnections:    0,
 			lastUsed:             time.Time{},
@@ -150,6 +152,9 @@ func handleConnection(clientConn net.Conn, config ServiceConfig) {
 		clientConn.Close()
 		return
 	}
+	runningService := resourceManager.runningServices[config.Name]
+	runningService.started = true
+	resourceManager.runningServices[config.Name] = runningService
 	forwardConnection(clientConn, serviceConn, config.Name)
 }
 
@@ -182,6 +187,14 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	enoughResourcesAreAvailable := true
 	for resource, amount := range resourceRequirements {
 		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
+			log.Printf(
+				"[%s] Not enough %s to start. Total: %d, In use: %d, required: %d ",
+				requestingService,
+				resource,
+				resourceManager.resourcesAvailable[resource],
+				resourceManager.resourcesInUse[resource],
+				amount,
+			)
 			enoughResourcesAreAvailable = false
 			break
 		}
@@ -225,6 +238,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	return reserveResources(resourceRequirements, requestingService)
 }
 func canBeStopped(serviceName string) bool {
+	runningService := resourceManager.runningServices[serviceName]
+	if !runningService.started {
+		return false
+	}
 	return resourceManager.runningServices[serviceName].activeConnections == 0
 }
 
@@ -269,8 +286,8 @@ func forwardConnection(clientConn, serviceConn net.Conn, serviceName string) {
 	runningService := resourceManager.runningServices[serviceName]
 	runningService.activeConnections++
 	resourceManager.runningServices[serviceName] = runningService
-	go copyAndHandleErrors(serviceConn, clientConn, serviceName+" (service to client)")
-	copyAndHandleErrors(clientConn, serviceConn, serviceName+" (client to service)")
+	go copyAndHandleErrors(serviceConn, clientConn, "["+serviceName+"] (service to client)")
+	copyAndHandleErrors(clientConn, serviceConn, "["+serviceName+"] (client to service)")
 }
 
 func stopService(serviceName string) {

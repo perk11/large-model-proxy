@@ -389,7 +389,10 @@ func stopService(serviceName string) {
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
-		runningService.cmd.Process.Signal(syscall.SIGTERM)
+		err := runningService.cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			log.Printf("[%s] Failed to send SIGTERM to %d: %v", serviceName, runningService.cmd.Process.Pid, err)
+		}
 
 		// TODO use healthchecks here
 		processCheckCounter := 0

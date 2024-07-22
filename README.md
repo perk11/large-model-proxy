@@ -29,7 +29,7 @@ To the client this should be fully transparent with the only exception being tha
     ```
 3. Build the project:
     ```sh
-    go build -o largemodelproxy main.go
+    go build -o large-model-proxy main.go
     ```
 
 ## Configuration
@@ -82,10 +82,10 @@ The Stable Diffusion web UI is expected to use up to 6GB of VRAM and 30GB of RAM
 
 ## Usage
 ```sh
-./largemodelproxy -c path/to/config.json
+./large-model-proxy -c path/to/config.json
 ```
 
-If `-c` argument is omitted, `largemodelproxy` will look for `config.json` in current directory
+If `-c` argument is omitted, `large-model-proxy` will look for `config.json` in current directory
 
 ## Logs
 

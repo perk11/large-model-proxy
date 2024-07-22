@@ -134,7 +134,6 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 		}
 	}(clientConnection, config)
 	log.Printf("[%s] New client connection received %s", config.Name, humanReadableConnection(clientConnection))
-
 	var serviceConnection net.Conn
 	_, found := resourceManager.runningServices[config.Name]
 	if !found {
@@ -146,6 +145,7 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 		serviceConnection = serviceConn
 	} else {
 		serviceConnection = connectToService(config)
+		trackServiceLastUsed(config.Name)
 	}
 	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 
@@ -166,7 +166,7 @@ func startService(config ServiceConfig) (net.Conn, error) {
 	resourceManager.runningServices[config.Name] = RunningService{
 		resourceRequirements: config.ResourceRequirements,
 		activeConnections:    0,
-		lastUsed:             time.Time{},
+		lastUsed:             time.Now(),
 		manageMutex:          &sync.Mutex{},
 	}
 	resourceManager.runningServices[config.Name].manageMutex.Lock()
@@ -253,9 +253,6 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		for resource, amount := range resourceRequirements {
 			resourceManager.resourcesInUse[resource] += amount
 		}
-		runningService := resourceManager.runningServices[requestingService]
-		runningService.lastUsed = time.Now()
-		resourceManager.runningServices[requestingService] = runningService
 		return true
 	}
 	var earliestLastUsedService string
@@ -278,7 +275,8 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			if !canBeStopped(serviceName) {
 				continue
 			}
-			if resourceManager.runningServices[requestingService].lastUsed.Compare(earliestTime) == -1 {
+			timeDifference := resourceManager.runningServices[requestingService].lastUsed.Sub(earliestTime)
+			if timeDifference < 0 {
 				earliestLastUsedService = serviceName
 				earliestTime = resourceManager.runningServices[requestingService].lastUsed
 			}
@@ -298,6 +296,12 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)
 	stopService(earliestLastUsedService)
 	return reserveResources(resourceRequirements, requestingService)
+}
+
+func trackServiceLastUsed(requestingService string) {
+	runningService := resourceManager.runningServices[requestingService]
+	runningService.lastUsed = time.Now()
+	resourceManager.runningServices[requestingService] = runningService
 }
 func canBeStopped(serviceName string) bool {
 	runningService := resourceManager.runningServices[serviceName]

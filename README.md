@@ -18,18 +18,26 @@ Then it will proxy the connection from the LM to the client that connected to it
 To the client this should be fully transparent with the only exception being that receiving any data on the connection takes longer if LM had to be spun up. 
 
 ## Installation
+**Ubuntu and Debian**: Download the deb file attached to the [latest release](https://github.com/perk11/large-model-proxy/releases/latest).
 
-1. Clone the repository:
+**Other Distros**:
+1. Install go
+
+3. Clone the repository:
     ```sh
     git clone https://github.com/perk11/large-model-proxy.git
     ```
-2. Navigate into the project directory:
+4. Navigate into the project directory:
     ```sh
     cd large-model-proxy
     ```
-3. Build the project:
+5. Build the project:
     ```sh
     go build -o large-model-proxy main.go
+    ```
+    or
+   ```sh
+    make
     ```
 
 ## Configuration

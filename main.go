@@ -394,29 +394,15 @@ func stopService(serviceName string) {
 			log.Printf("[%s] Failed to send SIGTERM to %d: %v", serviceName, runningService.cmd.Process.Pid, err)
 		}
 
-		// TODO use healthchecks here
-		processCheckCounter := 0
-		processExitedCleanly := false
-		for {
-			// 2 second timeout
-			if processCheckCounter > 20 {
-				break
-			}
-			if runningService.cmd.ProcessState == nil {
-				processExitedCleanly = true
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
-			processCheckCounter++
-		}
+		processExitedCleanly := waitForProcessToTerminate(serviceName, runningService.cmd.Process)
 
 		if !processExitedCleanly {
-			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
+			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process %d", serviceName, runningService.cmd.Process.Pid)
 			err := runningService.cmd.Process.Kill()
 			if err != nil {
 				log.Printf("[%s] Failed to kill service: %v", serviceName, err)
 				if runningService.cmd.ProcessState == nil {
-					log.Printf("[%s] Manual action required due to error when killing process...", serviceName)
+					log.Printf("[%s] Manual action required due to error when killing process", serviceName)
 					return
 				}
 			}
@@ -428,6 +414,26 @@ func stopService(serviceName string) {
 
 	releaseResources(runningService.resourceRequirements)
 	delete(resourceManager.runningServices, serviceName)
+}
+
+func waitForProcessToTerminate(serviceName string, process *os.Process) bool {
+	const ProcessCheckTimeout = 10 * time.Second
+
+	exitChannel := make(chan struct{})
+	go func() {
+		_, err := process.Wait()
+		if err != nil {
+			return
+		}
+		close(exitChannel)
+	}()
+
+	select {
+	case <-exitChannel:
+		return true
+	case <-time.After(ProcessCheckTimeout):
+		return false
+	}
 }
 
 func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {

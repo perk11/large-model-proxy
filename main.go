@@ -57,6 +57,7 @@ var (
 func main() {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(exit, os.Interrupt, syscall.SIGINT)
 
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()

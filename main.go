@@ -394,7 +394,7 @@ func stopService(serviceName string) {
 			log.Printf("[%s] Failed to send SIGTERM to %d: %v", serviceName, runningService.cmd.Process.Pid, err)
 		}
 
-		processExitedCleanly := waitForProcessToTerminate(serviceName, runningService.cmd.Process)
+		processExitedCleanly := waitForProcessToTerminate(runningService.cmd.Process)
 
 		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process %d", serviceName, runningService.cmd.Process.Pid)
@@ -416,7 +416,7 @@ func stopService(serviceName string) {
 	delete(resourceManager.runningServices, serviceName)
 }
 
-func waitForProcessToTerminate(serviceName string, process *os.Process) bool {
+func waitForProcessToTerminate(process *os.Process) bool {
 	const ProcessCheckTimeout = 10 * time.Second
 
 	exitChannel := make(chan struct{})

@@ -56,8 +56,7 @@ var (
 
 func main() {
 	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
-	signal.Notify(exit, os.Interrupt, syscall.SIGINT)
+	signal.Notify(exit, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
@@ -77,15 +76,23 @@ func main() {
 		go startProxy(service)
 	}
 	for {
-		select {
-		case <-exit:
-			log.Printf("Received SIGTERM, stopping all services")
-			for name := range resourceManager.runningServices {
-				stopService(name)
-			}
-			log.Printf("Done, exiting")
-			os.Exit(0)
+		receivedSignal := <-exit
+		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))
+		for name := range resourceManager.runningServices {
+			stopService(name)
 		}
+		log.Printf("Done, exiting")
+		os.Exit(0)
+	}
+}
+func signalToString(sig os.Signal) string {
+	switch sig {
+	case syscall.SIGINT:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	default:
+		return sig.String()
 	}
 }
 

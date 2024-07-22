@@ -10,9 +10,11 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -53,6 +55,10 @@ var (
 )
 
 func main() {
+	exit := make(chan os.Signal, 1)
+	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(exit, os.Interrupt, syscall.SIGINT)
+
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
 
@@ -67,12 +73,20 @@ func main() {
 		runningServices: make(map[string]RunningService),
 	}
 
-	var wg sync.WaitGroup
 	for _, service := range config.Services {
-		wg.Add(1)
-		go manageServiceLifecycle(service, &wg)
+		go startProxy(service)
 	}
-	wg.Wait()
+	for {
+		select {
+		case <-exit:
+			log.Printf("Received SIGTERM, stopping all services")
+			for name := range resourceManager.runningServices {
+				stopService(name)
+			}
+			log.Printf("Done, exiting")
+			os.Exit(0)
+		}
+	}
 }
 
 func loadConfig(filePath string) (Config, error) {
@@ -92,12 +106,6 @@ func loadConfig(filePath string) (Config, error) {
 	}
 
 	return config, nil
-}
-
-func manageServiceLifecycle(service ServiceConfig, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	startProxy(service)
 }
 
 func startProxy(config ServiceConfig) {
@@ -380,14 +388,38 @@ func stopService(serviceName string) {
 
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
-		log.Printf("[%s] Stopping service process: %d", serviceName, runningService.cmd.Process.Pid)
-		err := runningService.cmd.Process.Kill()
-		if err != nil {
-			log.Printf("[%s] Failed to stop service: %v", serviceName, err)
-			if runningService.cmd.ProcessState == nil {
-				//the process is still running
-				return
+		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
+		runningService.cmd.Process.Signal(syscall.SIGTERM)
+
+		// TODO use healthchecks here
+		processCheckCounter := 0
+		processExitedCleanly := false
+		for {
+			// 2 second timeout
+			if processCheckCounter > 20 {
+				break
 			}
+			if runningService.cmd.ProcessState == nil {
+				processExitedCleanly = true
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+			processCheckCounter++
+		}
+
+		if !processExitedCleanly {
+			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
+			err := runningService.cmd.Process.Kill()
+			if err != nil {
+				log.Printf("[%s] Failed to kill service: %v", serviceName, err)
+				if runningService.cmd.ProcessState == nil {
+					log.Printf("[%s] Manual action required due to error when killing process...", serviceName)
+					return
+				}
+			}
+			log.Printf("[%s] Done killing pid %d", serviceName, runningService.cmd.Process.Pid)
+		} else {
+			log.Printf("[%s] Done stopping pid %d", serviceName, runningService.cmd.Process.Pid)
 		}
 	}
 

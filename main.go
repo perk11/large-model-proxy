@@ -403,7 +403,7 @@ func stopService(serviceName string) {
 			processCheckCounter++
 		}
 
-		if processExitedCleanly {
+		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
 			err := runningService.cmd.Process.Kill()
 			if err != nil {

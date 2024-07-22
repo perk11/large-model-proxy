@@ -11,7 +11,7 @@ make clean
 rm -r $BUILD_DIR 2>/dev/null || true
 mkdir -p $BUILD_DIR/$TARGET_DIRECTORY
 make
-cp largemodelproxy $BUILD_DIR/$TARGET_DIRECTORY/
+cp large-model-proxy $BUILD_DIR/$TARGET_DIRECTORY/
 cp -r distro-packages/ubuntu22.04/DEBIAN $BUILD_DIR/
 
 sed -i "s/\$VERSION/$VERSION/g" $BUILD_DIR/DEBIAN/control

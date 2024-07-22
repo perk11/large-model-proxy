@@ -7,3 +7,4 @@ logging level
 Idle shutdown
 bug? workdir not respected sometimes
 support spaces in cmd args
+more mutexes/locks to avoid potential concurrency issues

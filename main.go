@@ -387,20 +387,36 @@ func stopService(serviceName string) {
 		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
 		runningService.cmd.Process.Signal(syscall.SIGTERM)
 
-		// TODO: maybe check running PIDs and see if the process still exists or not?
-		// then timeout on that check before sending SIGKILL
-		time.Sleep(2 * time.Second)
-
-		log.Printf("[%s] Sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
-		err := runningService.cmd.Process.Kill()
-		if err != nil {
-			log.Printf("[%s] Failed to stop service: %v", serviceName, err)
-			if runningService.cmd.ProcessState == nil {
-				//the process is still running
-				return
+		// TODO use healthchecks here
+		processCheckCounter := 0
+		processExitedCleanly := false
+		for {
+			// 2 second timeout
+			if processCheckCounter > 20 {
+				break
 			}
+			if runningService.cmd.ProcessState == nil {
+				processExitedCleanly = true
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+			processCheckCounter++
 		}
-		log.Printf("[%s] Done killing pid %d", serviceName, runningService.cmd.Process.Pid)
+
+		if processExitedCleanly {
+			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process: %d", serviceName, runningService.cmd.Process.Pid)
+			err := runningService.cmd.Process.Kill()
+			if err != nil {
+				log.Printf("[%s] Failed to kill service: %v", serviceName, err)
+				if runningService.cmd.ProcessState == nil {
+					log.Printf("[%s] Manual action required due to error when killing process...", serviceName)
+					return
+				}
+			}
+			log.Printf("[%s] Done killing pid %d", serviceName, runningService.cmd.Process.Pid)
+		} else {
+			log.Printf("[%s] Done stopping pid %d", serviceName, runningService.cmd.Process.Pid)
+		}
 	}
 
 	releaseResources(runningService.resourceRequirements)

@@ -1,6 +1,7 @@
 Distro packages
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
 
+fix output when args is empty
 periodically check if commands stopped on their own
 JSON5
 logging level

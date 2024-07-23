@@ -162,11 +162,12 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 		serviceConnection = connectToService(config)
 		trackServiceLastUsed(config.Name)
 	}
-	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 
 	if serviceConnection == nil {
 		return
 	}
+
+	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 	defer func(serviceConnection net.Conn) {
 		log.Printf("[%s] Closing service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
 		err := serviceConnection.Close()

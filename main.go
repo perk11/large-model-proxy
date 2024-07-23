@@ -131,7 +131,7 @@ func startProxy(config ServiceConfig) {
 			log.Printf("[%s] Error accepting connection: %v", config.Name, err)
 			continue
 		}
-		handleConnection(clientConnection, config)
+		go handleConnection(clientConnection, config)
 	}
 }
 func humanReadableConnection(conn net.Conn) string {

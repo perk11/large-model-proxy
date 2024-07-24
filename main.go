@@ -198,7 +198,7 @@ func startService(config ServiceConfig) (net.Conn, error) {
 		delete(resourceManager.runningServices, config.Name)
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", config.Command, config.Args)
 	}
-	var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 60)
+	var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 120*time.Second)
 	time.Sleep(2 * time.Second) //TODO: replace with a custom callback
 
 	runningService := resourceManager.runningServices[config.Name]
@@ -235,7 +235,7 @@ func connectWithWaiting(serviceHost string, servicePort string, serviceName stri
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
-	log.Printf("[%s] Error: failed to connect to %s:%s: All connection attempts failed after trying for %ss", serviceName, serviceHost, servicePort, timeout)
+	log.Printf("[%s] Error: failed to connect to %s:%s: All connection attempts failed after trying for %s", serviceName, serviceHost, servicePort, timeout)
 	return nil
 }
 

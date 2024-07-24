@@ -1,5 +1,6 @@
 Distro packages
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
+idle timeout
 
 fix output when args is empty
 periodically check if commands stopped on their own
@@ -9,3 +10,5 @@ Idle shutdown
 bug? workdir not respected sometimes
 support spaces in cmd args
 more mutexes/locks to avoid potential concurrency issues
+Fix trying to stop service multiple times
+It is possible to start multiple copies of the service

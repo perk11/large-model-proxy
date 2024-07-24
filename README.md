@@ -19,6 +19,7 @@ To the client this should be fully transparent with the only exception being tha
 
 ## Installation
 **Ubuntu and Debian**: Download the deb file attached to the [latest release](https://github.com/perk11/large-model-proxy/releases/latest).
+**Arch Linux**: Install from [AUR](https://aur.archlinux.org/packages/large-model-proxy).
 
 **Other Distros**:
 1. Install go

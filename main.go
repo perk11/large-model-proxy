@@ -227,12 +227,13 @@ func connectToService(config ServiceConfig) net.Conn {
 }
 
 func connectWithWaiting(serviceHost string, servicePort string, serviceName string, timeout time.Duration) net.Conn {
-	deadline := time.Now().Add(timeout * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), time.Second)
 		if err == nil {
 			return conn
 		}
+		//log.Printf("[%s] Error when connecting to %s:%s, trying again in 100ms %v", serviceName, serviceHost, servicePort, err)
 		time.Sleep(time.Millisecond * 100)
 	}
 	log.Printf("[%s] Error: failed to connect to %s:%s: All connection attempts failed after trying for %s", serviceName, serviceHost, servicePort, timeout)

@@ -149,33 +149,46 @@ func handleConnection(clientConnection net.Conn, config ServiceConfig) {
 		}
 	}(clientConnection, config)
 	log.Printf("[%s] New client connection received %s", config.Name, humanReadableConnection(clientConnection))
-	var serviceConnection net.Conn
-	_, found := resourceManager.runningServices[config.Name]
-	if !found {
-		serviceConn, err := startService(config)
-		if err != nil {
-			log.Printf("[%s] Failed to start: %v", config.Name, err)
-			return
-		}
-		serviceConnection = serviceConn
-	} else {
-		serviceConnection = connectToService(config)
-		trackServiceLastUsed(config.Name)
-	}
+	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(config)
 
 	if serviceConnection == nil {
 		return
 	}
 
-	log.Printf("[%s] Opened service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
+	log.Printf("[%s] Opened service connection %s", config.Name, humanReadableConnection(serviceConnection))
 	defer func(serviceConnection net.Conn) {
-		log.Printf("[%s] Closing service connection %s on port %s", config.Name, humanReadableConnection(serviceConnection), config.ProxyTargetPort)
+		log.Printf("[%s] Closing service connection %s", config.Name, humanReadableConnection(serviceConnection))
 		err := serviceConnection.Close()
 		if err != nil {
 			log.Printf("[%s] Failed to close service connection %s: %v", config.Name, humanReadableConnection(serviceConnection), err)
 		}
 	}(serviceConnection)
 	forwardConnection(clientConnection, serviceConnection, config.Name)
+}
+
+func startServiceIfNotAlreadyRunningAndConnect(config ServiceConfig) net.Conn {
+	var serviceConnection net.Conn
+	runningService, found := resourceManager.runningServices[config.Name]
+	if !found {
+		serviceConn, err := startService(config)
+		if err != nil {
+			log.Printf("[%s] Failed to start: %v", config.Name, err)
+			return nil
+		}
+		serviceConnection = serviceConn
+	} else {
+		if !runningService.manageMutex.TryLock() {
+			//The service could be currently starting or stopping, so let's wait for that to finish and try again
+			runningService.manageMutex.Lock()
+			runningService.manageMutex.Unlock()
+			//As the service might stop after the mutex is unlocked, we need to run the search for it again
+			return startServiceIfNotAlreadyRunningAndConnect(config)
+		}
+		trackServiceLastUsed(config.Name)
+		runningService.manageMutex.Unlock()
+		serviceConnection = connectToService(config)
+	}
+	return serviceConnection
 }
 
 func startService(config ServiceConfig) (net.Conn, error) {
@@ -395,7 +408,7 @@ func forwardConnection(clientConnection net.Conn, serviceConnection net.Conn, se
 }
 
 func stopService(serviceName string) {
-
+	resourceManager.runningServices[serviceName].manageMutex.Lock()
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
@@ -423,12 +436,12 @@ func stopService(serviceName string) {
 	}
 
 	releaseResources(runningService.resourceRequirements)
+	resourceManager.runningServices[serviceName].manageMutex.Unlock()
 	delete(resourceManager.runningServices, serviceName)
 }
 
 func waitForProcessToTerminate(process *os.Process) bool {
 	const ProcessCheckTimeout = 10 * time.Second
-
 	exitChannel := make(chan struct{})
 	go func() {
 		_, err := process.Wait()

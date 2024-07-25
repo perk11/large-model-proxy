@@ -48,10 +48,11 @@ Below is an example config.json:
 ```json
 {
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
+  "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-    "VRAM-GPU-1": 24000,
-    "RAM": 32000
-  },
+     "VRAM-GPU-1": 24000,
+     "RAM": 32000
+  }, 
   "Services": [
     {
       "Name": "automatic1111",
@@ -60,7 +61,8 @@ Below is an example config.json:
       "ProxyTargetPort": "17860",
       "Command": "/opt/stable-diffusion-webui/webui.sh",
       "Args": "--port 17860",
-      "WorkDir": "/opt/stable-diffusion-webui",
+      "WorkDir": "/opt/stable-diffusion-webui", 
+      "ShutDownAfterInactivitySeconds": 600,
       "RestartOnConnectionFailure": true,
       "ResourceRequirements": {
         "VRAM-GPU-1": 6000,

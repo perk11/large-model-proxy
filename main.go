@@ -208,6 +208,7 @@ func startService(config ServiceConfig) (net.Conn, error) {
 }
 
 func connectToService(config ServiceConfig) net.Conn {
+	log.Printf("[%s] Opening new service connection to %s:%s", config.Name, config.ProxyTargetHost, config.ProxyTargetPort)
 	serviceConn, err := net.Dial("tcp", net.JoinHostPort(config.ProxyTargetHost, config.ProxyTargetPort))
 	if err != nil {
 		log.Printf("[%s] Error: failed to connect to %s:%s: %v", config.Name, config.ProxyTargetHost, config.ProxyTargetPort, err)

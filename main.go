@@ -115,11 +115,11 @@ func loadConfig(filePath string) (Config, error) {
 	return config, nil
 }
 
-func startProxy(config ServiceConfig) {
-	listener, err := net.Listen("tcp", ":"+config.ListenPort)
-	log.Printf("[%s] Listening on port %s", config.Name, config.ListenPort)
+func startProxy(serviceConfig ServiceConfig) {
+	listener, err := net.Listen("tcp", ":"+serviceConfig.ListenPort)
+	log.Printf("[%s] Listening on port %s", serviceConfig.Name, serviceConfig.ListenPort)
 	if err != nil {
-		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", config.Name, config.ListenPort, err)
+		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", serviceConfig.Name, serviceConfig.ListenPort, err)
 	}
 	defer func(listener net.Listener) {
 		_ = listener.Close()
@@ -128,10 +128,10 @@ func startProxy(config ServiceConfig) {
 	for {
 		clientConnection, err := listener.Accept()
 		if err != nil {
-			log.Printf("[%s] Error accepting connection: %v", config.Name, err)
+			log.Printf("[%s] Error accepting connection: %v", serviceConfig.Name, err)
 			continue
 		}
-		go handleConnection(clientConnection, config)
+		go handleConnection(clientConnection, serviceConfig)
 	}
 }
 func humanReadableConnection(conn net.Conn) string {
@@ -140,39 +140,39 @@ func humanReadableConnection(conn net.Conn) string {
 	}
 	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 }
-func handleConnection(clientConnection net.Conn, config ServiceConfig) {
-	defer func(clientConnection net.Conn, config ServiceConfig) {
-		log.Printf("[%s] Closing client connection %s on port %s", config.Name, humanReadableConnection(clientConnection), config.ListenPort)
+func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
+	defer func(clientConnection net.Conn, serviceConfig ServiceConfig) {
+		log.Printf("[%s] Closing client connection %s on port %s", serviceConfig.Name, humanReadableConnection(clientConnection), serviceConfig.ListenPort)
 		err := clientConnection.Close()
 		if err != nil {
-			log.Printf("[%s] Failed to close client connection %s: %v", config.Name, humanReadableConnection(clientConnection), err)
+			log.Printf("[%s] Failed to close client connection %s: %v", serviceConfig.Name, humanReadableConnection(clientConnection), err)
 		}
-	}(clientConnection, config)
-	log.Printf("[%s] New client connection received %s", config.Name, humanReadableConnection(clientConnection))
-	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(config)
+	}(clientConnection, serviceConfig)
+	log.Printf("[%s] New client connection received %s", serviceConfig.Name, humanReadableConnection(clientConnection))
+	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 
 	if serviceConnection == nil {
 		return
 	}
 
-	log.Printf("[%s] Opened service connection %s", config.Name, humanReadableConnection(serviceConnection))
+	log.Printf("[%s] Opened service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
 	defer func(serviceConnection net.Conn) {
-		log.Printf("[%s] Closing service connection %s", config.Name, humanReadableConnection(serviceConnection))
+		log.Printf("[%s] Closing service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
 		err := serviceConnection.Close()
 		if err != nil {
-			log.Printf("[%s] Failed to close service connection %s: %v", config.Name, humanReadableConnection(serviceConnection), err)
+			log.Printf("[%s] Failed to close service connection %s: %v", serviceConfig.Name, humanReadableConnection(serviceConnection), err)
 		}
 	}(serviceConnection)
-	forwardConnection(clientConnection, serviceConnection, config.Name)
+	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
 }
 
-func startServiceIfNotAlreadyRunningAndConnect(config ServiceConfig) net.Conn {
+func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.Conn {
 	var serviceConnection net.Conn
-	runningService, found := resourceManager.runningServices[config.Name]
+	runningService, found := resourceManager.runningServices[serviceConfig.Name]
 	if !found {
-		serviceConn, err := startService(config)
+		serviceConn, err := startService(serviceConfig)
 		if err != nil {
-			log.Printf("[%s] Failed to start: %v", config.Name, err)
+			log.Printf("[%s] Failed to start: %v", serviceConfig.Name, err)
 			return nil
 		}
 		serviceConnection = serviceConn
@@ -182,55 +182,55 @@ func startServiceIfNotAlreadyRunningAndConnect(config ServiceConfig) net.Conn {
 			runningService.manageMutex.Lock()
 			runningService.manageMutex.Unlock()
 			//As the service might stop after the mutex is unlocked, we need to run the search for it again
-			return startServiceIfNotAlreadyRunningAndConnect(config)
+			return startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 		}
-		trackServiceLastUsed(config.Name)
+		trackServiceLastUsed(serviceConfig.Name)
 		runningService.manageMutex.Unlock()
-		serviceConnection = connectToService(config)
+		serviceConnection = connectToService(serviceConfig)
 	}
 	return serviceConnection
 }
 
-func startService(config ServiceConfig) (net.Conn, error) {
-	resourceManager.runningServices[config.Name] = RunningService{
-		resourceRequirements: config.ResourceRequirements,
+func startService(serviceConfig ServiceConfig) (net.Conn, error) {
+	resourceManager.runningServices[serviceConfig.Name] = RunningService{
+		resourceRequirements: serviceConfig.ResourceRequirements,
 		activeConnections:    0,
 		lastUsed:             time.Now(),
 		manageMutex:          &sync.Mutex{},
 	}
-	resourceManager.runningServices[config.Name].manageMutex.Lock()
-	defer resourceManager.runningServices[config.Name].manageMutex.Unlock()
-	if !reserveResources(config.ResourceRequirements, config.Name) {
-		delete(resourceManager.runningServices, config.Name)
-		return nil, fmt.Errorf("insufficient resources %s", config.Name)
+	resourceManager.runningServices[serviceConfig.Name].manageMutex.Lock()
+	defer resourceManager.runningServices[serviceConfig.Name].manageMutex.Unlock()
+	if !reserveResources(serviceConfig.ResourceRequirements, serviceConfig.Name) {
+		delete(resourceManager.runningServices, serviceConfig.Name)
+		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)
 	}
 
-	var cmd = runServiceCommand(config)
+	var cmd = runServiceCommand(serviceConfig)
 	if cmd == nil {
-		releaseResources(config.ResourceRequirements)
-		delete(resourceManager.runningServices, config.Name)
-		return nil, fmt.Errorf("failed to run command \"%s %s\"", config.Command, config.Args)
+		releaseResources(serviceConfig.ResourceRequirements)
+		delete(resourceManager.runningServices, serviceConfig.Name)
+		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
-	var serviceConnection = connectWithWaiting(config.ProxyTargetHost, config.ProxyTargetPort, config.Name, 120*time.Second)
+	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, 120*time.Second)
 	time.Sleep(2 * time.Second) //TODO: replace with a custom callback
 
-	runningService := resourceManager.runningServices[config.Name]
+	runningService := resourceManager.runningServices[serviceConfig.Name]
 	runningService.cmd = cmd
-	resourceManager.runningServices[config.Name] = runningService
+	resourceManager.runningServices[serviceConfig.Name] = runningService
 	return serviceConnection, nil
 }
 
-func connectToService(config ServiceConfig) net.Conn {
-	log.Printf("[%s] Opening new service connection to %s:%s", config.Name, config.ProxyTargetHost, config.ProxyTargetPort)
-	serviceConn, err := net.Dial("tcp", net.JoinHostPort(config.ProxyTargetHost, config.ProxyTargetPort))
+func connectToService(serviceConfig ServiceConfig) net.Conn {
+	log.Printf("[%s] Opening new service connection to %s:%s", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+	serviceConn, err := net.Dial("tcp", net.JoinHostPort(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort))
 	if err != nil {
-		log.Printf("[%s] Error: failed to connect to %s:%s: %v", config.Name, config.ProxyTargetHost, config.ProxyTargetPort, err)
-		if config.RestartOnConnectionFailure {
-			log.Printf("[%s] Restarting service due to connection error", config.Name)
-			stopService(config.Name)
-			serviceConn, err = startService(config)
+		log.Printf("[%s] Error: failed to connect to %s:%s: %v", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, err)
+		if serviceConfig.RestartOnConnectionFailure {
+			log.Printf("[%s] Restarting service due to connection error", serviceConfig.Name)
+			stopService(serviceConfig.Name)
+			serviceConn, err = startService(serviceConfig)
 			if err != nil {
-				log.Printf("[%s] Failed to restart: %v", config.Name, err)
+				log.Printf("[%s] Failed to restart: %v", serviceConfig.Name, err)
 				return nil
 			}
 			return serviceConn
@@ -349,38 +349,38 @@ func releaseResources(used map[string]int) {
 	}
 }
 
-func runServiceCommand(config ServiceConfig) *exec.Cmd {
-	if config.LogFilePath == "" {
-		config.LogFilePath = "logs/" + config.Name + ".log"
+func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
+	if serviceConfig.LogFilePath == "" {
+		serviceConfig.LogFilePath = "logs/" + serviceConfig.Name + ".log"
 	}
-	logDir := filepath.Dir(config.LogFilePath)
+	logDir := filepath.Dir(serviceConfig.LogFilePath)
 	err := os.MkdirAll(logDir, os.ModePerm)
 	if err != nil {
-		log.Printf("[%s] Failed to create log directory %s: %v", config.Name, logDir, err)
+		log.Printf("[%s] Failed to create log directory %s: %v", serviceConfig.Name, logDir, err)
 		return nil
 	}
 	log.Printf("[%s] Starting \"%s %s\", log file: %s, workdir: %s",
-		config.Name,
-		config.Command,
-		config.Args,
-		config.LogFilePath,
-		config.Workdir,
+		serviceConfig.Name,
+		serviceConfig.Command,
+		serviceConfig.Args,
+		serviceConfig.LogFilePath,
+		serviceConfig.Workdir,
 	)
-	cmd := exec.Command(config.Command, strings.Split(config.Args, " ")...)
-	if config.Workdir != "" {
-		cmd.Dir = config.Workdir
+	cmd := exec.Command(serviceConfig.Command, strings.Split(serviceConfig.Args, " ")...)
+	if serviceConfig.Workdir != "" {
+		cmd.Dir = serviceConfig.Workdir
 	}
 
-	logFile, err := os.OpenFile(config.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(serviceConfig.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("[%s] Error opening log file: %v", config.Name, err)
+		log.Printf("[%s] Error opening log file: %v", serviceConfig.Name, err)
 		return nil
 	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[%s] Error starting command: %v", config.Name, err)
+		log.Printf("[%s] Error starting command: %v", serviceConfig.Name, err)
 		return nil
 	}
 	return cmd

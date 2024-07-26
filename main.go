@@ -293,9 +293,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		maxWaitTime = *config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds * time.Second
 	}
 	startTime := time.Now()
-	var iteration int
+	var iteration = 0
 	for time.Since(startTime) < maxWaitTime {
 		missingResource = findFirstMissingResource(resourceRequirements, requestingService, iteration%60 == 0)
+		iteration++
 		if missingResource == nil {
 			for resource, amount := range resourceRequirements {
 				resourceManager.resourcesInUse[resource] += amount

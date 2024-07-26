@@ -1,6 +1,5 @@
 custom healthcheck (Client error: `GET http://localhost:7860/sdapi/v1/options` resulted in a `404 Not Found` response:
 
-Idle shutdown
 fix output when args is empty
 periodically check if commands stopped on their own
 JSON5
@@ -8,3 +7,4 @@ logging level
 bug? workdir not respected sometimes
 support spaces in cmd args
 check for duplicate service names in config
+If SIGINT is received while service is starting, it still waits for connection timeout for long time

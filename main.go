@@ -251,7 +251,10 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 		log.Printf("[%s] Error: failed to connect to %s:%s: %v", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, err)
 		if serviceConfig.RestartOnConnectionFailure {
 			log.Printf("[%s] Restarting service due to connection error", serviceConfig.Name)
-			stopService(serviceConfig.Name)
+			_, isRunning := resourceManager.runningServices[serviceConfig.Name]
+			if isRunning {
+				stopService(serviceConfig.Name)
+			}
 			serviceConn, err = startService(serviceConfig)
 			if err != nil {
 				log.Printf("[%s] Failed to restart: %v", serviceConfig.Name, err)

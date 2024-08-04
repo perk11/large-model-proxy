@@ -200,6 +200,10 @@ func getIdleTimeout(serviceConfig ServiceConfig) time.Duration {
 	if idleTimeout == 0 {
 		idleTimeout = config.ShutDownAfterInactivitySeconds
 	}
+	// for old configs
+	if idleTimeout == 0 {
+		idleTimeout = 5 * 60
+	}
 	idleTimeout = idleTimeout * time.Second
 	return idleTimeout
 }

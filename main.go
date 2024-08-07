@@ -275,11 +275,15 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {
+		runningService.manageMutex.Lock()
+		defer runningService.manageMutex.Unlock()
+
 		if !canBeStopped(serviceConfig.Name) {
 			log.Printf("[%s] Idle timeout %s reached, but service is busy, resetting idle time", serviceConfig.Name, idleTimeout)
 			runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
 			return
 		}
+
 		log.Printf("[%s] Idle timeout %s reached, stopping service", serviceConfig.Name, idleTimeout)
 		stopService(serviceConfig.Name)
 	})
@@ -419,7 +423,7 @@ func trackServiceLastUsed(serviceConfig ServiceConfig) {
 }
 
 func canBeStopped(serviceName string) bool {
-	runningService := resourceManager.getRunningService(serviceName)
+	runningService := resourceManager.runningServices[serviceName]
 	if !runningService.manageMutex.TryLock() {
 		return false
 	}

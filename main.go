@@ -275,8 +275,8 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {
-		runningService.manageMutex.Lock()
-		defer runningService.manageMutex.Unlock()
+		resourceManager.serviceMutex.Lock()
+		defer resourceManager.serviceMutex.Unlock()
 
 		if !canBeStopped(serviceConfig.Name) {
 			log.Printf("[%s] Idle timeout %s reached, but service is busy, resetting idle time", serviceConfig.Name, idleTimeout)

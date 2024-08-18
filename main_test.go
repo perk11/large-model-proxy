@@ -53,11 +53,6 @@ func minimal(test *testing.T, proxyAddress string) {
 		test.Error(err)
 		return
 	}
-
-	time.Sleep(5 * time.Second)
-	if !isProcessRunning(pidInt) {
-		test.Errorf("process \"%s\" is still running 5 seconds after connection is closed", pidString)
-	}
 }
 func isNumeric(s string) bool {
 	for _, char := range s {

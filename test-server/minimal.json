@@ -1,0 +1,12 @@
+{
+  "Services": [
+    {
+      "Name": "test-server_minimal",
+      "ListenPort": "2000",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12000",
+      "Command": "test-server/test-server",
+      "Args": "-p 12000"
+    }
+  ]
+}

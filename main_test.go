@@ -36,7 +36,7 @@ func minimal(test *testing.T, proxyAddress string) {
 	}
 	pidInt, err := strconv.Atoi(pidString)
 	if err != nil {
-		test.Error(err)
+		test.Error(err, pidString)
 		return
 	}
 	if pidInt <= 0 {
@@ -54,6 +54,7 @@ func minimal(test *testing.T, proxyAddress string) {
 		return
 	}
 }
+
 func isNumeric(s string) bool {
 	for _, char := range s {
 		if char < '0' || char > '9' {
@@ -88,7 +89,32 @@ func startLargeModelProxy(testCaseName string, configPath string) (*exec.Cmd, er
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	// Create a channel to receive the process exit status
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
 	time.Sleep(1 * time.Second)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return nil, fmt.Errorf("large-model-proxy exited prematurely with error %v", err)
+		} else {
+			return nil, fmt.Errorf("large-model-proxy exited prematurely with success")
+		}
+	default:
+	}
+
+	err = cmd.Process.Signal(syscall.Signal(0))
+	if err != nil {
+		if err.Error() == "os: process already finished" {
+			return nil, fmt.Errorf("large-model-proxy exited prematurely")
+		}
+		return nil, fmt.Errorf("error checking process state: %w", err)
+	}
+
 	return cmd, nil
 }
 
@@ -96,7 +122,11 @@ func stopApplication(cmd *exec.Cmd) error {
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		return err
 	}
-	return cmd.Wait()
+	err := cmd.Wait()
+	if err != nil && err.Error() != "waitid: no child processes" && err.Error() != "wait: no child processes" {
+		return err
+	}
+	return nil
 }
 
 func checkPortClosed(port string) error {
@@ -116,9 +146,34 @@ func TestAppScenarios(test *testing.T) {
 		TestFunc   func(t *testing.T, proxyAddress string)
 	}{
 		{"minimal", "test-server/minimal.json", "2000", minimal},
+		{
+			"healthcheck",
+			"test-server/healthcheck.json",
+			"2001",
+			minimal,
+		},
+		{
+			"healthcheck-immediate-listen-start",
+			"test-server/healthcheck-immediate-listen-start.json",
+			"2002",
+			minimal,
+		},
+		{
+			"healthcheck-immediate-startup-delayed-healthcheck",
+			"test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
+			"2003",
+			minimal,
+		},
+		{
+			"healthcheck-immediate-startup",
+			"test-server/healthcheck-immediate-startup.json",
+			"2004",
+			minimal,
+		},
 	}
 
 	for _, testCase := range tests {
+		testCase := testCase
 		test.Run(testCase.Name, func(test *testing.T) {
 			test.Parallel()
 
@@ -127,14 +182,14 @@ func TestAppScenarios(test *testing.T) {
 				test.Fatalf("could not start application: %v", err)
 			}
 
-			defer func() {
+			defer func(cmd *exec.Cmd, port string) {
 				if err := stopApplication(cmd); err != nil {
 					test.Errorf("failed to stop application: %v", err)
 				}
-				if err := checkPortClosed(testCase.Port); err != nil {
-					test.Errorf("port %s is still open after application exit: %v", testCase.Port, err)
+				if err := checkPortClosed(port); err != nil {
+					test.Errorf("port %s is still open after application exit: %v", port, err)
 				}
-			}()
+			}(cmd, testCase.Port)
 
 			proxyAddress := fmt.Sprintf("localhost:%s", testCase.Port)
 			testCase.TestFunc(test, proxyAddress)

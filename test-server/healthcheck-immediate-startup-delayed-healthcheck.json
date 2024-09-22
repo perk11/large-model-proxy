@@ -1,0 +1,12 @@
+{
+  "Services": [
+    {
+      "Name": "test-server_healthcheck-immediate-startup-delayed-healthcheck",
+      "ListenPort": "2003",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12003",
+      "Command": "test-server/test-server",
+      "Args": "-p 12003 -healthcheck-port 2013 -sleep-before-listening-for-healthcheck 3s -startup-duration 5s"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "Services": [
+    {
+      "Name": "test-server_healthcheck-immediate-startup",
+      "ListenPort": "2004",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12004",
+      "Command": "test-server/test-server",
+      "Args": "-p 12004 -healthcheck-port 2014"
+    }
+  ]
+}

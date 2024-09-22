@@ -83,7 +83,7 @@ func listenOnMainPort(port *string, sleepDuration *time.Duration, startupDuratio
 	}
 }
 
-func healthCheckHandler(responseWriter http.ResponseWriter, request *http.Request) {
+func healthCheckHandler(responseWriter http.ResponseWriter, _ *http.Request) {
 	var response HealthcheckResponse
 	if appStarted {
 		response = HealthcheckResponse{

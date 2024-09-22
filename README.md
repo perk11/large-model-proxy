@@ -76,6 +76,8 @@ Below is an example config.json:
       "ProxyTargetPort": "18081",
       "Command": "/opt/llama.cpp/llama-server",
       "Args": "-m /opt/Gemma-27B-v1_Q4km.gguf -c 8192 -ngl 100 -t 4 --port 18081",
+      "HealthcheckCommand": "curl --fail http://localhost:8081/", 
+      "HealthcheckIntervalMilliseconds": 200,
       "RestartOnConnectionFailure": false,
       "ResourceRequirements": {
         "VRAM-GPU-1": 20000,

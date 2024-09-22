@@ -6,7 +6,9 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12004",
       "Command": "test-server/test-server",
-      "Args": "-p 12004 -healthcheck-port 2014"
+      "Args": "-p 12004 -healthcheck-port 2014",
+      "HealthcheckCommand": "curl --fail http://localhost:2014",
+      "HealthcheckIntervalMilliseconds": 200
     }
   ]
 }

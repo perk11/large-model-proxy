@@ -26,17 +26,19 @@ type Config struct {
 }
 
 type ServiceConfig struct {
-	Name                           string
-	ListenPort                     string
-	ProxyTargetHost                string
-	ProxyTargetPort                string
-	Command                        string
-	Args                           string
-	LogFilePath                    string
-	Workdir                        string
-	ShutDownAfterInactivitySeconds time.Duration
-	RestartOnConnectionFailure     bool
-	ResourceRequirements           map[string]int `json:"ResourceRequirements"`
+	Name                            string
+	ListenPort                      string
+	ProxyTargetHost                 string
+	ProxyTargetPort                 string
+	Command                         string
+	Args                            string
+	LogFilePath                     string
+	Workdir                         string
+	HealthcheckCommand              string
+	HealthcheckIntervalMilliseconds time.Duration
+	ShutDownAfterInactivitySeconds  time.Duration
+	RestartOnConnectionFailure      bool
+	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
 }
 type RunningService struct {
 	manageMutex          *sync.Mutex
@@ -268,8 +270,8 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		delete(resourceManager.runningServices, serviceConfig.Name)
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
+	performHealthCheck(serviceConfig)
 	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, 120*time.Second)
-	time.Sleep(2 * time.Second) //TODO: replace with a custom callback
 
 	runningService.cmd = cmd
 
@@ -289,6 +291,32 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	})
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 	return serviceConnection, nil
+}
+
+func performHealthCheck(serviceConfig ServiceConfig) {
+	if serviceConfig.HealthcheckCommand == "" {
+		return
+	}
+
+	log.Printf("[%s] Running healthcheck command \"%s\"", serviceConfig.Name, serviceConfig.HealthcheckCommand)
+	for {
+		cmd := exec.Command("sh", "-c", serviceConfig.HealthcheckCommand)
+		err := cmd.Run()
+
+		if err == nil {
+			log.Printf("[%s] Healthceck \"%s\" returned exit code 0, healthcheck completed", serviceConfig.Name, serviceConfig.HealthcheckCommand)
+			break
+		} else {
+			log.Printf(
+				"[%s] Healtcheck \"%s\" returned exit code %d, trying again in %dms",
+				serviceConfig.Name,
+				serviceConfig.HealthcheckCommand,
+				cmd.ProcessState.ExitCode(),
+				serviceConfig.HealthcheckIntervalMilliseconds,
+			)
+			time.Sleep(serviceConfig.HealthcheckIntervalMilliseconds * time.Millisecond)
+		}
+	}
 }
 
 func connectToService(serviceConfig ServiceConfig) net.Conn {

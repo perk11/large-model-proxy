@@ -1,7 +1,7 @@
 {
   "Services": [
     {
-      "Name": "test-server_healthcheck",
+      "Name": "test-server_healthcheck-stuck",
       "ListenPort": "2005",
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12005",

@@ -176,6 +176,9 @@ func startProxy(serviceConfig ServiceConfig) {
 	}(listener)
 
 	for {
+		if interrupted {
+			return
+		}
 		clientConnection, err := listener.Accept()
 		if err != nil {
 			log.Printf("[%s] Error accepting connection: %v", serviceConfig.Name, err)
@@ -191,6 +194,10 @@ func humanReadableConnection(conn net.Conn) string {
 	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 }
 func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
+	if interrupted {
+		_ = clientConnection.Close()
+		return
+	}
 	defer func(clientConnection net.Conn, serviceConfig ServiceConfig) {
 		log.Printf("[%s] Closing client connection %s on port %s", serviceConfig.Name, humanReadableConnection(clientConnection), serviceConfig.ListenPort)
 		err := clientConnection.Close()
@@ -218,6 +225,9 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
 }
 
 func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.Conn {
+	if interrupted {
+		return nil
+	}
 	var serviceConnection net.Conn
 	runningService, found := resourceManager.maybeGetRunningService(serviceConfig.Name)
 	if !found {
@@ -229,6 +239,9 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 		serviceConnection = serviceConn
 	} else {
 		if !runningService.manageMutex.TryLock() {
+			if interrupted {
+				return nil
+			}
 			//The service could be currently starting or stopping, so let's wait for that to finish and try again
 			runningService.manageMutex.Lock()
 			runningService.manageMutex.Unlock()
@@ -273,12 +286,20 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
 	performHealthCheck(serviceConfig)
+	if interrupted {
+		return nil, fmt.Errorf("interrupt signal was received")
+	}
 	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, 120*time.Second)
-
+	if interrupted {
+		return nil, fmt.Errorf("interrupt signal was received")
+	}
 	runningService.cmd = cmd
 
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {
+		if interrupted {
+			return
+		}
 		resourceManager.serviceMutex.Lock()
 		defer resourceManager.serviceMutex.Unlock()
 
@@ -291,6 +312,9 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		log.Printf("[%s] Idle timeout %s reached, stopping service", serviceConfig.Name, idleTimeout)
 		stopService(serviceConfig.Name)
 	})
+	if interrupted {
+		return nil, fmt.Errorf("interrupt signal was received")
+	}
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 	return serviceConnection, nil
 }
@@ -350,6 +374,9 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 func connectWithWaiting(serviceHost string, servicePort string, serviceName string, timeout time.Duration) net.Conn {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		if interrupted {
+			return nil
+		}
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), time.Second)
 		if err == nil {
 			return conn
@@ -524,7 +551,12 @@ func forwardConnection(clientConnection net.Conn, serviceConnection net.Conn, se
 }
 
 func stopService(serviceName string) {
-	resourceManager.runningServices[serviceName].manageMutex.Lock()
+	if interrupted {
+		//Shouldn't be necessary, but there might be some locks causing issues
+		resourceManager.runningServices[serviceName].manageMutex.TryLock()
+	} else {
+		resourceManager.runningServices[serviceName].manageMutex.Lock()
+	}
 	runningService := resourceManager.runningServices[serviceName]
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
@@ -555,7 +587,9 @@ func stopService(serviceName string) {
 	}
 
 	releaseResources(runningService.resourceRequirements)
-	resourceManager.runningServices[serviceName].manageMutex.Unlock()
+	if !interrupted {
+		resourceManager.runningServices[serviceName].manageMutex.Unlock()
+	}
 	delete(resourceManager.runningServices, serviceName)
 }
 

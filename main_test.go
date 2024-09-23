@@ -20,6 +20,9 @@ func connectOnly(test *testing.T, proxyAddress string) {
 		test.Error(err)
 		return
 	}
+	//give large-model-proxy time to start the service, so that it doesn't get killed before it started it
+	//which can lead to false positive passing tests
+	time.Sleep(1 * time.Second)
 }
 
 func minimal(test *testing.T, proxyAddress string) {
@@ -187,6 +190,12 @@ func TestAppScenarios(test *testing.T) {
 			"healthcheck-stuck",
 			"test-server/healthcheck-stuck.json",
 			"2005",
+			connectOnly,
+		},
+		{
+			"service-stuck-no-healthcheck",
+			"test-server/service-stuck-no-healthcheck.json",
+			"2006",
 			connectOnly,
 		},
 	}

@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+func connectOnly(test *testing.T, proxyAddress string) {
+	_, err := net.Dial("tcp", proxyAddress)
+	if err != nil {
+		test.Error(err)
+		return
+	}
+}
+
 func minimal(test *testing.T, proxyAddress string) {
 	conn, err := net.Dial("tcp", proxyAddress)
 	if err != nil {
@@ -76,7 +84,7 @@ func isProcessRunning(pid int) bool {
 	}
 	return false
 }
-func startLargeModelProxy(testCaseName string, configPath string) (*exec.Cmd, error) {
+func startLargeModelProxy(testCaseName string, configPath string, waitChannel chan error) (*exec.Cmd, error) {
 	cmd := exec.Command("./large-model-proxy", "-c", configPath)
 	logFilePath := fmt.Sprintf("logs/test_%s.log", testCaseName)
 	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -87,18 +95,17 @@ func startLargeModelProxy(testCaseName string, configPath string) (*exec.Cmd, er
 		log.Printf("Failed to open log file for test %s", logFilePath)
 	}
 	if err := cmd.Start(); err != nil {
+		waitChannel <- err
 		return nil, err
 	}
-	// Create a channel to receive the process exit status
-	done := make(chan error, 1)
 	go func() {
-		done <- cmd.Wait()
+		waitChannel <- cmd.Wait()
 	}()
 
 	time.Sleep(1 * time.Second)
 
 	select {
-	case err := <-done:
+	case err := <-waitChannel:
 		if err != nil {
 			return nil, fmt.Errorf("large-model-proxy exited prematurely with error %v", err)
 		} else {
@@ -118,17 +125,23 @@ func startLargeModelProxy(testCaseName string, configPath string) (*exec.Cmd, er
 	return cmd, nil
 }
 
-func stopApplication(cmd *exec.Cmd) error {
+func stopApplication(cmd *exec.Cmd, waitChannel chan error) error {
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		return err
 	}
-	err := cmd.Wait()
-	if err != nil && err.Error() != "waitid: no child processes" && err.Error() != "wait: no child processes" {
-		return err
-	}
-	return nil
-}
 
+	select {
+	case err := <-waitChannel:
+		if err != nil && err.Error() != "waitid: no child processes" && err.Error() != "wait: no child processes" {
+			return err
+		}
+		return nil
+	case <-time.After(15 * time.Second):
+		// Optionally kill the process if it hasn't exited
+		_ = cmd.Process.Kill()
+		return errors.New("large-model-proxy process did not stop within 15 seconds after receiving SIGINT")
+	}
+}
 func checkPortClosed(port string) error {
 	_, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", port), time.Second)
 	if err == nil {
@@ -170,26 +183,36 @@ func TestAppScenarios(test *testing.T) {
 			"2004",
 			minimal,
 		},
+		{
+			"healthcheck-stuck",
+			"test-server/healthcheck-stuck.json",
+			"2005",
+			connectOnly,
+		},
 	}
 
 	for _, testCase := range tests {
 		testCase := testCase
 		test.Run(testCase.Name, func(test *testing.T) {
 			test.Parallel()
-
-			cmd, err := startLargeModelProxy(testCase.Name, testCase.ConfigPath)
+			var waitChannel = make(chan error, 1)
+			cmd, err := startLargeModelProxy(testCase.Name, testCase.ConfigPath, waitChannel)
 			if err != nil {
 				test.Fatalf("could not start application: %v", err)
 			}
 
-			defer func(cmd *exec.Cmd, port string) {
-				if err := stopApplication(cmd); err != nil {
+			defer func(cmd *exec.Cmd, port string, waitChannel chan error) {
+				if cmd == nil {
+					test.Errorf("not stopping application since there was a start error: %v", err)
+					return
+				}
+				if err := stopApplication(cmd, waitChannel); err != nil {
 					test.Errorf("failed to stop application: %v", err)
 				}
 				if err := checkPortClosed(port); err != nil {
 					test.Errorf("port %s is still open after application exit: %v", port, err)
 				}
-			}(cmd, testCase.Port)
+			}(cmd, testCase.Port, waitChannel)
 
 			proxyAddress := fmt.Sprintf("localhost:%s", testCase.Port)
 			testCase.TestFunc(test, proxyAddress)

@@ -1,0 +1,14 @@
+{
+  "Services": [
+    {
+      "Name": "test-server_healthcheck",
+      "ListenPort": "2005",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12005",
+      "Command": "test-server/test-server",
+      "Args": "-p 12005 -healthcheck-port 2015",
+      "HealthcheckCommand": "false",
+      "HealthcheckIntervalMilliseconds": 200
+    }
+  ]
+}

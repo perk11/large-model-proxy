@@ -97,6 +97,7 @@ func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) Runn
 var (
 	config          Config
 	resourceManager ResourceManager
+	interrupted     bool = false
 )
 
 func main() {
@@ -124,6 +125,7 @@ func main() {
 	for {
 		receivedSignal := <-exit
 		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))
+		interrupted = true
 		// no need to unlock as os.Exit will be called
 		resourceManager.serviceMutex.Lock()
 		for name := range resourceManager.runningServices {
@@ -300,6 +302,9 @@ func performHealthCheck(serviceConfig ServiceConfig) {
 
 	log.Printf("[%s] Running healthcheck command \"%s\"", serviceConfig.Name, serviceConfig.HealthcheckCommand)
 	for {
+		if interrupted {
+			return
+		}
 		cmd := exec.Command("sh", "-c", serviceConfig.HealthcheckCommand)
 		err := cmd.Run()
 

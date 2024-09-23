@@ -27,6 +27,9 @@ jobs:
     - name: Create logs directory
       run: mkdir logs
 
+    - name: Build test-server
+      run: make build-test-server
+
     - name: Run Tests
       run: go test -v ./...
 

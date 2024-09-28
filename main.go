@@ -515,6 +515,10 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 		serviceConfig.Workdir,
 	)
 	cmd := exec.Command(serviceConfig.Command, strings.Split(serviceConfig.Args, " ")...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+		Pgid:    0,
+	}
 	if serviceConfig.Workdir != "" {
 		cmd.Dir = serviceConfig.Workdir
 	}
@@ -562,17 +566,17 @@ func stopService(serviceName string) {
 		runningService.idleTimer.Stop()
 	}
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
-		log.Printf("[%s] Sending SIGTERM to service process: %d", serviceName, runningService.cmd.Process.Pid)
-		err := runningService.cmd.Process.Signal(syscall.SIGTERM)
+		log.Printf("[%s] Sending SIGTERM to service process group: -%d", serviceName, runningService.cmd.Process.Pid)
+		err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGTERM)
 		if err != nil {
-			log.Printf("[%s] Failed to send SIGTERM to %d: %v", serviceName, runningService.cmd.Process.Pid, err)
+			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", serviceName, runningService.cmd.Process.Pid, err)
 		}
 
 		processExitedCleanly := waitForProcessToTerminate(runningService.cmd.Process)
 
 		if !processExitedCleanly {
-			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process %d", serviceName, runningService.cmd.Process.Pid)
-			err := runningService.cmd.Process.Kill()
+			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", serviceName, runningService.cmd.Process.Pid)
+			err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGKILL)
 			if err != nil {
 				log.Printf("[%s] Failed to kill service: %v", serviceName, err)
 				if runningService.cmd.ProcessState == nil {

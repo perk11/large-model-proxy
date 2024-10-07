@@ -25,11 +25,43 @@ func connectOnly(test *testing.T, proxyAddress string) {
 	time.Sleep(1 * time.Second)
 }
 
-func minimal(test *testing.T, proxyAddress string) {
+func idleTimeout(test *testing.T, proxyAddress string) {
+	pid := runReadPidCloseConnection(test, proxyAddress)
+	if pid == 0 {
+		//runReadPidCloseConnection already failed the test
+		return
+	}
+	secondPid := runReadPidCloseConnection(test, proxyAddress)
+	if secondPid != pid {
+		test.Errorf("pid is different during second connection")
+		return
+	}
+
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(pid) {
+		test.Errorf("Process is still running after connections is closed and ShutDownAfterInactivitySeconds have passed")
+		return
+	}
+
+	thirdPid := runReadPidCloseConnection(test, proxyAddress)
+	if thirdPid == 0 {
+		return
+	}
+	if thirdPid == pid {
+		test.Errorf("pid during third connection is the same as during first connection ")
+		return
+	}
+
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(pid) {
+		test.Errorf("Process is still running after connections is closed and ShutDownAfterInactivitySeconds have passed")
+	}
+}
+func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
 	conn, err := net.Dial("tcp", proxyAddress)
 	if err != nil {
 		test.Error(err)
-		return
+		return 0
 	}
 
 	buffer := make([]byte, 1024)
@@ -37,33 +69,38 @@ func minimal(test *testing.T, proxyAddress string) {
 	if err != nil {
 		if err != io.EOF {
 			test.Error(err)
-			return
+			return 0
 		}
 	}
 	pidString := string(buffer[:bytesRead])
 	if !isNumeric(pidString) {
 		test.Errorf("value \"%s\" is not numeric, expected a pid", pidString)
-		return
+		return 0
 	}
 	pidInt, err := strconv.Atoi(pidString)
 	if err != nil {
 		test.Error(err, pidString)
-		return
+		return 0
 	}
 	if pidInt <= 0 {
 		test.Errorf("value \"%s\" is not a valid pid", pidString)
-		return
+		return 0
 	}
 	if !isProcessRunning(pidInt) {
 		test.Errorf("process \"%s\" is not running while connection is still open", pidString)
-		return
+		return 0
 	}
 
 	err = conn.Close()
 	if err != nil {
 		test.Error(err)
-		return
+		return 0
 	}
+
+	return pidInt
+}
+func minimal(test *testing.T, proxyAddress string) {
+	runReadPidCloseConnection(test, proxyAddress)
 }
 
 func isNumeric(s string) bool {
@@ -197,6 +234,12 @@ func TestAppScenarios(test *testing.T) {
 			"test-server/service-stuck-no-healthcheck.json",
 			"2006",
 			connectOnly,
+		},
+		{
+			"idle-timeout",
+			"test-server/idle-timeout.json",
+			"2007",
+			idleTimeout,
 		},
 	}
 

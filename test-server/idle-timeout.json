@@ -1,0 +1,13 @@
+{
+  "ShutDownAfterInactivitySeconds": 3,
+  "Services": [
+    {
+      "Name": "test-server_healthcheck-stuck",
+      "ListenPort": "2007",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12007",
+      "Command": "test-server/test-server",
+      "Args": "-p 12007"
+    }
+  ]
+}

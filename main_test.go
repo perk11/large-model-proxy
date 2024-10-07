@@ -39,7 +39,7 @@ func idleTimeout(test *testing.T, proxyAddress string) {
 
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(pid) {
-		test.Errorf("Process is still running after connections is closed and ShutDownAfterInactivitySeconds have passed")
+		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
 		return
 	}
 
@@ -54,7 +54,7 @@ func idleTimeout(test *testing.T, proxyAddress string) {
 
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(pid) {
-		test.Errorf("Process is still running after connections is closed and ShutDownAfterInactivitySeconds have passed")
+		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
 	}
 }
 func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
@@ -182,92 +182,114 @@ func stopApplication(cmd *exec.Cmd, waitChannel chan error) error {
 		return errors.New("large-model-proxy process did not stop within 15 seconds after receiving SIGINT")
 	}
 }
-func checkPortClosed(port string) error {
-	_, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", port), time.Second)
+
+func checkPortClosed(address string) error {
+	_, err := net.DialTimeout("tcp", address, time.Second)
 	if err == nil {
-		return fmt.Errorf("port %s is still open", port)
+		return fmt.Errorf("port %s is still open", address)
 	}
 	return nil
 }
 
 func TestAppScenarios(test *testing.T) {
-
 	tests := []struct {
-		Name       string
-		ConfigPath string
-		Port       string
-		TestFunc   func(t *testing.T, proxyAddress string)
+		Name                          string
+		ConfigPath                    string
+		AddressesToCheckAfterStopping []string
+		TestFunc                      func(t *testing.T)
 	}{
-		{"minimal", "test-server/minimal.json", "2000", minimal},
 		{
-			"healthcheck",
-			"test-server/healthcheck.json",
-			"2001",
-			minimal,
+			Name:                          "minimal",
+			ConfigPath:                    "test-server/minimal.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2000"},
+			TestFunc: func(t *testing.T) {
+				minimal(t, "localhost:2000")
+			},
 		},
 		{
-			"healthcheck-immediate-listen-start",
-			"test-server/healthcheck-immediate-listen-start.json",
-			"2002",
-			minimal,
+			Name:                          "healthcheck",
+			ConfigPath:                    "test-server/healthcheck.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2001"},
+			TestFunc: func(t *testing.T) {
+				minimal(t, "localhost:2001")
+			},
 		},
 		{
-			"healthcheck-immediate-startup-delayed-healthcheck",
-			"test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
-			"2003",
-			minimal,
+			Name:                          "healthcheck-immediate-listen-start",
+			ConfigPath:                    "test-server/healthcheck-immediate-listen-start.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2002"},
+			TestFunc: func(t *testing.T) {
+				minimal(t, "localhost:2002")
+			},
 		},
 		{
-			"healthcheck-immediate-startup",
-			"test-server/healthcheck-immediate-startup.json",
-			"2004",
-			minimal,
+			Name:                          "healthcheck-immediate-startup-delayed-healthcheck",
+			ConfigPath:                    "test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2003"},
+			TestFunc: func(t *testing.T) {
+				minimal(t, "localhost:2003")
+			},
 		},
 		{
-			"healthcheck-stuck",
-			"test-server/healthcheck-stuck.json",
-			"2005",
-			connectOnly,
+			Name:                          "healthcheck-immediate-startup",
+			ConfigPath:                    "test-server/healthcheck-immediate-startup.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2004"},
+			TestFunc: func(t *testing.T) {
+				minimal(t, "localhost:2004")
+			},
 		},
 		{
-			"service-stuck-no-healthcheck",
-			"test-server/service-stuck-no-healthcheck.json",
-			"2006",
-			connectOnly,
+			Name:                          "healthcheck-stuck",
+			ConfigPath:                    "test-server/healthcheck-stuck.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2005"},
+			TestFunc: func(t *testing.T) {
+				connectOnly(t, "localhost:2005")
+			},
 		},
 		{
-			"idle-timeout",
-			"test-server/idle-timeout.json",
-			"2007",
-			idleTimeout,
+			Name:                          "service-stuck-no-healthcheck",
+			ConfigPath:                    "test-server/service-stuck-no-healthcheck.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2006"},
+			TestFunc: func(t *testing.T) {
+				connectOnly(t, "localhost:2006")
+			},
+		},
+		{
+			Name:                          "idle-timeout",
+			ConfigPath:                    "test-server/idle-timeout.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2007"},
+			TestFunc: func(t *testing.T) {
+				idleTimeout(t, "localhost:2007")
+			},
 		},
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
-		test.Run(testCase.Name, func(test *testing.T) {
-			test.Parallel()
-			var waitChannel = make(chan error, 1)
+		testCase := testCase // Capture range variable
+		test.Run(testCase.Name, func(t *testing.T) {
+			t.Parallel()
+			waitChannel := make(chan error, 1)
 			cmd, err := startLargeModelProxy(testCase.Name, testCase.ConfigPath, waitChannel)
 			if err != nil {
-				test.Fatalf("could not start application: %v", err)
+				t.Fatalf("could not start application: %v", err)
 			}
 
-			defer func(cmd *exec.Cmd, port string, waitChannel chan error) {
+			defer func() {
 				if cmd == nil {
-					test.Errorf("not stopping application since there was a start error: %v", err)
+					t.Errorf("not stopping application since there was a start error: %v", err)
 					return
 				}
 				if err := stopApplication(cmd, waitChannel); err != nil {
-					test.Errorf("failed to stop application: %v", err)
+					t.Errorf("failed to stop application: %v", err)
 				}
-				if err := checkPortClosed(port); err != nil {
-					test.Errorf("port %s is still open after application exit: %v", port, err)
+				for _, address := range testCase.AddressesToCheckAfterStopping {
+					if err := checkPortClosed(address); err != nil {
+						t.Errorf("port %s is still open after application exit: %v", address, err)
+					}
 				}
-			}(cmd, testCase.Port, waitChannel)
+			}()
 
-			proxyAddress := fmt.Sprintf("localhost:%s", testCase.Port)
-			testCase.TestFunc(test, proxyAddress)
+			testCase.TestFunc(t)
 		})
 	}
 }

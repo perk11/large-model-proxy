@@ -18,6 +18,7 @@ func main() {
 	healthCheckApiPort := flag.String("healthcheck-port", "", "Healthcheck API port to listen on. If not specified, healthcheck API is disabled")
 	durationToSleepBeforeListening := flag.Duration("sleep-before-listening", 0, "How much time to sleep before listening starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationStartup := flag.Duration("startup-duration", 0, "How much time to sleep after listening starts but before app is responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
+	durationRequestProcessing := flag.Duration("request-processing-duration", 0, "How much time to sleep after receiving a connection before responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	flag.Parse()
 
@@ -29,7 +30,7 @@ func main() {
 	if *healthCheckApiPort != "" {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
 	}
-	listenOnMainPort(port, durationToSleepBeforeListening, durationStartup)
+	listenOnMainPort(port, durationToSleepBeforeListening, durationStartup, durationRequestProcessing)
 
 }
 
@@ -38,7 +39,7 @@ type HealthcheckResponse struct {
 	Status  int    `json:"status"`
 }
 
-func listenOnMainPort(port *string, sleepDuration *time.Duration, startupDuration *time.Duration) {
+func listenOnMainPort(port *string, sleepDuration *time.Duration, startupDuration *time.Duration, requestProcessingDuration *time.Duration) {
 	time.Sleep(*sleepDuration)
 	time.AfterFunc(*startupDuration, func() {
 		appStarted = true
@@ -64,6 +65,10 @@ func listenOnMainPort(port *string, sleepDuration *time.Duration, startupDuratio
 		fmt.Println("Connection received.")
 		var contentToWriteToSocket string
 		if appStarted {
+			if requestProcessingDuration.Nanoseconds() > 0 {
+				fmt.Printf("Sleeping for %s before returning pid\n", requestProcessingDuration)
+				time.Sleep(*requestProcessingDuration)
+			}
 			fmt.Println("Responding with pid")
 			pid := os.Getpid()
 			contentToWriteToSocket = fmt.Sprintf("%d", pid)

@@ -57,13 +57,82 @@ func idleTimeout(test *testing.T, proxyAddress string) {
 		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
 	}
 }
-func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
-	conn, err := net.Dial("tcp", proxyAddress)
+
+func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serviceTwoAddress string) {
+	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		test.Error(err)
-		return 0
+		return
+	}
+	connTwo, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		test.Error(err)
+		return
+	}
+	pidOne := readPidFromOpenConnection(test, connOne)
+
+	err = connOne.Close()
+	if err != nil {
+		test.Error(err)
+	}
+	if pidOne == 0 {
+		//readPidFromOpenConnection already failed the test
+		return
+	}
+	pidTwo := readPidFromOpenConnection(test, connTwo)
+	if pidTwo == 0 {
+		//readPidFromOpenConnection already failed the test
+		return
+	}
+	if isProcessRunning(pidOne) {
+		test.Errorf("first service is still running even though it was supposed to be stopped")
+	}
+	err = connTwo.Close()
+	if err != nil {
+		test.Error(err)
+	}
+	if !isProcessRunning(pidTwo) {
+		test.Errorf("second service is not running right after closing connection")
 	}
 
+	time.Sleep(1 * time.Second)
+	newPid := runReadPidCloseConnection(test, serviceTwoAddress)
+	if newPid != pidTwo {
+		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+	}
+	time.Sleep(1 * time.Second)
+	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
+	if newPid != pidTwo {
+		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+	}
+	time.Sleep(1 * time.Second)
+	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
+	if newPid != pidTwo {
+		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+	}
+	time.Sleep(1 * time.Second)
+	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
+	if newPid != pidTwo {
+		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+	}
+	if !isProcessRunning(pidTwo) {
+		test.Errorf("second service is not running right after closing connection two")
+	}
+
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(pidTwo) {
+		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
+	}
+
+	// Maker sure large-model-proxy hasn't crashed
+	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
+	if newPid == pidTwo {
+		test.Errorf("second Service is reusing old pid, this should not be possible")
+	}
+
+	runReadPidCloseConnection(test, serviceOneAddress)
+}
+func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
 	buffer := make([]byte, 1024)
 	bytesRead, err := conn.Read(buffer)
 	if err != nil {
@@ -86,8 +155,19 @@ func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
 		test.Errorf("value \"%s\" is not a valid pid", pidString)
 		return 0
 	}
-	if !isProcessRunning(pidInt) {
-		test.Errorf("process \"%s\" is not running while connection is still open", pidString)
+	return pidInt
+}
+func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
+	conn, err := net.Dial("tcp", proxyAddress)
+	if err != nil {
+		test.Error(err)
+		return 0
+	}
+
+	pid := readPidFromOpenConnection(test, conn)
+
+	if !isProcessRunning(pid) {
+		test.Errorf("process \"%d\" is not running while connection is still open", pid)
 		return 0
 	}
 
@@ -97,7 +177,7 @@ func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
 		return 0
 	}
 
-	return pidInt
+	return pid
 }
 func minimal(test *testing.T, proxyAddress string) {
 	runReadPidCloseConnection(test, proxyAddress)
@@ -260,6 +340,14 @@ func TestAppScenarios(test *testing.T) {
 			AddressesToCheckAfterStopping: []string{"localhost:2007"},
 			TestFunc: func(t *testing.T) {
 				idleTimeout(t, "localhost:2007")
+			},
+		},
+		{
+			Name:                          "idle-timeout-after-stop",
+			ConfigPath:                    "test-server/idle-timeout-after-stop.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2008", "localhost:2009"},
+			TestFunc: func(t *testing.T) {
+				idleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
 			},
 		},
 	}

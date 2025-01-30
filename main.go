@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -23,6 +24,7 @@ type Config struct {
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *time.Duration
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
+	LlmApi                                                        LlmApi
 }
 
 type ServiceConfig struct {
@@ -38,6 +40,8 @@ type ServiceConfig struct {
 	HealthcheckIntervalMilliseconds time.Duration
 	ShutDownAfterInactivitySeconds  time.Duration
 	RestartOnConnectionFailure      bool
+	Llm                             bool
+	LlmModels                       []string
 	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
 }
 type RunningService struct {
@@ -48,11 +52,23 @@ type RunningService struct {
 	idleTimer            *time.Timer
 	resourceRequirements map[string]int
 }
-
+type LlmApi struct {
+	ListenPort string
+}
 type ResourceManager struct {
 	serviceMutex    *sync.Mutex
 	resourcesInUse  map[string]int
 	runningServices map[string]RunningService
+}
+type LlmApiModels struct {
+	Object string        `json:"object"`
+	Data   []LlmApiModel `json:"data"`
+}
+type LlmApiModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by"`
+	Created int64  `json:"created"`
 }
 
 func (rm ResourceManager) getRunningService(name string) RunningService {
@@ -120,7 +136,12 @@ func main() {
 	}
 
 	for _, service := range config.Services {
-		go startProxy(service)
+		if service.ListenPort != "" {
+			go startProxy(service)
+		}
+	}
+	if config.LlmApi.ListenPort != "" {
+		go startLlmApi(config.LlmApi, config.Services)
 	}
 	for {
 		receivedSignal := <-exit
@@ -133,6 +154,50 @@ func main() {
 		}
 		log.Printf("Done, exiting")
 		os.Exit(0)
+	}
+}
+func createLlmApiModel(name string) LlmApiModel {
+	return LlmApiModel{
+		ID:      name,
+		Object:  "model",
+		OwnedBy: "large-model-proxy",
+		Created: time.Now().Unix(),
+	}
+}
+func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
+	mux := http.NewServeMux()
+	modelToServiceMap := make(map[string]ServiceConfig)
+	models := make([]LlmApiModel, 0)
+	for _, service := range services {
+		if !service.Llm {
+			continue
+		}
+		if service.LlmModels == nil || len(service.LlmModels) == 0 {
+			modelToServiceMap[service.Name] = service
+			models = append(models, createLlmApiModel(service.Name))
+		} else {
+			for _, model := range service.LlmModels {
+				modelToServiceMap[model] = service
+				models = append(models, createLlmApiModel(model))
+			}
+		}
+	}
+	modelsResponse := LlmApiModels{
+		Object: "models",
+		Data:   models,
+	}
+	mux.HandleFunc("/v1/models", func(responseWriter http.ResponseWriter, request *http.Request) {
+		err := json.NewEncoder(responseWriter).Encode(modelsResponse)
+		if err != nil {
+			http.Error(responseWriter, "Failed to produce JSON response", http.StatusInternalServerError)
+			log.Printf("Failed to produce /v1/models JSON response: %s\n", err.Error())
+		}
+	})
+
+	log.Printf("LLM API server Listening on port %s", llmApi.ListenPort)
+	err := http.ListenAndServe(":"+llmApi.ListenPort, mux)
+	if err != nil {
+		log.Fatalf("Could not start LLM API server: %s\n", err.Error())
 	}
 }
 func signalToString(sig os.Signal) string {

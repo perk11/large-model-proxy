@@ -1,0 +1,47 @@
+{
+  "LlmApi": {
+    "ListenPort": "2016"
+  },
+  "ShutDownAfterInactivitySeconds": 5,
+  "Services": [
+    {
+      "Name": "test-llm-1",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12017",
+      "Command": "test-server/test-server",
+      "Args": "-llm-port 12017 -p 12018",
+      "Llm": true
+    },
+    {
+      "Name": "test-llm-2",
+      "ListenPort": "2019",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12019",
+      "Command": "test-server/test-server",
+      "Args": "-llm-port 12019 -p 12020",
+      "Llm": true,
+      "LlmModels": [
+        "fizz",
+        "buzz"
+      ]
+    },
+    {
+      "Name": "test-non-llm-1",
+      "ListenPort": "2021",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12021",
+      "Command": "test-server/test-server",
+      "Args": "-p 12021",
+      "Llm": false
+    },
+    {
+      "Name": "test-non-llm-2",
+      "ListenPort": "2022",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12022",
+      "Command": "test-server/test-server",
+      "Args": "-llm-port 12022 -p 12023",
+      "Llm": false
+    }
+  ]
+}

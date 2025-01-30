@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -132,6 +134,84 @@ func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serv
 
 	runReadPidCloseConnection(test, serviceOneAddress)
 }
+
+func llmApi(test *testing.T) {
+	//sanity check  that nothing is running before initial connection
+	for _, address := range []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"} {
+		if err := checkPortClosed(address); err != nil {
+			test.Errorf("port %s is still open before test server is supposed to be started: %v", address, err)
+		}
+	}
+	client := &http.Client{}
+	// Create a new GET request
+	req, err := http.NewRequest("GET", "http://localhost:2016/v1/models", nil)
+	if err != nil {
+		test.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		test.Fatalf("/v1/models Request failed: %v", err)
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			test.Error(err)
+		}
+	}(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	var modelsResp LlmApiModels
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		test.Fatalf("Failed to decode /v1/models response: %v", err)
+	}
+
+	expectedIDs := []string{"test-llm-1", "fizz", "buzz"}
+	foundIDs := make([]bool, len(expectedIDs))
+
+	if len(modelsResp.Data) != len(expectedIDs) {
+		test.Fatalf("Expected %d models, but got %d", len(expectedIDs), len(modelsResp.Data))
+	}
+	for _, model := range modelsResp.Data {
+		idx := indexOf(expectedIDs, model.ID)
+		if idx == -1 {
+			test.Errorf("Unexpected model ID returned: %s", model.ID)
+			continue
+		}
+		foundIDs[idx] = true
+
+		if model.Object == "" {
+			test.Errorf("Model %s has an empty 'object' field", model.ID)
+		}
+		if model.Created == 0 {
+			test.Errorf("Model %s has 'created' == 0 (expected a non-zero timestamp)", model.ID)
+		}
+		if model.OwnedBy == "" {
+			test.Errorf("Model %s has an empty 'owned_by' field", model.ID)
+		}
+	}
+
+	//Still no services should be running
+	for _, address := range []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"} {
+		if err := checkPortClosed(address); err != nil {
+			test.Errorf("port %s is still open before test server is supposed to be started: %v", address, err)
+		}
+	}
+
+}
+
+// indexOf returns the index of target in arr, or -1 if not found.
+func indexOf(arr []string, target string) int {
+	for i, val := range arr {
+		if val == target {
+			return i
+		}
+	}
+	return -1
+}
+
 func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
 	buffer := make([]byte, 1024)
 	bytesRead, err := conn.Read(buffer)
@@ -348,6 +428,28 @@ func TestAppScenarios(test *testing.T) {
 			AddressesToCheckAfterStopping: []string{"localhost:2008", "localhost:2009"},
 			TestFunc: func(t *testing.T) {
 				idleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
+			},
+		},
+		{
+			Name:       "llm-api",
+			ConfigPath: "test-server/llm-api.json",
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2016",
+				"localhost:2018",
+				"localhost:2019",
+				"localhost:2020",
+				"localhost:2021",
+				"localhost:2022",
+				"localhost:12017",
+				"localhost:12018",
+				"localhost:12019",
+				"localhost:12020",
+				"localhost:12021",
+				"localhost:12022",
+				"localhost:12023",
+			},
+			TestFunc: func(t *testing.T) {
+				llmApi(t)
 			},
 		},
 	}

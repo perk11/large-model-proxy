@@ -11,27 +11,30 @@ import (
 	"time"
 )
 
-var appStarted bool = false
+var appStarted = false
 
 func main() {
-	port := flag.String("p", "", "Port to listen on (required)")
+	port := flag.String("p", "", "Main port to listen on")
 	healthCheckApiPort := flag.String("healthcheck-port", "", "Healthcheck API port to listen on. If not specified, healthcheck API is disabled")
 	durationToSleepBeforeListening := flag.Duration("sleep-before-listening", 0, "How much time to sleep before listening starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationStartup := flag.Duration("startup-duration", 0, "How much time to sleep after listening starts but before app is responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationRequestProcessing := flag.Duration("request-processing-duration", 0, "How much time to sleep after receiving a connection before responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
+	llmApiPort := flag.String("llm-port", "", "LLM API port to listen on. If not specified, LLM API is disabled")
 	flag.Parse()
 
-	if *port == "" {
-		fmt.Println("The -p parameter is required to specify the port")
-		flag.Usage() // Print usage information
-		os.Exit(1)
+	if *port != "" {
+		go listenOnMainPort(port, durationToSleepBeforeListening, durationStartup, durationRequestProcessing)
 	}
 	if *healthCheckApiPort != "" {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
 	}
-	listenOnMainPort(port, durationToSleepBeforeListening, durationStartup, durationRequestProcessing)
-
+	if *llmApiPort != "" {
+		go llmApiListen(llmApiPort)
+	}
+	for {
+		time.Sleep(time.Duration(1<<63 - 1))
+	}
 }
 
 type HealthcheckResponse struct {
@@ -118,4 +121,142 @@ func healthCheckListen(port *string, sleepDuration *time.Duration) {
 	if err := http.ListenAndServe(":"+*port, nil); err != nil {
 		log.Fatalf("Could not start healthcheck server: %s\n", err.Error())
 	}
+}
+
+type LLMCompletionRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
+}
+
+type LLMCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Text         string `json:"text"`
+		Index        int    `json:"index"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func llmApiListen(port *string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", handleCompletions)
+
+	log.Printf("LLM server listening on :%s", *port)
+	if err := http.ListenAndServe(":"+*port, mux); err != nil {
+		log.Fatalf("Could not start LLM server: %s\n", err.Error())
+	}
+}
+func handleCompletions(w http.ResponseWriter, r *http.Request) {
+	completionRequest, done := parseAndValidateRequestAndPrepareResponseHeaders(w, r)
+	if done {
+		return
+	}
+	if completionRequest.Stream {
+		handleStreamCompletion(w, completionRequest)
+		return
+	}
+
+	sampleResponse := LLMCompletionResponse{
+		ID:      "test-id",
+		Object:  "text_completion",
+		Created: time.Now().Unix(),
+		Model:   completionRequest.Model,
+		Choices: []struct {
+			Text         string "json:\"text\""
+			Index        int    "json:\"index\""
+			FinishReason string "json:\"finish_reason\""
+		}{
+			{
+				Text:         "\nThis is a test completion text.",
+				Index:        0,
+				FinishReason: "stop",
+			},
+		},
+		Usage: struct {
+			PromptTokens     int "json:\"prompt_tokens\""
+			CompletionTokens int "json:\"completion_tokens\""
+			TotalTokens      int "json:\"total_tokens\""
+		}{
+			PromptTokens:     5,
+			CompletionTokens: 7,
+			TotalTokens:      12,
+		},
+	}
+
+	if err := json.NewEncoder(w).Encode(sampleResponse); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+func handleStreamCompletion(w http.ResponseWriter, userReq LLMCompletionRequest) {
+	w.Header().Set("Content-Type", "text/event-stream") // SSE or similar
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported by this server", http.StatusInternalServerError)
+		return
+	}
+
+	partials := []string{
+		"Hello, this is chunk #1. ",
+		"Now chunk #2 arrives. ",
+		"Finally, chunk #3 completes the message.",
+	}
+
+	for _, chunk := range partials {
+		responseData := fmt.Sprintf(
+			`data: {"id":"test-id","object":"text_completion","created":%d,"model":"%s","choices":[{"text":%q}]}`,
+			time.Now().Unix(),
+			userReq.Model,
+			chunk,
+		)
+
+		// Write chunk + double newline (required in SSE)
+		_, err := fmt.Fprint(w, responseData+"\n\n")
+		if err != nil {
+			print("Failed to write response to client: ", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Flush immediately so the client sees each chunk
+		flusher.Flush()
+		time.Sleep(time.Second)
+	}
+
+	// After all chunks, send a final “done” message)
+	_, err := fmt.Fprint(w, "data: [DONE]\n\n")
+	if err != nil {
+		print("Failed to write [DONE] to client: ", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	flusher.Flush()
+}
+
+func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *http.Request) (LLMCompletionRequest, bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return LLMCompletionRequest{}, true
+	}
+
+	var completionRequest LLMCompletionRequest
+	if err := json.NewDecoder(r.Body).Decode(&completionRequest); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse request body: %v", err), http.StatusBadRequest)
+		return LLMCompletionRequest{}, true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	return completionRequest, false
 }

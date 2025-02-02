@@ -178,6 +178,9 @@ func llmApi(test *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
 	}
+	if resp.Header.Get("Content-Type") != "application/json; charset=utf-8" {
+		test.Fatalf("Expected Content Type \"application/json; charset=utf-8\", got %s", resp.Header.Get("Content-Type"))
+	}
 
 	var modelsResp LlmApiModels
 	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {

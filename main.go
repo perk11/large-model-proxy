@@ -231,9 +231,10 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 		Data:   models,
 	}
 	mux.HandleFunc("/v1/models", func(responseWriter http.ResponseWriter, request *http.Request) {
+		responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 		err := json.NewEncoder(responseWriter).Encode(modelsResponse)
 		if err != nil {
-			http.Error(responseWriter, "Failed to produce JSON response", http.StatusInternalServerError)
+			http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
 			log.Printf("Failed to produce /v1/models JSON response: %s\n", err.Error())
 		}
 	})

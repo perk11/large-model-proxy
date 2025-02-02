@@ -123,13 +123,13 @@ func healthCheckListen(port *string, sleepDuration *time.Duration) {
 	}
 }
 
-type LLMCompletionRequest struct {
+type LlmCompletionRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 	Stream bool   `json:"stream"`
 }
 
-type LLMCompletionResponse struct {
+type LlmCompletionResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
@@ -148,14 +148,19 @@ type LLMCompletionResponse struct {
 
 func llmApiListen(port *string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/chat/completions", handleCompletions)
-
+	mux.HandleFunc("/v1/completions", handleCompletions)
+	server := &http.Server{
+		Addr:    ":" + *port,
+		Handler: mux,
+	}
+	server.SetKeepAlivesEnabled(false)
 	log.Printf("LLM server listening on :%s", *port)
-	if err := http.ListenAndServe(":"+*port, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Could not start LLM server: %s\n", err.Error())
 	}
 }
 func handleCompletions(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 	completionRequest, done := parseAndValidateRequestAndPrepareResponseHeaders(w, r)
 	if done {
 		return
@@ -165,7 +170,7 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sampleResponse := LLMCompletionResponse{
+	sampleResponse := LlmCompletionResponse{
 		ID:      "test-id",
 		Object:  "text_completion",
 		Created: time.Now().Unix(),
@@ -176,7 +181,7 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 			FinishReason string "json:\"finish_reason\""
 		}{
 			{
-				Text:         "\nThis is a test completion text.",
+				Text:         fmt.Sprintf("\nThis is a test completion text.\n Your prompt was:\n<prompt>%s</prompt>", completionRequest.Prompt),
 				Index:        0,
 				FinishReason: "stop",
 			},
@@ -198,10 +203,10 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleStreamCompletion(w http.ResponseWriter, userReq LLMCompletionRequest) {
+func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompletionRequest) {
 	w.Header().Set("Content-Type", "text/event-stream") // SSE or similar
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Connection", "close")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -213,13 +218,14 @@ func handleStreamCompletion(w http.ResponseWriter, userReq LLMCompletionRequest)
 		"Hello, this is chunk #1. ",
 		"Now chunk #2 arrives. ",
 		"Finally, chunk #3 completes the message.",
+		fmt.Sprintf("Your prompt was:\n<prompt>%s</prompt>", completionRequest.Prompt),
 	}
 
 	for _, chunk := range partials {
 		responseData := fmt.Sprintf(
 			`data: {"id":"test-id","object":"text_completion","created":%d,"model":"%s","choices":[{"text":%q}]}`,
 			time.Now().Unix(),
-			userReq.Model,
+			completionRequest.Model,
 			chunk,
 		)
 
@@ -246,16 +252,16 @@ func handleStreamCompletion(w http.ResponseWriter, userReq LLMCompletionRequest)
 	flusher.Flush()
 }
 
-func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *http.Request) (LLMCompletionRequest, bool) {
+func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *http.Request) (LlmCompletionRequest, bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return LLMCompletionRequest{}, true
+		return LlmCompletionRequest{}, true
 	}
 
-	var completionRequest LLMCompletionRequest
+	var completionRequest LlmCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&completionRequest); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to parse request body: %v", err), http.StatusBadRequest)
-		return LLMCompletionRequest{}, true
+		return LlmCompletionRequest{}, true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	return completionRequest, false

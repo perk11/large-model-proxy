@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,10 +13,28 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+type LlmCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Text         string `json:"text"`
+		Index        int    `json:"index"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
 
 func connectOnly(test *testing.T, proxyAddress string) {
 	_, err := net.Dial("tcp", proxyAddress)
@@ -137,11 +157,7 @@ func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serv
 
 func llmApi(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
-	for _, address := range []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"} {
-		if err := checkPortClosed(address); err != nil {
-			test.Errorf("port %s is still open before test server is supposed to be started: %v", address, err)
-		}
-	}
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 	client := &http.Client{}
 	// Create a new GET request
 	req, err := http.NewRequest("GET", "http://localhost:2016/v1/models", nil)
@@ -193,13 +209,232 @@ func llmApi(test *testing.T) {
 		}
 	}
 
+	resp = sendCompletionRequest(test, "http://localhost:2016", LlmCompletionRequest{
+		Model:  "non-existent",
+		Prompt: "This is a test prompt\nЭто проверочный промт\n这是一个测试提示",
+		Stream: false,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		test.Fatalf("Expected status code 400, got %d", resp.StatusCode)
+	}
+	if err := resp.Body.Close(); err != nil {
+		test.Error(err)
+	}
+
 	//Still no services should be running
-	for _, address := range []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"} {
-		if err := checkPortClosed(address); err != nil {
-			test.Errorf("port %s is still open before test server is supposed to be started: %v", address, err)
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionRequest(test, "http://localhost:2016", "test-llm-1")
+	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
+	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+	time.Sleep(4 * time.Second)
+
+	if isProcessRunning(llm1Pid) {
+		test.Fatalf("test-llm-1 service is still running, but inactivity timeout should have shut it down by now")
+	}
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionRequest(test, "http://localhost:2016", "fizz")
+	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+
+	testCompletionRequest(test, "http://localhost:2016", "buzz")
+	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
+	time.Sleep(4 * time.Second)
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+
+	testCompletionRequest(test, "http://localhost:2019", "foo")
+	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
+
+	testCompletionStreaming(test)
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
+}
+
+func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []string) {
+	for _, address := range servicesToCheckForClosedPorts {
+		err := checkPortClosed(address)
+		if err != nil {
+			test.Errorf("Port %s is open when service is not supposed to be running", address)
+		}
+	}
+}
+
+func testCompletionStreaming(t *testing.T) {
+	address := "http://localhost:2016"
+	model := "fizz"
+
+	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
+	reqBodyStruct := LlmCompletionRequest{
+		Model:  model,
+		Prompt: testPrompt,
+		Stream: true,
+	}
+
+	reqBody, err := json.Marshal(reqBodyStruct)
+	if err != nil {
+		t.Fatalf("Failed to marshal JSON: %v", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/completions", address)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Streaming request failed: %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	// We expect multiple SSE “data:” lines. Let’s read them line-by-line.
+	scanner := bufio.NewScanner(resp.Body)
+
+	var allChunks []string
+	doneReceived := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip empty lines (SSE typically separates events by a blank line)
+		if line == "" {
+			continue
+		}
+
+		// SSE lines that carry data start with "data:"
+		if strings.HasPrefix(line, "data: ") {
+			// The rest after "data: " can be JSON or the [DONE] marker
+			payload := strings.TrimPrefix(line, "data: ")
+
+			// Check if we're done
+			if payload == "[DONE]" {
+				doneReceived = true
+				break
+			}
+
+			// Otherwise, parse JSON chunk
+			var chunkResp LlmCompletionResponse
+			if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
+				t.Fatalf("Error unmarshalling SSE chunk JSON: %v\nLine: %s", err, line)
+			}
+
+			if len(chunkResp.Choices) == 0 {
+				t.Fatalf("Received chunk without choices: %+v", chunkResp)
+			}
+
+			allChunks = append(allChunks, chunkResp.Choices[0].Text)
 		}
 	}
 
+	if !doneReceived {
+		t.Fatalf("Did not receive [DONE] marker in SSE stream")
+	}
+	expectedChunks := []string{
+		"Hello, this is chunk #1. ",
+		"Now chunk #2 arrives. ",
+		"Finally, chunk #3 completes the message.",
+		fmt.Sprintf("Your prompt was:\n<prompt>%s</prompt>", testPrompt),
+	}
+
+	if len(allChunks) != len(expectedChunks) {
+		t.Fatalf("Expected %d chunks, got %d\nChunks: %+v", len(expectedChunks), len(allChunks), allChunks)
+	}
+
+	for i, expected := range expectedChunks {
+		if allChunks[i] != expected {
+			t.Fatalf("Mismatch in chunk #%d.\nExpected: %q\nGot:      %q", i+1, expected, allChunks[i])
+		}
+	}
+}
+func testCompletionRequest(test *testing.T, address string, model string) {
+	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
+
+	// Prepare request body
+	completionReq := LlmCompletionRequest{
+		Model:  model,
+		Prompt: testPrompt,
+		Stream: false,
+	}
+	completionResp := sendCompletionRequestExpectingSuccess(test, address, completionReq)
+	if len(completionResp.Choices) == 0 {
+		test.Fatalf("No choices returned in completion response: %+v", completionResp)
+	}
+	expected := fmt.Sprintf(
+		"\nThis is a test completion text.\n Your prompt was:\n<prompt>%s</prompt>",
+		testPrompt,
+	)
+
+	got := completionResp.Choices[0].Text
+	if got != expected {
+		test.Fatalf("Completion text mismatch.\nExpected:\n%q\nGot:\n%q", expected, got)
+	}
+
+	if completionResp.Model != model {
+		test.Fatalf("Model mismatch.\nExpected:\n%q\nGot:\n%q", model, completionResp.Model)
+	}
+}
+
+func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq LlmCompletionRequest) LlmCompletionResponse {
+	resp := sendCompletionRequest(test, address, completionReq)
+	defer func(Body io.ReadCloser) {
+		if cerr := Body.Close(); cerr != nil {
+			test.Error(cerr)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	var completionResp LlmCompletionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&completionResp); err != nil {
+		test.Fatalf("Failed to decode /v1/completions response: %v", err)
+	}
+	return completionResp
+}
+
+func sendCompletionRequest(test *testing.T, address string, completionReq LlmCompletionRequest) *http.Response {
+	reqBody, err := json.Marshal(completionReq)
+	if err != nil {
+		test.Fatalf("Failed to marshal JSON body: %v", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/completions", address)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		test.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	client.Timeout = 5 * time.Second
+	resp, err := client.Do(req)
+	if err != nil {
+		test.Fatalf("/v1/completions Request failed: %v", err)
+	}
+
+	return resp
 }
 
 // indexOf returns the index of target in arr, or -1 if not found.

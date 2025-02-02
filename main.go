@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -70,6 +71,11 @@ type LlmApiModel struct {
 	OwnedBy string `json:"owned_by"`
 	Created int64  `json:"created"`
 }
+type LlmCompletionRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
+}
 
 func (rm ResourceManager) getRunningService(name string) RunningService {
 	rm.serviceMutex.Lock()
@@ -113,7 +119,7 @@ func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) Runn
 var (
 	config          Config
 	resourceManager ResourceManager
-	interrupted     bool = false
+	interrupted     = false
 )
 
 func main() {
@@ -164,7 +170,44 @@ func createLlmApiModel(name string) LlmApiModel {
 		Created: time.Now().Unix(),
 	}
 }
+
+type rawCaptureConnection struct {
+	net.Conn
+	mutex  sync.Mutex
+	buffer *bytes.Buffer
+}
+
+func (rcc *rawCaptureConnection) Read(p []byte) (int, error) {
+	n, err := rcc.Conn.Read(p)
+	if n > 0 {
+		rcc.mutex.Lock()
+		rcc.buffer.Write(p[:n])
+		rcc.mutex.Unlock()
+	}
+	return n, err
+}
+
+type rawCaptureListener struct {
+	net.Listener
+}
+
+func (rawCaptureListener *rawCaptureListener) Accept() (net.Conn, error) {
+	connection, err := rawCaptureListener.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &rawCaptureConnection{
+		Conn:   connection,
+		buffer: new(bytes.Buffer),
+	}, nil
+}
+
+type contextKey string
+
+var rawConnectionContextKey = contextKey("rawConn")
+
 func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
+
 	mux := http.NewServeMux()
 	modelToServiceMap := make(map[string]ServiceConfig)
 	models := make([]LlmApiModel, 0)
@@ -172,6 +215,7 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 		if !service.Llm {
 			continue
 		}
+		// If the service doesn't define specific model names, assume the service name is the model
 		if service.LlmModels == nil || len(service.LlmModels) == 0 {
 			modelToServiceMap[service.Name] = service
 			models = append(models, createLlmApiModel(service.Name))
@@ -193,12 +237,98 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 			log.Printf("Failed to produce /v1/models JSON response: %s\n", err.Error())
 		}
 	})
+	mux.HandleFunc("/v1/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
+		handleCompletions(responseWriter, request, &modelToServiceMap)
+	})
 
-	log.Printf("LLM API server Listening on port %s", llmApi.ListenPort)
-	err := http.ListenAndServe(":"+llmApi.ListenPort, mux)
+	// Create a custom http.Server that uses ConnContext
+	// to attach the *rawCaptureConnection to each request's Context.
+	server := &http.Server{
+		Addr:    ":" + llmApi.ListenPort,
+		Handler: mux,
+		// Whenever the server accepts a new net.Conn, this callback runs.
+		// If it's our rawCaptureConnection, store it in the request context.
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			if rcc, ok := c.(*rawCaptureConnection); ok {
+				return context.WithValue(ctx, rawConnectionContextKey, rcc)
+			}
+			return ctx
+		},
+	}
+
+	ln, err := net.Listen("tcp", server.Addr)
 	if err != nil {
+		log.Fatalf("[LLM API Server] Could not listen on %s: %v", server.Addr, err)
+	}
+	wrappedLn := &rawCaptureListener{Listener: ln}
+
+	log.Printf("[LLM API Server] Listening on port %s", llmApi.ListenPort)
+	if err := server.Serve(wrappedLn); err != nil {
 		log.Fatalf("Could not start LLM API server: %s\n", err.Error())
 	}
+}
+func handleCompletions(responseWriter http.ResponseWriter, request *http.Request, modelToServiceMap *map[string]ServiceConfig) {
+	if request.Method != http.MethodPost {
+		http.Error(responseWriter, "Only POST requests allowed", http.StatusBadRequest)
+		return
+	}
+	originalBody := request.Body
+	defer func(originalBody io.ReadCloser) {
+		err := originalBody.Close()
+		if err != nil {
+			log.Printf("[LLM API Server] Error closing request body: %s\n", err.Error())
+		}
+	}(originalBody)
+	//TODO: parse request directly
+	bodyBytes, err := io.ReadAll(originalBody)
+	if err != nil {
+		log.Printf("[LLM API Server] Error reading request body: %v\n", err)
+		http.Error(responseWriter, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	var completionRequest LlmCompletionRequest
+	if err := json.Unmarshal(bodyBytes, &completionRequest); err != nil {
+		log.Printf("[LLM API Server] Error decoding /v1/completions request: %v\n", err)
+		http.Error(responseWriter, fmt.Sprintf("Failed to parse request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	service, ok := (*modelToServiceMap)[completionRequest.Model]
+	if !ok {
+		log.Printf("[LLM API Server] Unknown model requested: %v\n", completionRequest.Model)
+		http.Error(responseWriter, fmt.Sprintf("Unknown model: %v", completionRequest.Model), http.StatusBadRequest)
+		return
+	}
+	log.Printf("[LLM API Server] Sending /v1/completions request through to %s\n", service.Name)
+	originalWriter := responseWriter
+	hijacker, ok := originalWriter.(http.Hijacker)
+	if !ok {
+		log.Printf("[LLM API Server] Error: Failed to forward connection: web server does not support hijacking. This could only happen if LLM API Server is running in HTTP/2 mode. Please use HTTP/1.1\n")
+		http.Error(responseWriter, "Request forwarding is not possible, please use HTTP 1.1", http.StatusInternalServerError)
+		return
+	}
+	clientConnection, bufrw, err := hijacker.Hijack()
+	if err != nil {
+		log.Printf("[LLM API Server] Failed to forward connection: %v", err)
+		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	//TODO: check if we can stop buffering and clean up the buffer now
+	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
+	if !ok {
+		panic("Failed to get raw connection")
+	}
+	rawRequestBytes := rawConnection.buffer.Bytes()
+
+	if bufrw.Reader.Buffered() > 0 {
+		bufBytes := make([]byte, bufrw.Reader.Buffered())
+		if _, err := bufrw.Read(bufBytes); err != nil {
+			log.Printf("[LLM API Server] Error reading buffered data: : %v", err)
+		}
+		bodyBytes = append(bodyBytes, bufBytes...)
+	}
+	handleConnection(clientConnection, service, rawRequestBytes)
 }
 func signalToString(sig os.Signal) string {
 	switch sig {
@@ -249,7 +379,8 @@ func startProxy(serviceConfig ServiceConfig) {
 			log.Printf("[%s] Error accepting connection: %v", serviceConfig.Name, err)
 			continue
 		}
-		go handleConnection(clientConnection, serviceConfig)
+		log.Printf("[%s] New client connection received %s", serviceConfig.Name, humanReadableConnection(clientConnection))
+		go handleConnection(clientConnection, serviceConfig, []byte{})
 	}
 }
 func humanReadableConnection(conn net.Conn) string {
@@ -258,7 +389,8 @@ func humanReadableConnection(conn net.Conn) string {
 	}
 	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 }
-func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
+
+func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, dataToSendToServiceBeforeForwardingFromClient []byte) {
 	if interrupted {
 		_ = clientConnection.Close()
 		return
@@ -270,7 +402,6 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
 			log.Printf("[%s] Failed to close client connection %s: %v", serviceConfig.Name, humanReadableConnection(clientConnection), err)
 		}
 	}(clientConnection, serviceConfig)
-	log.Printf("[%s] New client connection received %s", serviceConfig.Name, humanReadableConnection(clientConnection))
 	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 
 	if serviceConnection == nil {
@@ -286,6 +417,13 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig) {
 		}
 		trackServiceLastUsed(serviceConfig)
 	}(serviceConnection)
+
+	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
+		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
+			log.Printf("[%s] Error writing bytes read from client to service: %v", serviceConfig.Name, err)
+			return
+		}
+	}
 	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
 }
 

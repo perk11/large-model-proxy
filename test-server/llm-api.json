@@ -2,7 +2,7 @@
   "LlmApi": {
     "ListenPort": "2016"
   },
-  "ShutDownAfterInactivitySeconds": 5,
+  "ShutDownAfterInactivitySeconds": 3,
   "Services": [
     {
       "Name": "test-llm-1",

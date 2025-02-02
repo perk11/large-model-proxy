@@ -147,9 +147,55 @@ type LlmCompletionResponse struct {
 	} `json:"usage"`
 }
 
+type LlmChatRequest struct {
+	Model    string        `json:"model"`
+	Messages []ChatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+}
+
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type ChatCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"` // e.g. "chat.completion"
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int         `json:"index"`
+		Message      ChatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+type ChatCompletionChunk struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"` // e.g. "chat.completion.chunk"
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index int `json:"index"`
+		// "delta" is how OpenAI streams partial content
+		Delta struct {
+			Role    string `json:"role,omitempty"`
+			Content string `json:"content,omitempty"`
+		} `json:"delta"`
+		FinishReason *string `json:"finish_reason,omitempty"`
+	} `json:"choices"`
+}
+
 func llmApiListen(port *string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/completions", handleCompletions)
+	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
+
 	server := &http.Server{
 		Addr:    ":" + *port,
 		Handler: mux,
@@ -268,4 +314,164 @@ func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *
 	}
 	w.Header().Set("Content-Type", "application/json")
 	return completionRequest, false
+}
+
+func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received Chat request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+	chatRequest, done := parseAndValidateChatRequest(w, r)
+	if done {
+		return
+	}
+	if chatRequest.Stream {
+		handleStreamChat(w, chatRequest)
+	} else {
+		handleSingleChatCompletion(w, chatRequest)
+	}
+}
+
+func handleSingleChatCompletion(w http.ResponseWriter, chatRequest LlmChatRequest) {
+	sampleResponse := ChatCompletionResponse{
+		ID:      "chatcmpl-test-id",
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   chatRequest.Model,
+		Choices: []struct {
+			Index        int         `json:"index"`
+			Message      ChatMessage `json:"message"`
+			FinishReason string      `json:"finish_reason"`
+		}{
+			{
+				Index: 0,
+				Message: ChatMessage{
+					Role: "assistant",
+					Content: fmt.Sprintf("Hello! This is a response from the test Chat endpoint. The last message was: %q",
+						chatRequest.Messages[len(chatRequest.Messages)-1].Content),
+				},
+				FinishReason: "stop",
+			},
+		},
+		Usage: struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		}{
+			PromptTokens:     5,
+			CompletionTokens: 7,
+			TotalTokens:      12,
+		},
+	}
+
+	if err := json.NewEncoder(w).Encode(sampleResponse); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+func handleStreamChat(w http.ResponseWriter, chatRequest LlmChatRequest) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "close")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		log.Printf("Failed to get http.Flusher")
+		http.Error(w, "Streaming not supported by this server", http.StatusInternalServerError)
+		return
+	}
+
+	chunks := []string{
+		"Hello, this is chunk #1.",
+		"Your last message was:\n",
+		chatRequest.Messages[len(chatRequest.Messages)-1].Content,
+	}
+
+	for i, chunk := range chunks {
+		response := ChatCompletionChunk{
+			ID:      "chatcmpl-test-id",
+			Object:  "chat.completion.chunk",
+			Created: time.Now().Unix(),
+			Model:   chatRequest.Model,
+			Choices: []struct {
+				Index int `json:"index"`
+				Delta struct {
+					Role    string `json:"role,omitempty"`
+					Content string `json:"content,omitempty"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason,omitempty"`
+			}{
+				{
+					Index: 0,
+				},
+			},
+		}
+
+		if i == 0 {
+			response.Choices[0].Delta.Role = "assistant"
+		}
+		response.Choices[0].Delta.Content = chunk
+
+		data, err := json.Marshal(response)
+		if err != nil {
+			log.Printf("Failed to encode response: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// SSE requires each message to start with `data: `
+		_, err = fmt.Fprintf(w, "data: %s\n\n", data)
+		if err != nil {
+			log.Printf("Failed to write SSE to client: %v", err)
+			return
+		}
+		flusher.Flush()
+		time.Sleep(time.Millisecond * 300)
+	}
+
+	doneChunkData := map[string]interface{}{
+		"id":      "chatcmpl-test-id",
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   chatRequest.Model,
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"delta":         map[string]interface{}{},
+				"finish_reason": "stop",
+			},
+		},
+	}
+
+	doneChunkBytes, err := json.Marshal(doneChunkData)
+	if err != nil {
+		log.Println("Error converting DONE chunk to JSON:", err)
+		return
+	}
+
+	_, err = w.Write(doneChunkBytes)
+	if err != nil {
+		log.Printf("Failed to write done chunk to client: %v", err)
+	}
+
+	_, err = fmt.Fprint(w, "data: [DONE]\n\n")
+	if err != nil {
+		log.Printf("Failed to write [DONE] to client: %v", err)
+	}
+	flusher.Flush()
+}
+
+func parseAndValidateChatRequest(w http.ResponseWriter, r *http.Request) (LlmChatRequest, bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return LlmChatRequest{}, true
+	}
+
+	var req LlmChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Failed to parse chat request body: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to parse chat request body: %v", err), http.StatusBadRequest)
+		return LlmChatRequest{}, true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	return req, false
 }

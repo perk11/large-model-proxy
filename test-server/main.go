@@ -110,6 +110,7 @@ func healthCheckHandler(responseWriter http.ResponseWriter, _ *http.Request) {
 	responseWriter.WriteHeader(response.Status)
 
 	if err := json.NewEncoder(responseWriter).Encode(response); err != nil {
+		log.Printf("Failed to encode healthcheck response: %v", err)
 		http.Error(responseWriter, "Failed to encode JSON response", http.StatusInternalServerError)
 	}
 }
@@ -198,18 +199,20 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(sampleResponse); err != nil {
+		log.Printf("Failed to encode completion response: %s\n", err.Error())
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
 }
 
 func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompletionRequest) {
-	w.Header().Set("Content-Type", "text/event-stream") // SSE or similar
+	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "close")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		log.Printf("Failed to get http.Flusher for stream completion\n")
 		http.Error(w, "Streaming not supported by this server", http.StatusInternalServerError)
 		return
 	}
@@ -245,7 +248,7 @@ func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompleti
 	// After all chunks, send a final “done” message)
 	_, err := fmt.Fprint(w, "data: [DONE]\n\n")
 	if err != nil {
-		print("Failed to write [DONE] to client: ", err.Error())
+		log.Printf("Failed to write [DONE] to client: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

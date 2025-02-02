@@ -239,7 +239,7 @@ func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompleti
 
 		// Flush immediately so the client sees each chunk
 		flusher.Flush()
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 300)
 	}
 
 	// After all chunks, send a final “done” message)

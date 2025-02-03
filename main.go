@@ -84,11 +84,13 @@ func (rm ResourceManager) maybeGetRunningServiceNoLock(name string) (RunningServ
 
 func (rm ResourceManager) maybeGetRunningService(name string) (RunningService, bool) {
 	if interrupted {
-		rm.serviceMutex.TryLock()
+		if rm.serviceMutex.TryLock() {
+			defer rm.serviceMutex.Unlock()
+		}
 	} else {
 		rm.serviceMutex.Lock()
+		defer rm.serviceMutex.Unlock()
 	}
-	defer rm.serviceMutex.Unlock()
 	return rm.maybeGetRunningServiceNoLock(name)
 }
 

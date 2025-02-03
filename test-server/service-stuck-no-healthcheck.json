@@ -6,7 +6,7 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12006",
       "Command": "test-server/test-server",
-      "Args": "-p 12006 -startup-duration 1d"
+      "Args": "-p 12006 -startup-duration 24h"
     }
   ]
 }

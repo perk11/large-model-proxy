@@ -176,19 +176,19 @@ type ChatCompletionResponse struct {
 }
 
 type ChatCompletionChunk struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"` // e.g. "chat.completion.chunk"
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index int `json:"index"`
-		// "delta" is how OpenAI streams partial content
-		Delta struct {
-			Role    string `json:"role,omitempty"`
-			Content string `json:"content,omitempty"`
-		} `json:"delta"`
-		FinishReason *string `json:"finish_reason,omitempty"`
-	} `json:"choices"`
+	ID      string                 `json:"id"`
+	Object  string                 `json:"object"` // e.g. "chat.completion.chunk"
+	Created int64                  `json:"created"`
+	Model   string                 `json:"model"`
+	Choices []ChatCompletionChoice `json:"choices"`
+}
+type ChatCompletionChoice struct {
+	Index int `json:"index"`
+	Delta struct {
+		Role    string `json:"role,omitempty"`
+		Content string `json:"content,omitempty"`
+	} `json:"delta"`
+	FinishReason *string `json:"finish_reason,omitempty"`
 }
 
 func llmApiListen(port *string) {
@@ -392,14 +392,7 @@ func handleStreamChat(w http.ResponseWriter, chatRequest LlmChatRequest) {
 			Object:  "chat.completion.chunk",
 			Created: time.Now().Unix(),
 			Model:   chatRequest.Model,
-			Choices: []struct {
-				Index int `json:"index"`
-				Delta struct {
-					Role    string `json:"role,omitempty"`
-					Content string `json:"content,omitempty"`
-				} `json:"delta"`
-				FinishReason *string `json:"finish_reason,omitempty"`
-			}{
+			Choices: []ChatCompletionChoice{
 				{
 					Index: 0,
 				},
@@ -411,53 +404,48 @@ func handleStreamChat(w http.ResponseWriter, chatRequest LlmChatRequest) {
 		}
 		response.Choices[0].Delta.Content = chunk
 
-		data, err := json.Marshal(response)
-		if err != nil {
-			log.Printf("Failed to encode response: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if !sendResponseChunk(w, response, flusher) {
 			return
 		}
-
-		// SSE requires each message to start with `data: `
-		_, err = fmt.Fprintf(w, "data: %s\n\n", data)
-		if err != nil {
-			log.Printf("Failed to write SSE to client: %v", err)
-			return
-		}
-		flusher.Flush()
 		time.Sleep(time.Millisecond * 300)
 	}
-
-	doneChunkData := map[string]interface{}{
-		"id":      "chatcmpl-test-id",
-		"object":  "chat.completion.chunk",
-		"created": time.Now().Unix(),
-		"model":   chatRequest.Model,
-		"choices": []map[string]interface{}{
+	finishReason := "stop"
+	sendResponseChunk(w, ChatCompletionChunk{
+		ID:      "chatcmpl-test-id",
+		Object:  "chat.completion.chunk",
+		Created: time.Now().Unix(),
+		Model:   chatRequest.Model,
+		Choices: []ChatCompletionChoice{
 			{
-				"index":         0,
-				"delta":         map[string]interface{}{},
-				"finish_reason": "stop",
+				Index:        0,
+				FinishReason: &finishReason,
 			},
 		},
-	}
+	}, flusher)
 
-	doneChunkBytes, err := json.Marshal(doneChunkData)
-	if err != nil {
-		log.Println("Error converting DONE chunk to JSON:", err)
-		return
-	}
-
-	_, err = w.Write(doneChunkBytes)
-	if err != nil {
-		log.Printf("Failed to write done chunk to client: %v", err)
-	}
-
-	_, err = fmt.Fprint(w, "data: [DONE]\n\n")
+	_, err := fmt.Fprint(w, "data: [DONE]\n\n")
 	if err != nil {
 		log.Printf("Failed to write [DONE] to client: %v", err)
 	}
 	flusher.Flush()
+}
+
+func sendResponseChunk(responseWriter http.ResponseWriter, chatCompletionChunk ChatCompletionChunk, flusher http.Flusher) bool {
+	data, err := json.Marshal(chatCompletionChunk)
+	if err != nil {
+		log.Printf("Failed to encode chatCompletionChunk: %v", err)
+		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+
+	// SSE requires each message to start with `data: `
+	_, err = fmt.Fprintf(responseWriter, "data: %s\n\n", data)
+	if err != nil {
+		log.Printf("Failed to write SSE to client: %v", err)
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 func parseAndValidateChatRequest(w http.ResponseWriter, r *http.Request) (LlmChatRequest, bool) {

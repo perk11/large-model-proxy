@@ -19,6 +19,7 @@ import (
 	"time"
 )
 
+// LlmCompletionResponse is what /v1/completions returns
 type LlmCompletionResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -28,6 +29,44 @@ type LlmCompletionResponse struct {
 		Text         string `json:"text"`
 		Index        int    `json:"index"`
 		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// LlmCompletionRequest is used by /v1/completions
+type LlmCompletionRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
+}
+
+// LlmChatCompletionRequest is used by /v1/chat/completions
+type LlmChatCompletionRequest struct {
+	Model    string        `json:"model,omitempty"`
+	Messages []ChatMessage `json:"messages,omitempty"`
+	Stream   bool          `json:"stream,omitempty"`
+}
+
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// LlmChatCompletionResponse is what /v1/chat/completions returns
+type LlmChatCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int         `json:"index"`
+		Message      ChatMessage `json:"message"`
+		Delta        ChatMessage `json:"delta"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -158,8 +197,8 @@ func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serv
 func llmApi(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
 	client := &http.Client{}
-	// Create a new GET request
 	req, err := http.NewRequest("GET", "http://localhost:2016/v1/models", nil)
 	if err != nil {
 		test.Fatalf("Failed to create request: %v", err)
@@ -228,8 +267,15 @@ func llmApi(test *testing.T) {
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
 	testCompletionRequest(test, "http://localhost:2016", "test-llm-1")
+	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionStreamingExpectingSuccess(test, "test-llm-1")
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
+
 	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
 	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
 	time.Sleep(4 * time.Second)
 
 	if isProcessRunning(llm1Pid) {
@@ -237,9 +283,18 @@ func llmApi(test *testing.T) {
 	}
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
-	testCompletionRequest(test, "http://localhost:2016", "fizz")
-	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "fizz")
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionRequest(test, "http://localhost:2016", "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionStreamingExpectingSuccess(test, "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
 		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
@@ -255,8 +310,6 @@ func llmApi(test *testing.T) {
 
 	testCompletionRequest(test, "http://localhost:2019", "foo")
 	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
-
-	testCompletionStreaming(test)
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
 		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
@@ -273,10 +326,9 @@ func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []strin
 	}
 }
 
-func testCompletionStreaming(t *testing.T) {
+// testCompletionStreamingExpectingSuccess checks streaming completions from /v1/completions
+func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 	address := "http://localhost:2016"
-	model := "fizz"
-
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
 	reqBodyStruct := LlmCompletionRequest{
 		Model:  model,
@@ -284,91 +336,24 @@ func testCompletionStreaming(t *testing.T) {
 		Stream: true,
 	}
 
-	reqBody, err := json.Marshal(reqBodyStruct)
-	if err != nil {
-		t.Fatalf("Failed to marshal JSON: %v", err)
-	}
-
 	url := fmt.Sprintf("%s/v1/completions", address)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("Streaming request failed: %v", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
-	}
-
-	// We expect multiple SSE “data:” lines. Let’s read them line-by-line.
-	scanner := bufio.NewScanner(resp.Body)
-
-	var allChunks []string
-	doneReceived := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Skip empty lines (SSE typically separates events by a blank line)
-		if line == "" {
-			continue
-		}
-
-		// SSE lines that carry data start with "data:"
-		if strings.HasPrefix(line, "data: ") {
-			// The rest after "data: " can be JSON or the [DONE] marker
-			payload := strings.TrimPrefix(line, "data: ")
-
-			// Check if we're done
-			if payload == "[DONE]" {
-				doneReceived = true
-				break
-			}
-
-			// Otherwise, parse JSON chunk
-			var chunkResp LlmCompletionResponse
-			if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
-				t.Fatalf("Error unmarshalling SSE chunk JSON: %v\nLine: %s", err, line)
-			}
-
-			if len(chunkResp.Choices) == 0 {
-				t.Fatalf("Received chunk without choices: %+v", chunkResp)
-			}
-
-			allChunks = append(allChunks, chunkResp.Choices[0].Text)
-		}
-	}
-
-	if !doneReceived {
-		t.Fatalf("Did not receive [DONE] marker in SSE stream")
-	}
-	expectedChunks := []string{
+	testStreamingRequest(t, url, reqBodyStruct, []string{
 		"Hello, this is chunk #1. ",
 		"Now chunk #2 arrives. ",
 		"Finally, chunk #3 completes the message.",
 		fmt.Sprintf("Your prompt was:\n<prompt>%s</prompt>", testPrompt),
-	}
-
-	if len(allChunks) != len(expectedChunks) {
-		t.Fatalf("Expected %d chunks, got %d\nChunks: %+v", len(expectedChunks), len(allChunks), allChunks)
-	}
-
-	for i, expected := range expectedChunks {
-		if allChunks[i] != expected {
-			t.Fatalf("Mismatch in chunk #%d.\nExpected: %q\nGot:      %q", i+1, expected, allChunks[i])
-		}
-	}
+	},
+		func(t *testing.T, payload string) string {
+			var chunkResp LlmCompletionResponse
+			if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
+				t.Fatalf("Error unmarshalling SSE chunk JSON: %v", err)
+			}
+			if len(chunkResp.Choices) == 0 {
+				t.Fatalf("Received chunk without choices: %+v", chunkResp)
+			}
+			return chunkResp.Choices[0].Text
+		},
+	)
 }
 func testCompletionRequest(test *testing.T, address string, model string) {
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
@@ -396,6 +381,171 @@ func testCompletionRequest(test *testing.T, address string, model string) {
 	if completionResp.Model != model {
 		test.Fatalf("Model mismatch.\nExpected:\n%q\nGot:\n%q", model, completionResp.Model)
 	}
+}
+
+// testChatCompletionRequestExpectingSuccess checks a non-streaming chat completion
+func testChatCompletionRequestExpectingSuccess(t *testing.T, address, model string) {
+	messages := []ChatMessage{
+		{Role: "system", Content: "You are a helpful AI assistant."},
+		{Role: "user", Content: "Hello, how are you?"},
+	}
+
+	chatReq := LlmChatCompletionRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   false,
+	}
+
+	chatResp := sendChatCompletionRequestExpectingSuccess(t, address, chatReq)
+	if len(chatResp.Choices) == 0 {
+		t.Fatalf("No choices returned in chat completion response: %+v", chatResp)
+	}
+
+	expected := fmt.Sprintf("Hello! This is a response from the test Chat endpoint. The last message was: %q", messages[len(messages)-1].Content)
+	got := chatResp.Choices[0].Message.Content
+	if got != expected {
+		t.Fatalf("Chat completion text mismatch.\nExpected:\n%q\nGot:\n%q", expected, got)
+	}
+
+	if chatResp.Model != model {
+		t.Fatalf("Model mismatch.\nExpected:\n%q\nGot:\n%q", model, chatResp.Model)
+	}
+}
+
+// testChatCompletionStreamingExpectingSuccess checks streaming chat completions from /v1/chat/completions
+func testChatCompletionStreamingExpectingSuccess(t *testing.T, address, model string) {
+	messages := []ChatMessage{
+		{Role: "system", Content: "You are a helpful AI assistant."},
+		{Role: "user", Content: "Tell me something interesting."},
+		{Role: "assistant", Content: "I absolutely will not"},
+		{Role: "user", Content: "Thanks\nfor\nnothing!"},
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", address)
+	testStreamingRequest(t, url, LlmChatCompletionRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   true,
+	}, []string{
+		"Hello, this is chunk #1.",
+		"Your last message was:\n",
+		"Thanks\nfor\nnothing!",
+		"", //done chunk which doesn't have a delta
+	}, func(t *testing.T, payload string) string {
+		var chunkResp LlmChatCompletionResponse
+		if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
+			t.Fatalf("Error unmarshalling SSE chunk JSON: %v", err)
+		}
+		if len(chunkResp.Choices) == 0 {
+			t.Fatalf("Received chunk without choices: %+v", chunkResp)
+		}
+		chunk := chunkResp.Choices[0].Delta.Content
+		return chunk
+	},
+	)
+}
+
+func testStreamingRequest(t *testing.T, url string, requestBodyObject any, expectedChunks []string, readChunkFunc func(t *testing.T, payload string) string) {
+
+	reqBody, err := json.Marshal(requestBodyObject)
+	if err != nil {
+		t.Fatalf("%s: Failed to marshal JSON: %v", url, err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		t.Fatalf("%s, Failed to create request: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s: Streaming request failed: %v", url, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s: Expected status code 200, got %d", url, resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var allChunks []string
+	doneReceived := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			payload := strings.TrimPrefix(line, "data: ")
+			if payload == "[DONE]" {
+				doneReceived = true
+				break
+			}
+
+			chunk := readChunkFunc(t, payload)
+			allChunks = append(allChunks, chunk)
+		}
+	}
+
+	if !doneReceived {
+		t.Fatalf("%s: Did not receive [DONE] marker in SSE stream", url)
+	}
+
+	if len(allChunks) != len(expectedChunks) {
+		t.Fatalf("%s: Expected %d chunks, got %d\nChunks: %+v", url, len(expectedChunks), len(allChunks), allChunks)
+	}
+
+	for i, expected := range expectedChunks {
+		if allChunks[i] != expected {
+			t.Fatalf("%s: Mismatch in chunk #%d.\nExpected: %q\nGot: %q", url, i+1, expected, allChunks[i])
+		}
+	}
+}
+
+func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq LlmChatCompletionRequest) LlmChatCompletionResponse {
+	resp := sendChatCompletionRequest(t, address, chatReq)
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	var chatResp LlmChatCompletionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		t.Fatalf("Failed to decode /v1/chat/completions response: %v", err)
+	}
+	return chatResp
+}
+
+// sendChatCompletionRequest sends a POST to /v1/chat/completions with the given JSON body
+func sendChatCompletionRequest(t *testing.T, address string, chatReq LlmChatCompletionRequest) *http.Response {
+	reqBody, err := json.Marshal(chatReq)
+	if err != nil {
+		t.Fatalf("Failed to marshal JSON body: %v", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", address)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("/v1/chat/completions request failed: %v", err)
+	}
+	return resp
 }
 
 func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq LlmCompletionRequest) LlmCompletionResponse {
@@ -436,7 +586,6 @@ func sendCompletionRequest(test *testing.T, address string, completionReq LlmCom
 	if err != nil {
 		test.Fatalf("/v1/completions Request failed: %v", err)
 	}
-
 	return resp
 }
 

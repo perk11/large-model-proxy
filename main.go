@@ -19,7 +19,6 @@ import (
 	"syscall"
 	"time"
 )
-import _ "net/http/pprof"
 
 type Config struct {
 	ShutDownAfterInactivitySeconds                                time.Duration
@@ -135,9 +134,6 @@ var (
 )
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 

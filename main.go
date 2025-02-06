@@ -247,12 +247,17 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 			http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
 			log.Printf("Failed to produce /v1/models JSON response: %s\n", err.Error())
 		}
+		resetConnectionBuffer(request)
 	})
 	mux.HandleFunc("/v1/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
-		handleCompletions(responseWriter, request, &modelToServiceMap)
+		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
+			resetConnectionBuffer(request)
+		}
 	})
 	mux.HandleFunc("/v1/chat/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
-		handleCompletions(responseWriter, request, &modelToServiceMap)
+		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
+			resetConnectionBuffer(request)
+		}
 	})
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		//404
@@ -262,6 +267,7 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 			fmt.Sprintf("%s %s is not supoprted by large-model-proxy", request.Method, request.RequestURI),
 			http.StatusNotFound,
 		)
+		resetConnectionBuffer(request)
 	})
 
 	// Create a custom http.Server that uses ConnContext
@@ -290,10 +296,21 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 		log.Fatalf("Could not start LLM API server: %s\n", err.Error())
 	}
 }
-func handleCompletions(responseWriter http.ResponseWriter, request *http.Request, modelToServiceMap *map[string]ServiceConfig) {
+
+// resetConnectionBuffer clears the buffer so that if another request is received through the same connection, it starts from scratch
+func resetConnectionBuffer(request *http.Request) {
+	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
+	if !ok {
+		panic("Failed to get raw connection")
+	}
+	rawConnection.buffer = new(bytes.Buffer)
+}
+
+// handleCompletions returns true if connection was proxied, false on HTTP error
+func handleCompletions(responseWriter http.ResponseWriter, request *http.Request, modelToServiceMap *map[string]ServiceConfig) bool {
 	if request.Method != http.MethodPost {
 		http.Error(responseWriter, "Only POST requests allowed", http.StatusBadRequest)
-		return
+		return false
 	}
 	originalBody := request.Body
 	defer func(originalBody io.ReadCloser) {
@@ -307,20 +324,20 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 	if err != nil {
 		log.Printf("[LLM API Server] Error reading request body: %v\n", err)
 		http.Error(responseWriter, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
-		return
+		return false
 	}
 
 	model, ok := extractModelFromRequest(request.URL.String(), bodyBytes)
 	if !ok {
 		http.Error(responseWriter, fmt.Sprintf("Failed to parse request: %v", err), http.StatusBadRequest)
-		return
+		return false
 	}
 
 	service, ok := (*modelToServiceMap)[model]
 	if !ok {
 		log.Printf("[LLM API Server] Unknown model requested: %v\n", model)
 		http.Error(responseWriter, fmt.Sprintf("Unknown model: %v", model), http.StatusBadRequest)
-		return
+		return false
 	}
 	log.Printf("[LLM API Server] Sending %s request through to %s\n", request.URL, service.Name)
 	originalWriter := responseWriter
@@ -328,13 +345,13 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 	if !ok {
 		log.Printf("[LLM API Server] Error: Failed to forward connection: web server does not support hijacking. This could only happen if LLM API Server is running in HTTP/2 mode. Please use HTTP/1.1\n")
 		http.Error(responseWriter, "Request forwarding is not possible, please use HTTP 1.1", http.StatusInternalServerError)
-		return
+		return false
 	}
 	clientConnection, bufrw, err := hijacker.Hijack()
 	if err != nil {
 		log.Printf("[LLM API Server] Failed to forward connection: %v", err)
 		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
-		return
+		return false
 	}
 	//TODO: check if we can stop buffering and clean up the buffer now
 	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
@@ -351,6 +368,7 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 		bodyBytes = append(bodyBytes, bufBytes...)
 	}
 	handleConnection(clientConnection, service, rawRequestBytes)
+	return true
 }
 
 // extractModelFromRequest returns model name and whether reading model name was successful

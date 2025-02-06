@@ -1,0 +1,15 @@
+{
+  "LlmApi": {
+    "ListenPort": "2024"
+  },
+  "Services": [
+    {
+      "Name": "test-llm-keep-alive",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12025",
+      "Command": "test-server/test-server",
+      "Args": "-llm-port 12025 -p 12026",
+      "Llm": true
+    }
+  ]
+}

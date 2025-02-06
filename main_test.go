@@ -199,34 +199,81 @@ func llmApi(test *testing.T) {
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "http://localhost:2016/v1/models", nil)
-	if err != nil {
-		test.Fatalf("Failed to create request: %v", err)
+	resp := modelsRequestExpectingSuccess(test, "http://localhost:2016/v1/models", client)
+	assertModelsResponse(test, []string{"test-llm-1", "fizz", "buzz"}, resp)
+
+	resp = sendCompletionRequest(test, "http://localhost:2016", LlmCompletionRequest{
+		Model:  "non-existent",
+		Prompt: "This is a test prompt\nЭто проверочный промт\n这是一个测试提示",
+		Stream: false,
+	}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		test.Fatalf("Expected status code 400, got %d", resp.StatusCode)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		test.Fatalf("/v1/models Request failed: %v", err)
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			test.Error(err)
-		}
-	}(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
-	}
-	if resp.Header.Get("Content-Type") != "application/json; charset=utf-8" {
-		test.Fatalf("Expected Content Type \"application/json; charset=utf-8\", got %s", resp.Header.Get("Content-Type"))
+	if err := resp.Body.Close(); err != nil {
+		test.Error(err)
 	}
 
+	//Still no services should be running
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionRequest(test, "http://localhost:2016", "test-llm-1", nil)
+	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionStreamingExpectingSuccess(test, "test-llm-1")
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
+
+	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
+	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	time.Sleep(4 * time.Second)
+
+	if isProcessRunning(llm1Pid) {
+		test.Fatalf("test-llm-1 service is still running, but inactivity timeout should have shut it down by now")
+	}
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionRequest(test, "http://localhost:2016", "fizz", nil)
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+
+	testCompletionStreamingExpectingSuccess(test, "fizz")
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+
+	testCompletionRequest(test, "http://localhost:2016", "buzz", nil)
+	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
+	time.Sleep(4 * time.Second)
+	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+
+	testCompletionRequest(test, "http://localhost:2019", "foo", nil)
+	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(llm2Pid) {
+		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	}
+	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
+}
+
+func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Response) {
 	var modelsResp LlmApiModels
 	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
 		test.Fatalf("Failed to decode /v1/models response: %v", err)
 	}
 
-	expectedIDs := []string{"test-llm-1", "fizz", "buzz"}
 	foundIDs := make([]bool, len(expectedIDs))
 
 	if len(modelsResp.Data) != len(expectedIDs) {
@@ -250,71 +297,61 @@ func llmApi(test *testing.T) {
 			test.Errorf("Model %s has an empty 'owned_by' field", model.ID)
 		}
 	}
+}
+func llmApiReusingConnection(test *testing.T) {
+	//sanity check  that nothing is running before initial connection
+	assertPortsAreClosed(test, []string{"localhost:12025", "localhost:12026"})
+	client := &http.Client{}
+	resp := modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
+	assertModelsResponse(test, []string{"test-llm-keep-alive"}, resp)
+	resp = modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
+	assertModelsResponse(test, []string{"test-llm-keep-alive"}, resp)
 
-	resp = sendCompletionRequest(test, "http://localhost:2016", LlmCompletionRequest{
-		Model:  "non-existent",
-		Prompt: "This is a test prompt\nЭто проверочный промт\n这是一个测试提示",
-		Stream: false,
-	})
-	if resp.StatusCode != http.StatusBadRequest {
-		test.Fatalf("Expected status code 400, got %d", resp.StatusCode)
+	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
+	//TODO: Enable Keep-Alive in test server
+	//TODO: add streaming request
+	//TODO: add assertions about number of connections open
+
+	req, err := http.NewRequest("GET", "http://localhost:2024/non-existent", nil)
+	if err != nil {
+		test.Fatalf("Failed to create request: %v", err)
 	}
-	if err := resp.Body.Close(); err != nil {
+	resp, err = client.Do(req)
+	if err != nil {
+		test.Fatalf("/non-existent Request failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusNotFound {
+		test.Fatalf("Expected status code 404, got %d", resp.StatusCode)
+	}
+	//TODO: this is not maintaining a connection currently, fix this
+	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
+
+	err = resp.Body.Close()
+	if err != nil {
 		test.Error(err)
 	}
+}
 
-	//Still no services should be running
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testCompletionRequest(test, "http://localhost:2016", "test-llm-1")
-	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testCompletionStreamingExpectingSuccess(test, "test-llm-1")
-	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
-	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
-
-	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
-	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	time.Sleep(4 * time.Second)
-
-	if isProcessRunning(llm1Pid) {
-		test.Fatalf("test-llm-1 service is still running, but inactivity timeout should have shut it down by now")
+func modelsRequestExpectingSuccess(test *testing.T, url string, client *http.Client) *http.Response {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		test.Fatalf("Failed to create request: %v", err)
 	}
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "fizz")
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testCompletionRequest(test, "http://localhost:2016", "fizz")
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "fizz")
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
-
-	testCompletionStreamingExpectingSuccess(test, "fizz")
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
-	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
-	time.Sleep(4 * time.Second)
-	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		test.Fatalf("/v1/models Request failed: %v", err)
 	}
 
-	testCompletionRequest(test, "http://localhost:2016", "buzz")
-	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
-	time.Sleep(4 * time.Second)
-	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
-	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	if resp.StatusCode != http.StatusOK {
+		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
 	}
-
-	testCompletionRequest(test, "http://localhost:2019", "foo")
-	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
-	time.Sleep(4 * time.Second)
-	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+	if resp.Header.Get("Content-Type") != "application/json; charset=utf-8" {
+		test.Fatalf("Expected Content Type \"application/json; charset=utf-8\", got %s", resp.Header.Get("Content-Type"))
 	}
-	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
+	return resp
 }
 
 func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []string) {
@@ -355,7 +392,7 @@ func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 		},
 	)
 }
-func testCompletionRequest(test *testing.T, address string, model string) {
+func testCompletionRequest(test *testing.T, address string, model string, client *http.Client) {
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
 
 	// Prepare request body
@@ -364,7 +401,7 @@ func testCompletionRequest(test *testing.T, address string, model string) {
 		Prompt: testPrompt,
 		Stream: false,
 	}
-	completionResp := sendCompletionRequestExpectingSuccess(test, address, completionReq)
+	completionResp := sendCompletionRequestExpectingSuccess(test, address, completionReq, client)
 	if len(completionResp.Choices) == 0 {
 		test.Fatalf("No choices returned in completion response: %+v", completionResp)
 	}
@@ -548,8 +585,8 @@ func sendChatCompletionRequest(t *testing.T, address string, chatReq LlmChatComp
 	return resp
 }
 
-func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq LlmCompletionRequest) LlmCompletionResponse {
-	resp := sendCompletionRequest(test, address, completionReq)
+func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq LlmCompletionRequest, client *http.Client) LlmCompletionResponse {
+	resp := sendCompletionRequest(test, address, completionReq, client)
 	defer func(Body io.ReadCloser) {
 		if cerr := Body.Close(); cerr != nil {
 			test.Error(cerr)
@@ -567,7 +604,7 @@ func sendCompletionRequestExpectingSuccess(test *testing.T, address string, comp
 	return completionResp
 }
 
-func sendCompletionRequest(test *testing.T, address string, completionReq LlmCompletionRequest) *http.Response {
+func sendCompletionRequest(test *testing.T, address string, completionReq LlmCompletionRequest, client *http.Client) *http.Response {
 	reqBody, err := json.Marshal(completionReq)
 	if err != nil {
 		test.Fatalf("Failed to marshal JSON body: %v", err)
@@ -580,8 +617,10 @@ func sendCompletionRequest(test *testing.T, address string, completionReq LlmCom
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	client.Timeout = 5 * time.Second
+	if client == nil {
+		client = &http.Client{}
+		client.Timeout = 5 * time.Second
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		test.Fatalf("/v1/completions Request failed: %v", err)
@@ -837,6 +876,18 @@ func TestAppScenarios(test *testing.T) {
 			},
 			TestFunc: func(t *testing.T) {
 				llmApi(t)
+			},
+		},
+		{
+			Name:       "llm-api-keep-alive",
+			ConfigPath: "test-server/llm-api-reusing-connection.json",
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2024",
+				"localhost:12025",
+				"localhost:12026",
+			},
+			TestFunc: func(t *testing.T) {
+				llmApiReusingConnection(t)
 			},
 		},
 	}

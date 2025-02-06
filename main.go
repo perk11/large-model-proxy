@@ -537,14 +537,15 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 			return
 		}
 		resourceManager.serviceMutex.Lock()
-		if !canBeStopped(serviceConfig.Name) {
+		shouldStop := canBeStopped(serviceConfig.Name)
+		resourceManager.serviceMutex.Unlock()
+		if shouldStop {
+			log.Printf("[%s] Idle timeout %s reached, stopping service", serviceConfig.Name, idleTimeout)
+			stopService(serviceConfig.Name)
+		} else {
 			log.Printf("[%s] Idle timeout %s reached, but service is busy, resetting idle time", serviceConfig.Name, idleTimeout)
 			runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
-			return
 		}
-		resourceManager.serviceMutex.Unlock()
-		log.Printf("[%s] Idle timeout %s reached, stopping service", serviceConfig.Name, idleTimeout)
-		stopService(serviceConfig.Name)
 	})
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")

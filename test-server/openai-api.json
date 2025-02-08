@@ -1,26 +1,26 @@
 {
-  "LlmApi": {
+  "OpenAiApi": {
     "ListenPort": "2016"
   },
   "ShutDownAfterInactivitySeconds": 3,
   "Services": [
     {
-      "Name": "test-llm-1",
+      "Name": "test-openai-api-1",
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12017",
       "Command": "test-server/test-server",
-      "Args": "-llm-port 12017 -p 12018",
-      "Llm": true
+      "Args": "-openai-api-port 12017 -p 12018",
+      "OpenAiApi": true
     },
     {
-      "Name": "test-llm-2",
+      "Name": "test-openai-api-2",
       "ListenPort": "2019",
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12019",
       "Command": "test-server/test-server",
-      "Args": "-llm-port 12019 -p 12020",
-      "Llm": true,
-      "LlmModels": [
+      "Args": "-openai-api-port 12019 -p 12020",
+      "OpenAiApi": true,
+      "OpenAiApiModels": [
         "fizz",
         "buzz"
       ]
@@ -32,7 +32,7 @@
       "ProxyTargetPort": "12021",
       "Command": "test-server/test-server",
       "Args": "-p 12021",
-      "Llm": false
+      "OpenAiApi": false
     },
     {
       "Name": "test-non-llm-2",
@@ -40,8 +40,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12022",
       "Command": "test-server/test-server",
-      "Args": "-llm-port 12022 -p 12023",
-      "Llm": false
+      "Args": "-openai-api-port 12022 -p 12023",
+      "OpenAiApi": false
     }
   ]
 }

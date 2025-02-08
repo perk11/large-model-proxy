@@ -20,7 +20,7 @@ func main() {
 	durationStartup := flag.Duration("startup-duration", 0, "How much time to sleep after listening starts but before app is responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationRequestProcessing := flag.Duration("request-processing-duration", 0, "How much time to sleep after receiving a connection before responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
-	llmApiPort := flag.String("llm-port", "", "LLM API port to listen on. If not specified, LLM API is disabled")
+	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
 	flag.Parse()
 
 	if *port != "" {
@@ -29,8 +29,8 @@ func main() {
 	if *healthCheckApiPort != "" {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
 	}
-	if *llmApiPort != "" {
-		go llmApiListen(llmApiPort)
+	if *OpenAiApiPort != "" {
+		go OpenAiApiListen(OpenAiApiPort)
 	}
 	for {
 		time.Sleep(time.Duration(1<<63 - 1))
@@ -124,13 +124,13 @@ func healthCheckListen(port *string, sleepDuration *time.Duration) {
 	}
 }
 
-type LlmCompletionRequest struct {
+type OpenAiApiCompletionRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 	Stream bool   `json:"stream"`
 }
 
-type LlmCompletionResponse struct {
+type OpenAiApiCompletionResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
@@ -147,7 +147,7 @@ type LlmCompletionResponse struct {
 	} `json:"usage"`
 }
 
-type LlmChatRequest struct {
+type OpenAiApiChatRequest struct {
 	Model    string        `json:"model"`
 	Messages []ChatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
@@ -191,7 +191,7 @@ type ChatCompletionChoice struct {
 	FinishReason *string `json:"finish_reason,omitempty"`
 }
 
-func llmApiListen(port *string) {
+func OpenAiApiListen(port *string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/completions", handleCompletions)
 	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
@@ -201,9 +201,9 @@ func llmApiListen(port *string) {
 		Handler: mux,
 	}
 	server.SetKeepAlivesEnabled(false)
-	log.Printf("LLM server listening on :%s", *port)
+	log.Printf("OpenAI API server listening on :%s", *port)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("Could not start LLM server: %s\n", err.Error())
+		log.Fatalf("Could not start OpenAI API server: %s\n", err.Error())
 	}
 }
 func handleCompletions(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +217,7 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sampleResponse := LlmCompletionResponse{
+	sampleResponse := OpenAiApiCompletionResponse{
 		ID:      "test-id",
 		Object:  "text_completion",
 		Created: time.Now().Unix(),
@@ -251,7 +251,7 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompletionRequest) {
+func handleStreamCompletion(w http.ResponseWriter, completionRequest OpenAiApiCompletionRequest) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "close")
@@ -301,16 +301,16 @@ func handleStreamCompletion(w http.ResponseWriter, completionRequest LlmCompleti
 	flusher.Flush()
 }
 
-func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *http.Request) (LlmCompletionRequest, bool) {
+func parseAndValidateRequestAndPrepareResponseHeaders(w http.ResponseWriter, r *http.Request) (OpenAiApiCompletionRequest, bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return LlmCompletionRequest{}, true
+		return OpenAiApiCompletionRequest{}, true
 	}
 
-	var completionRequest LlmCompletionRequest
+	var completionRequest OpenAiApiCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&completionRequest); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to parse request body: %v", err), http.StatusBadRequest)
-		return LlmCompletionRequest{}, true
+		return OpenAiApiCompletionRequest{}, true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	return completionRequest, false
@@ -329,7 +329,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleSingleChatCompletion(w http.ResponseWriter, chatRequest LlmChatRequest) {
+func handleSingleChatCompletion(w http.ResponseWriter, chatRequest OpenAiApiChatRequest) {
 	sampleResponse := ChatCompletionResponse{
 		ID:      "chatcmpl-test-id",
 		Object:  "chat.completion",
@@ -368,7 +368,7 @@ func handleSingleChatCompletion(w http.ResponseWriter, chatRequest LlmChatReques
 	}
 }
 
-func handleStreamChat(w http.ResponseWriter, chatRequest LlmChatRequest) {
+func handleStreamChat(w http.ResponseWriter, chatRequest OpenAiApiChatRequest) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "close")
@@ -448,17 +448,17 @@ func sendResponseChunk(responseWriter http.ResponseWriter, chatCompletionChunk C
 	return true
 }
 
-func parseAndValidateChatRequest(w http.ResponseWriter, r *http.Request) (LlmChatRequest, bool) {
+func parseAndValidateChatRequest(w http.ResponseWriter, r *http.Request) (OpenAiApiChatRequest, bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return LlmChatRequest{}, true
+		return OpenAiApiChatRequest{}, true
 	}
 
-	var req LlmChatRequest
+	var req OpenAiApiChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Failed to parse chat request body: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to parse chat request body: %v", err), http.StatusBadRequest)
-		return LlmChatRequest{}, true
+		return OpenAiApiChatRequest{}, true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	return req, false

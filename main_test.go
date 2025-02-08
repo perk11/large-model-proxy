@@ -19,8 +19,8 @@ import (
 	"time"
 )
 
-// LlmCompletionResponse is what /v1/completions returns
-type LlmCompletionResponse struct {
+// OpenAiApiCompletionResponse is what /v1/completions returns
+type OpenAiApiCompletionResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
@@ -37,15 +37,15 @@ type LlmCompletionResponse struct {
 	} `json:"usage"`
 }
 
-// LlmCompletionRequest is used by /v1/completions
-type LlmCompletionRequest struct {
+// OpenAiApiCompletionRequest is used by /v1/completions
+type OpenAiApiCompletionRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 	Stream bool   `json:"stream"`
 }
 
-// LlmChatCompletionRequest is used by /v1/chat/completions
-type LlmChatCompletionRequest struct {
+// OpenAiApiChatCompletionRequest is used by /v1/chat/completions
+type OpenAiApiChatCompletionRequest struct {
 	Model    string        `json:"model,omitempty"`
 	Messages []ChatMessage `json:"messages,omitempty"`
 	Stream   bool          `json:"stream,omitempty"`
@@ -56,8 +56,8 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
-// LlmChatCompletionResponse is what /v1/chat/completions returns
-type LlmChatCompletionResponse struct {
+// OpenAiApiChatCompletionResponse is what /v1/chat/completions returns
+type OpenAiApiChatCompletionResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
@@ -194,15 +194,15 @@ func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serv
 	runReadPidCloseConnection(test, serviceOneAddress)
 }
 
-func llmApi(test *testing.T) {
+func openAiApi(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
 	client := &http.Client{}
 	resp := modelsRequestExpectingSuccess(test, "http://localhost:2016/v1/models", client)
-	assertModelsResponse(test, []string{"test-llm-1", "fizz", "buzz"}, resp)
+	assertModelsResponse(test, []string{"test-openai-api-1", "fizz", "buzz"}, resp)
 
-	resp = sendCompletionRequest(test, "http://localhost:2016", LlmCompletionRequest{
+	resp = sendCompletionRequest(test, "http://localhost:2016", OpenAiApiCompletionRequest{
 		Model:  "non-existent",
 		Prompt: "This is a test prompt\nЭто проверочный промт\n这是一个测试提示",
 		Stream: false,
@@ -217,12 +217,12 @@ func llmApi(test *testing.T) {
 	//Still no services should be running
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
-	testCompletionRequest(test, "http://localhost:2016", "test-llm-1", nil)
+	testCompletionRequest(test, "http://localhost:2016", "test-openai-api-1", nil)
 	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
-	testCompletionStreamingExpectingSuccess(test, "test-llm-1")
-	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
-	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-llm-1")
+	testCompletionStreamingExpectingSuccess(test, "test-openai-api-1")
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-openai-api-1")
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-openai-api-1")
 
 	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
 	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
@@ -230,7 +230,7 @@ func llmApi(test *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	if isProcessRunning(llm1Pid) {
-		test.Fatalf("test-llm-1 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("test-openai-api-1 service is still running, but inactivity timeout should have shut it down by now")
 	}
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
@@ -248,7 +248,7 @@ func llmApi(test *testing.T) {
 	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 
 	testCompletionRequest(test, "http://localhost:2016", "buzz", nil)
@@ -256,20 +256,20 @@ func llmApi(test *testing.T) {
 	time.Sleep(4 * time.Second)
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 
 	testCompletionRequest(test, "http://localhost:2019", "foo", nil)
 	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-llm-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
 }
 
 func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Response) {
-	var modelsResp LlmApiModels
+	var modelsResp OpenAiApiModels
 	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
 		test.Fatalf("Failed to decode /v1/models response: %v", err)
 	}
@@ -298,17 +298,17 @@ func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Resp
 		}
 	}
 }
-func llmApiReusingConnection(test *testing.T) {
+func openAiApiReusingConnection(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12025", "localhost:12026"})
 	client := &http.Client{}
 	resp := modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
-	assertModelsResponse(test, []string{"test-llm-keep-alive"}, resp)
+	assertModelsResponse(test, []string{"test-openai-api-keep-alive"}, resp)
 	resp = modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
-	assertModelsResponse(test, []string{"test-llm-keep-alive"}, resp)
+	assertModelsResponse(test, []string{"test-openai-api-keep-alive"}, resp)
 
-	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
-	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
 	//TODO: Enable Keep-Alive in test server
 	//TODO: add streaming request
 	//TODO: add assertions about number of connections open
@@ -326,7 +326,7 @@ func llmApiReusingConnection(test *testing.T) {
 		test.Fatalf("Expected status code 404, got %d", resp.StatusCode)
 	}
 	//TODO: this is not maintaining a connection currently, fix this
-	testCompletionRequest(test, "http://localhost:2024", "test-llm-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
 
 	err = resp.Body.Close()
 	if err != nil {
@@ -367,7 +367,7 @@ func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []strin
 func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 	address := "http://localhost:2016"
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
-	reqBodyStruct := LlmCompletionRequest{
+	reqBodyStruct := OpenAiApiCompletionRequest{
 		Model:  model,
 		Prompt: testPrompt,
 		Stream: true,
@@ -381,7 +381,7 @@ func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 		fmt.Sprintf("Your prompt was:\n<prompt>%s</prompt>", testPrompt),
 	},
 		func(t *testing.T, payload string) string {
-			var chunkResp LlmCompletionResponse
+			var chunkResp OpenAiApiCompletionResponse
 			if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
 				t.Fatalf("Error unmarshalling SSE chunk JSON: %v", err)
 			}
@@ -396,7 +396,7 @@ func testCompletionRequest(test *testing.T, address string, model string, client
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
 
 	// Prepare request body
-	completionReq := LlmCompletionRequest{
+	completionReq := OpenAiApiCompletionRequest{
 		Model:  model,
 		Prompt: testPrompt,
 		Stream: false,
@@ -427,7 +427,7 @@ func testChatCompletionRequestExpectingSuccess(t *testing.T, address, model stri
 		{Role: "user", Content: "Hello, how are you?"},
 	}
 
-	chatReq := LlmChatCompletionRequest{
+	chatReq := OpenAiApiChatCompletionRequest{
 		Model:    model,
 		Messages: messages,
 		Stream:   false,
@@ -459,7 +459,7 @@ func testChatCompletionStreamingExpectingSuccess(t *testing.T, address, model st
 	}
 
 	url := fmt.Sprintf("%s/v1/chat/completions", address)
-	testStreamingRequest(t, url, LlmChatCompletionRequest{
+	testStreamingRequest(t, url, OpenAiApiChatCompletionRequest{
 		Model:    model,
 		Messages: messages,
 		Stream:   true,
@@ -469,7 +469,7 @@ func testChatCompletionStreamingExpectingSuccess(t *testing.T, address, model st
 		"Thanks\nfor\nnothing!",
 		"", //done chunk which doesn't have a delta
 	}, func(t *testing.T, payload string) string {
-		var chunkResp LlmChatCompletionResponse
+		var chunkResp OpenAiApiChatCompletionResponse
 		if err := json.Unmarshal([]byte(payload), &chunkResp); err != nil {
 			t.Fatalf("Error unmarshalling SSE chunk JSON: %v", err)
 		}
@@ -546,7 +546,7 @@ func testStreamingRequest(t *testing.T, url string, requestBodyObject any, expec
 	}
 }
 
-func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq LlmChatCompletionRequest) LlmChatCompletionResponse {
+func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) OpenAiApiChatCompletionResponse {
 	resp := sendChatCompletionRequest(t, address, chatReq)
 	defer func() {
 		_ = resp.Body.Close()
@@ -556,7 +556,7 @@ func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, cha
 		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
 	}
 
-	var chatResp LlmChatCompletionResponse
+	var chatResp OpenAiApiChatCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		t.Fatalf("Failed to decode /v1/chat/completions response: %v", err)
 	}
@@ -564,7 +564,7 @@ func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, cha
 }
 
 // sendChatCompletionRequest sends a POST to /v1/chat/completions with the given JSON body
-func sendChatCompletionRequest(t *testing.T, address string, chatReq LlmChatCompletionRequest) *http.Response {
+func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) *http.Response {
 	reqBody, err := json.Marshal(chatReq)
 	if err != nil {
 		t.Fatalf("Failed to marshal JSON body: %v", err)
@@ -585,7 +585,7 @@ func sendChatCompletionRequest(t *testing.T, address string, chatReq LlmChatComp
 	return resp
 }
 
-func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq LlmCompletionRequest, client *http.Client) LlmCompletionResponse {
+func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) OpenAiApiCompletionResponse {
 	resp := sendCompletionRequest(test, address, completionReq, client)
 	defer func(Body io.ReadCloser) {
 		if cerr := Body.Close(); cerr != nil {
@@ -597,14 +597,14 @@ func sendCompletionRequestExpectingSuccess(test *testing.T, address string, comp
 		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
 	}
 
-	var completionResp LlmCompletionResponse
+	var completionResp OpenAiApiCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&completionResp); err != nil {
 		test.Fatalf("Failed to decode /v1/completions response: %v", err)
 	}
 	return completionResp
 }
 
-func sendCompletionRequest(test *testing.T, address string, completionReq LlmCompletionRequest, client *http.Client) *http.Response {
+func sendCompletionRequest(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) *http.Response {
 	reqBody, err := json.Marshal(completionReq)
 	if err != nil {
 		test.Fatalf("Failed to marshal JSON body: %v", err)
@@ -858,7 +858,7 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name:       "llm-api",
-			ConfigPath: "test-server/llm-api.json",
+			ConfigPath: "test-server/openai-api.json",
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2016",
 				"localhost:2018",
@@ -875,19 +875,19 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:12023",
 			},
 			TestFunc: func(t *testing.T) {
-				llmApi(t)
+				openAiApi(t)
 			},
 		},
 		{
 			Name:       "llm-api-keep-alive",
-			ConfigPath: "test-server/llm-api-reusing-connection.json",
+			ConfigPath: "test-server/openai-api-reusing-connection.json",
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2024",
 				"localhost:12025",
 				"localhost:12026",
 			},
 			TestFunc: func(t *testing.T) {
-				llmApiReusingConnection(t)
+				openAiApiReusingConnection(t)
 			},
 		},
 	}

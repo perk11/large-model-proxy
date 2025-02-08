@@ -1,15 +1,15 @@
 {
-  "LlmApi": {
+  "OpenAiApi": {
     "ListenPort": "2024"
   },
   "Services": [
     {
-      "Name": "test-llm-keep-alive",
+      "Name": "test-openai-api-keep-alive",
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12025",
       "Command": "test-server/test-server",
-      "Args": "-llm-port 12025 -p 12026",
-      "Llm": true
+      "Args": "-openai-api-port 12025 -p 12026",
+      "OpenAiApi": true
     }
   ]
 }

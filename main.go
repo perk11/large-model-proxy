@@ -25,7 +25,7 @@ type Config struct {
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *time.Duration
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
-	LlmApi                                                        LlmApi
+	OpenAiApi                                                     OpenAiApi
 }
 
 type ServiceConfig struct {
@@ -41,8 +41,8 @@ type ServiceConfig struct {
 	HealthcheckIntervalMilliseconds time.Duration
 	ShutDownAfterInactivitySeconds  time.Duration
 	RestartOnConnectionFailure      bool
-	Llm                             bool
-	LlmModels                       []string
+	OpenAiApi                       bool
+	OpenAiApiModels                 []string
 	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
 }
 type RunningService struct {
@@ -53,7 +53,7 @@ type RunningService struct {
 	idleTimer            *time.Timer
 	resourceRequirements map[string]int
 }
-type LlmApi struct {
+type OpenAiApi struct {
 	ListenPort string
 }
 type ResourceManager struct {
@@ -61,11 +61,11 @@ type ResourceManager struct {
 	resourcesInUse  map[string]int
 	runningServices map[string]RunningService
 }
-type LlmApiModels struct {
-	Object string        `json:"object"`
-	Data   []LlmApiModel `json:"data"`
+type OpenAiApiModels struct {
+	Object string           `json:"object"`
+	Data   []OpenAiApiModel `json:"data"`
 }
-type LlmApiModel struct {
+type OpenAiApiModel struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	OwnedBy string `json:"owned_by"`
@@ -157,8 +157,8 @@ func main() {
 			go startProxy(service)
 		}
 	}
-	if config.LlmApi.ListenPort != "" {
-		go startLlmApi(config.LlmApi, config.Services)
+	if config.OpenAiApi.ListenPort != "" {
+		go startOpenAiApi(config.OpenAiApi, config.Services)
 	}
 	for {
 		receivedSignal := <-exit
@@ -173,8 +173,8 @@ func main() {
 		os.Exit(0)
 	}
 }
-func createLlmApiModel(name string) LlmApiModel {
-	return LlmApiModel{
+func createOpenAiApiModel(name string) OpenAiApiModel {
+	return OpenAiApiModel{
 		ID:      name,
 		Object:  "model",
 		OwnedBy: "large-model-proxy",
@@ -217,26 +217,26 @@ type contextKey string
 
 var rawConnectionContextKey = contextKey("rawConn")
 
-func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
+func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	mux := http.NewServeMux()
 	modelToServiceMap := make(map[string]ServiceConfig)
-	models := make([]LlmApiModel, 0)
+	models := make([]OpenAiApiModel, 0)
 	for _, service := range services {
-		if !service.Llm {
+		if !service.OpenAiApi {
 			continue
 		}
 		// If the service doesn't define specific model names, assume the service name is the model
-		if service.LlmModels == nil || len(service.LlmModels) == 0 {
+		if service.OpenAiApiModels == nil || len(service.OpenAiApiModels) == 0 {
 			modelToServiceMap[service.Name] = service
-			models = append(models, createLlmApiModel(service.Name))
+			models = append(models, createOpenAiApiModel(service.Name))
 		} else {
-			for _, model := range service.LlmModels {
+			for _, model := range service.OpenAiApiModels {
 				modelToServiceMap[model] = service
-				models = append(models, createLlmApiModel(model))
+				models = append(models, createOpenAiApiModel(model))
 			}
 		}
 	}
-	modelsResponse := LlmApiModels{
+	modelsResponse := OpenAiApiModels{
 		Object: "models",
 		Data:   models,
 	}
@@ -273,7 +273,7 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 	// Create a custom http.Server that uses ConnContext
 	// to attach the *rawCaptureConnection to each request's Context.
 	server := &http.Server{
-		Addr:    ":" + llmApi.ListenPort,
+		Addr:    ":" + OpenAiApi.ListenPort,
 		Handler: mux,
 		// Whenever the server accepts a new net.Conn, this callback runs.
 		// If it's our rawCaptureConnection, store it in the request context.
@@ -291,7 +291,7 @@ func startLlmApi(llmApi LlmApi, services []ServiceConfig) {
 	}
 	wrappedLn := &rawCaptureListener{Listener: ln}
 
-	log.Printf("[LLM API Server] Listening on port %s", llmApi.ListenPort)
+	log.Printf("[LLM API Server] Listening on port %s", OpenAiApi.ListenPort)
 	if err := server.Serve(wrappedLn); err != nil {
 		log.Fatalf("Could not start LLM API server: %s\n", err.Error())
 	}

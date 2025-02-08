@@ -1,4 +1,20 @@
-Disable keep alive for models endpoint
+Update README
+release
+
+test interrupting while another service is starting
+max start time to avoid monitoring processes for now
+address TODOs
+process monitoring
+
+Support more endpoints
+    https://api.openai.com/v1/models/{model}
+    /v1/audio/speech
+    /v1/audio/transcriptions
+    /v1/audio/translations
+    /v1/embeddings
+
+release
+
 
 fix output when args is empty
 periodically check if commands stopped on their own
@@ -7,4 +23,5 @@ logging level
 bug? workdir not respected sometimes
 support spaces in cmd args
 check for duplicate service names in config
-If SIGINT is received while service is starting, it still waits for connection timeout for long time
+env variables
+Allow non-local addresses

@@ -105,3 +105,8 @@ If `-c` argument is omitted, `large-model-proxy` will look for `config.json` in 
 
 Output from each service is logged to a separate file. Default behavior is to log it into logs/{name}.log,
 but it can be redefined by specifying `LogFilePath` parameter for each service.
+
+## Contacts
+
+Please join my Telegram group for any feedback, questions and collaboration:
+https://t.me/large_model_proxy

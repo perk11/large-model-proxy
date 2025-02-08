@@ -787,7 +787,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "minimal",
 			ConfigPath:                    "test-server/minimal.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2000"},
+			AddressesToCheckAfterStopping: []string{"localhost:2000", "localhost:12000"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2000")
 			},
@@ -795,7 +795,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "healthcheck",
 			ConfigPath:                    "test-server/healthcheck.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2001"},
+			AddressesToCheckAfterStopping: []string{"localhost:2001", "localhost:12001", "localhost:2011"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2001")
 			},
@@ -803,7 +803,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "healthcheck-immediate-listen-start",
 			ConfigPath:                    "test-server/healthcheck-immediate-listen-start.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2002"},
+			AddressesToCheckAfterStopping: []string{"localhost:2002", "localhost:12002", "localhost:2012"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2002")
 			},
@@ -811,7 +811,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "healthcheck-immediate-startup-delayed-healthcheck",
 			ConfigPath:                    "test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2003"},
+			AddressesToCheckAfterStopping: []string{"localhost:2003", "localhost:12003", "localhost:2013"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2003")
 			},
@@ -819,7 +819,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "healthcheck-immediate-startup",
 			ConfigPath:                    "test-server/healthcheck-immediate-startup.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2004"},
+			AddressesToCheckAfterStopping: []string{"localhost:2004", "localhost:2014"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2004")
 			},
@@ -827,7 +827,7 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name:                          "healthcheck-stuck",
 			ConfigPath:                    "test-server/healthcheck-stuck.json",
-			AddressesToCheckAfterStopping: []string{"localhost:2005"},
+			AddressesToCheckAfterStopping: []string{"localhost:2005", "localhost:12005", "localhost:2015"},
 			TestFunc: func(t *testing.T) {
 				connectOnly(t, "localhost:2005")
 			},

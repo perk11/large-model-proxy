@@ -539,6 +539,9 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		delete(resourceManager.runningServices, serviceConfig.Name)
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
+	runningService.cmd = cmd
+	resourceManager.storeRunningService(serviceConfig.Name, runningService)
+
 	performHealthCheck(serviceConfig)
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
@@ -547,7 +550,6 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
-	runningService.cmd = cmd
 
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {

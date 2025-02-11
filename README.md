@@ -97,7 +97,7 @@ Below is an example config.json:
         "OpenAiApi": true,
         "ProxyTargetHost": "localhost",
         "ProxyTargetPort": "18082",
-        "Command": "/opt/llama.cpp/llama-server",
+        "Command": "/home/user/.conda/envs/vllm/bin/vllm",
         "LogFilePath": "/var/log/Qwen2.5-7B.log",
         "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
         "ResourceRequirements": {

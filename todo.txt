@@ -1,6 +1,3 @@
-Update README
-release
-
 test interrupting while another service is starting
 max start time to avoid monitoring processes for now
 address TODOs

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -446,36 +447,61 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 		_ = clientConnection.Close()
 		return
 	}
-	defer func(clientConnection net.Conn, serviceConfig ServiceConfig) {
-		log.Printf("[%s] Closing client connection %s on port %s", serviceConfig.Name, humanReadableConnection(clientConnection), serviceConfig.ListenPort)
-		err := clientConnection.Close()
-		if err != nil {
-			log.Printf("[%s] Failed to close client connection %s: %v", serviceConfig.Name, humanReadableConnection(clientConnection), err)
-		}
-	}(clientConnection, serviceConfig)
 	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 
 	if serviceConnection == nil {
+		closeConnectionAndHandleError(
+			clientConnection,
+			serviceConfig,
+			"client",
+			"failed to start service",
+		)
 		return
 	}
 
 	log.Printf("[%s] Opened service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
-	defer func(serviceConnection net.Conn) {
-		log.Printf("[%s] Closing service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
-		err := serviceConnection.Close()
-		if err != nil {
-			log.Printf("[%s] Failed to close service connection %s: %v", serviceConfig.Name, humanReadableConnection(serviceConnection), err)
-		}
-		trackServiceLastUsed(serviceConfig)
-	}(serviceConnection)
-
 	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
 		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
 			log.Printf("[%s] Error writing bytes read from client to service: %v", serviceConfig.Name, err)
+			closeConnectionAndHandleError(
+				clientConnection,
+				serviceConfig,
+				"client",
+				"internal error",
+			)
+			closeConnectionAndHandleError(
+				serviceConnection,
+				serviceConfig,
+				"service",
+				"internal error",
+			)
 			return
 		}
 	}
+	//forwardConnection will handle closing the connections at this point
 	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
+
+	trackServiceLastUsed(serviceConfig)
+}
+
+func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
+	log.Printf(
+		"[%s] Closing %s connection %s: %s",
+		serviceConfig.Name,
+		connectionType,
+		humanReadableConnection(connection),
+		reason,
+	)
+	err := connection.Close()
+	if err != nil {
+		log.Printf(
+			"[%s] Failed to close %s connection %s: %v",
+			serviceConfig.Name,
+			connectionType,
+			humanReadableConnection(connection),
+			err,
+		)
+	}
 }
 
 func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.Conn {
@@ -802,19 +828,61 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 	return cmd
 }
 
-func forwardConnection(clientConnection net.Conn, serviceConnection net.Conn, serviceName string) {
+func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {
 	defer resourceManager.incrementConnection(serviceName, -1)
 	resourceManager.incrementConnection(serviceName, 1)
 
-	go copyAndHandleErrors(
-		serviceConnection,
-		clientConnection,
-		fmt.Sprintf("[%s] (service (%s) to client (%s))", serviceName, humanReadableConnection(serviceConnection), humanReadableConnection(clientConnection)),
-	)
-	copyAndHandleErrors(
-		clientConnection,
-		serviceConnection,
-		fmt.Sprintf("[%s] (client (%s) to service (%s))", serviceName, humanReadableConnection(clientConnection), humanReadableConnection(serviceConnection)),
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var EOFOnWriteFromServerToClient *bool
+
+	go func() {
+		defer wg.Done()
+		copyAndHandleErrors(
+			serviceConnection,
+			clientConnection,
+			fmt.Sprintf("[%s] (service (%s) to client (%s))", serviceName, humanReadableConnection(serviceConnection), humanReadableConnection(clientConnection)),
+		)
+
+		if EOFOnWriteFromServerToClient == nil {
+			EOFOnWriteFromServerToClient = new(bool)
+			*EOFOnWriteFromServerToClient = true
+		}
+		// Once done copying client->service, close service side.
+		err := serviceConnection.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("[%s] Error closing service to client connection: %v", serviceName, err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		copyAndHandleErrors(
+			clientConnection,
+			serviceConnection,
+			fmt.Sprintf("[%s] (client (%s) to service (%s))", serviceName, humanReadableConnection(clientConnection), humanReadableConnection(serviceConnection)),
+		)
+		if EOFOnWriteFromServerToClient == nil {
+			EOFOnWriteFromServerToClient = new(bool)
+			*EOFOnWriteFromServerToClient = false
+		}
+		err := clientConnection.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("[%s] Error closing client to service connection: %v", serviceName, err)
+		}
+	}()
+	wg.Wait()
+	var reason string
+	if *EOFOnWriteFromServerToClient {
+		reason = "EOF on write from server to client"
+	} else {
+		reason = "EOF on write from client to server"
+	}
+	log.Printf(
+		"[%s] Closed service and client connection %s, %s: %s",
+		serviceName,
+		humanReadableConnection(serviceConnection),
+		humanReadableConnection(clientConnection),
+		reason,
 	)
 }
 
@@ -886,7 +954,8 @@ func waitForProcessToTerminate(process *os.Process) bool {
 
 func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {
 	_, err := io.Copy(dst, src)
-	if err != nil {
+	//ErrClosed is not logged since it happens routinely when connection is closed without sending/receiving EOF
+	if err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("%s error during data transfer: %v", logPrefix, err)
 	}
 }

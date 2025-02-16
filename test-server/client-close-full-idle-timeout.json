@@ -1,0 +1,13 @@
+{
+  "ShutDownAfterInactivitySeconds": 3,
+  "Services": [
+    {
+      "Name": "test-server_client-close-half-write-idle-timeout",
+      "ListenPort": "2029",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12029",
+      "Command": "test-server/test-server",
+      "Args": "-p 12029 -sleep-after-writing-pid-duration 10s"
+    }
+  ]
+}

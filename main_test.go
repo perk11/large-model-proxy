@@ -194,6 +194,72 @@ func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serv
 	runReadPidCloseConnection(test, serviceOneAddress)
 }
 
+func testHalfCloseClientCloseWriteIdleTimeout(t *testing.T) {
+	conn, err := net.Dial("tcp", "localhost:2029")
+	if err != nil {
+		t.Fatalf("Could not open %s: %v", "localhost:2029", err)
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	pid := readPidFromOpenConnection(t, conn)
+	if pid == 0 {
+		return
+	}
+	if !isProcessRunning(pid) {
+		t.Fatalf("Service process %d is not running after reading PID", pid)
+	}
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	time.Sleep(5 * time.Second)
+
+	if isProcessRunning(pid) {
+		t.Errorf("Service process %d is still running after idle timeout, expected it to exit", pid)
+	}
+	assertPortsAreClosed(t, []string{"localhost:12029"})
+}
+
+func testClientClose(t *testing.T, address1 string, address1Internal string, address2 string, clientCallBackAfterReading func(conn *net.Conn)) {
+	connOne, err := net.Dial("tcp", address1)
+	if err != nil {
+		t.Fatalf("Could not open %s: %v", address1, err)
+	}
+	defer func() {
+		_ = connOne.Close()
+	}()
+
+	pidOne := readPidFromOpenConnection(t, connOne)
+	if !isProcessRunning(pidOne) {
+		t.Fatalf("Service process %d is not running after reading", pidOne)
+	}
+
+	clientCallBackAfterReading(&connOne)
+	clientCloseTime := time.Now()
+
+	connTwo, err := net.Dial("tcp", address2)
+	if err != nil {
+		t.Fatalf("Could not open %s: %v", address2, err)
+	}
+	defer func() {
+		_ = connTwo.Close()
+	}()
+
+	readPidFromOpenConnection(t, connTwo)
+	readDuration := time.Now().Sub(clientCloseTime)
+	if readDuration > time.Second*2 {
+		t.Fatalf("PID read from second service took %s, expected under 2s", readDuration)
+	}
+	t.Logf("PID read from second service took %s", readDuration)
+	if isProcessRunning(pidOne) {
+		t.Fatalf("%d is still running even though it was supposed to be closed once second connection was handled", pidOne)
+	}
+	assertPortsAreClosed(t, []string{address1Internal})
+}
+
 func openAiApi(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
@@ -649,16 +715,16 @@ func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
 	}
 	pidString := string(buffer[:bytesRead])
 	if !isNumeric(pidString) {
-		test.Errorf("value \"%s\" is not numeric, expected a pid", pidString)
+		test.Fatalf("value \"%s\" is not numeric, expected a pid", pidString)
 		return 0
 	}
 	pidInt, err := strconv.Atoi(pidString)
 	if err != nil {
-		test.Error(err, pidString)
+		test.Fatal(err, pidString)
 		return 0
 	}
 	if pidInt <= 0 {
-		test.Errorf("value \"%s\" is not a valid pid", pidString)
+		test.Fatalf("value \"%s\" is not a valid pid", pidString)
 		return 0
 	}
 	return pidInt
@@ -854,6 +920,29 @@ func TestAppScenarios(test *testing.T) {
 			AddressesToCheckAfterStopping: []string{"localhost:2008", "localhost:2009"},
 			TestFunc: func(t *testing.T) {
 				idleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
+			},
+		},
+		{
+			Name:                          "client-close-full",
+			ConfigPath:                    "test-server/client-close-full.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2030", "localhost:12030", "localhost:2031", "localhost:12031"},
+			TestFunc: func(t *testing.T) {
+				testClientClose(t, "localhost:2030",
+					"localhost:12030",
+					"localhost:2031",
+					func(conn *net.Conn) {
+						if err := (*conn).Close(); err != nil {
+							t.Fatalf("Close failed: %v", err)
+						}
+					})
+			},
+		},
+		{
+			Name:                          "client-close-full-idle-timeout",
+			ConfigPath:                    "test-server/client-close-full-idle-timeout.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2029", "localhost:12029"},
+			TestFunc: func(t *testing.T) {
+				testHalfCloseClientCloseWriteIdleTimeout(t)
 			},
 		},
 		{

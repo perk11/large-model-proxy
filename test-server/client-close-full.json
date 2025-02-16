@@ -1,0 +1,29 @@
+{
+  "ResourcesAvailable": {
+    "VRAM": 1
+  },
+  "Services": [
+    {
+      "Name": "test-server_client-close-full-1",
+      "ListenPort": "2030",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12030",
+      "Command": "test-server/test-server",
+      "Args": "-p 12030 -sleep-after-writing-pid-duration 10s",
+      "ResourceRequirements": {
+        "VRAM": 1
+      }
+    },
+    {
+      "Name": "test-server_client-close-full-2",
+      "ListenPort": "2031",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12031",
+      "Command": "test-server/test-server",
+      "Args": "-p 12031",
+      "ResourceRequirements": {
+        "VRAM": 1
+      }
+    }
+  ]
+}

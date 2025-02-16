@@ -22,12 +22,19 @@ func main() {
 	durationToSleepBeforeListening := flag.Duration("sleep-before-listening", 0, "How much time to sleep before listening starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationStartup := flag.Duration("startup-duration", 0, "How much time to sleep after listening starts but before app is responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationRequestProcessing := flag.Duration("request-processing-duration", 0, "How much time to sleep after receiving a connection before responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
+	durationSleepAfterWritingPid := flag.Duration("sleep-after-writing-pid-duration", 0, "How much time to sleep after respond with PID before closing the connection, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
 	flag.Parse()
 
 	if *port != "" {
-		go listenOnMainPort(port, durationToSleepBeforeListening, durationStartup, durationRequestProcessing)
+		go listenOnMainPort(
+			port,
+			durationToSleepBeforeListening,
+			durationStartup,
+			durationRequestProcessing,
+			durationSleepAfterWritingPid,
+		)
 	}
 	if *healthCheckApiPort != "" {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
@@ -46,8 +53,13 @@ type HealthcheckResponse struct {
 	Status              int    `json:"status"`
 }
 
-func listenOnMainPort(port *string,
-	sleepDuration, startupDuration, requestProcessingDuration *time.Duration) {
+func listenOnMainPort(
+	port *string,
+	sleepDuration,
+	startupDuration,
+	requestProcessingDuration *time.Duration,
+	sleepAfterWritingPidDuration *time.Duration,
+) {
 
 	// Simulate pre-listening work
 	time.Sleep(*sleepDuration)
@@ -59,31 +71,31 @@ func listenOnMainPort(port *string,
 
 	listener, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
-		fmt.Println("Error listening:", err.Error())
+		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	defer func() {
 		if err := listener.Close(); err != nil {
-			fmt.Println("Failed to stop listening:", err.Error())
+			log.Println("Failed to stop listening:", err.Error())
 		}
 	}()
-	fmt.Printf("Listening on port %s\n", *port)
+	log.Printf("Listening on port %s\n", *port)
 
 	// Accept connections in a loop
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			// Log and move on rather than exiting
-			fmt.Println("Error accepting connection:", err.Error())
+			log.Println("Error accepting connection:", err.Error())
 			continue
 		}
-		go handleMainPortConnection(conn, requestProcessingDuration)
+		go handleMainPortConnection(conn, requestProcessingDuration, sleepAfterWritingPidDuration)
 	}
 }
 
-func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Duration) {
+func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Duration, sleepAfterWritingPidDuration *time.Duration) {
 	mainPortConnections++
-	fmt.Println("Connection received on main port.")
+	log.Println("Connection received on main port.")
 
 	// We'll track if we've already decremented to avoid double decrementConnections.
 	var once sync.Once
@@ -112,7 +124,7 @@ func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Dur
 					return
 				default:
 					// Otherwise, the client likely closed early or a read error occurred
-					fmt.Println("Client disconnected early or read error:", err.Error())
+					log.Println("Client disconnected early or read error:", err.Error())
 					decrementConnections()
 					close(clientClosed)
 					return
@@ -124,13 +136,14 @@ func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Dur
 	var content string
 	if appStarted {
 		if requestProcessingDuration != nil && requestProcessingDuration.Nanoseconds() > 0 {
-			fmt.Printf("Sleeping for %s before returning pid\n", *requestProcessingDuration)
+			log.Printf("Sleeping for %s before returning pid\n", *requestProcessingDuration)
 			time.Sleep(*requestProcessingDuration)
 		}
-		fmt.Println("Responding with pid")
-		content = fmt.Sprintf("%d", os.Getpid())
+		pid := os.Getpid()
+		log.Printf("Responding with pid %d", pid)
+		content = fmt.Sprintf("%d", pid)
 	} else {
-		fmt.Println("Server still starting, responding with error")
+		log.Println("Server still starting, responding with error")
 		content = "Error, server still starting"
 	}
 
@@ -143,15 +156,15 @@ func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Dur
 	default:
 		// Client still here, proceed
 	}
-
 	if _, err := conn.Write([]byte(content)); err != nil {
-		fmt.Println("Error writing to connection:", err.Error())
+		log.Println("Error writing to connection:", err.Error())
 	}
-
+	time.Sleep(*sleepAfterWritingPidDuration)
+	log.Println("Closing connection")
 	// Signal that the server is about to close the connection normally
 	close(srvClosed)
 	if err := conn.Close(); err != nil {
-		fmt.Println("Error closing connection:", err.Error())
+		log.Println("Error closing connection:", err.Error())
 	}
 
 	decrementConnections()
@@ -173,7 +186,7 @@ func healthCheckHandler(responseWriter http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	fmt.Println("Sending healthcheck status code:", response.Status)
+	log.Println("Sending healthcheck status code:", response.Status)
 	responseWriter.Header().Set("Content-Type", "application/json")
 	responseWriter.WriteHeader(response.Status)
 
@@ -185,7 +198,7 @@ func healthCheckHandler(responseWriter http.ResponseWriter, _ *http.Request) {
 func healthCheckListen(port *string, sleepDuration *time.Duration) {
 	time.Sleep(*sleepDuration)
 	http.HandleFunc("/", healthCheckHandler)
-	fmt.Printf("Listening for healthcheck on port %s\n", *port)
+	log.Printf("Listening for healthcheck on port %s\n", *port)
 
 	if err := http.ListenAndServe(":"+*port, nil); err != nil {
 		log.Fatalf("Could not start healthcheck server: %s\n", err.Error())

@@ -86,6 +86,21 @@ func connectOnly(test *testing.T, proxyAddress string) {
 	time.Sleep(1 * time.Second)
 }
 
+func connectTwo2ServersSimultaneouslyAssertBothAreRunning(test *testing.T, proxyOneAddress string, proxyTwoAddress string) {
+	pidOne := runReadPidCloseConnection(test, proxyOneAddress)
+	clientTwoConnectTime := time.Now()
+	pidTwo := runReadPidCloseConnection(test, proxyTwoAddress)
+	readDuration := time.Now().Sub(clientTwoConnectTime)
+	if readDuration > time.Second*2 {
+		test.Fatalf("PID read from second service took %s, expected under 2s", readDuration)
+	}
+	if !isProcessRunning(pidOne) {
+		test.Fatalf("PID %d is not running, but it's supposed to", pidOne)
+	}
+	if !isProcessRunning(pidTwo) {
+		test.Fatalf("PID %d is not running, but it's supposed to", pidTwo)
+	}
+}
 func idleTimeout(test *testing.T, proxyAddress string) {
 	pid := runReadPidCloseConnection(test, proxyAddress)
 	if pid == 0 {
@@ -856,6 +871,14 @@ func TestAppScenarios(test *testing.T) {
 			AddressesToCheckAfterStopping: []string{"localhost:2000", "localhost:12000"},
 			TestFunc: func(t *testing.T) {
 				minimal(t, "localhost:2000")
+			},
+		},
+		{
+			Name:                          "no-resource-requirements",
+			ConfigPath:                    "test-server/no-resource-requirements.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2032", "localhost:12032", "localhost:2033", "localhost:12033"},
+			TestFunc: func(t *testing.T) {
+				connectTwo2ServersSimultaneouslyAssertBothAreRunning(t, "localhost:2032", "localhost:2033")
 			},
 		},
 		{

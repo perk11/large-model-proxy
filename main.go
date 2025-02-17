@@ -685,6 +685,9 @@ func connectWithWaiting(serviceHost string, servicePort string, serviceName stri
 
 func reserveResources(resourceRequirements map[string]int, requestingService string) bool {
 	var resourceList []string
+	if len(resourceRequirements) == 0 {
+		return true
+	}
 	for resource, amount := range resourceRequirements {
 		resourceList = append(resourceList, fmt.Sprintf("%s: %d", resource, amount))
 	}

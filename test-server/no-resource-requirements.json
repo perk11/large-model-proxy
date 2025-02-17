@@ -1,0 +1,26 @@
+{
+  "ResourcesAvailable": {
+    "VRAM": 20
+  },
+  "Services": [
+    {
+      "Name": "test-server_no-resource-requirements-1",
+      "ListenPort": "2032",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12032",
+      "Command": "test-server/test-server",
+      "Args": "-p 12032",
+      "ResourceRequirements": {
+        "VRAM": 20
+      }
+    },
+    {
+      "Name": "test-server_no-resource-requirements-2",
+      "ListenPort": "2033",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12033",
+      "Command": "test-server/test-server",
+      "Args": "-p 12033"
+    }
+  ]
+}

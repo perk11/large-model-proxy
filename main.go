@@ -570,6 +570,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 
 	performHealthCheck(serviceConfig)
+	log.Printf("[%s] Service started", serviceConfig.Name)
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}

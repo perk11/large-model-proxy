@@ -1,8 +1,8 @@
 all: executable build-test-server
 test: executable build-test-server
-	go test
+	go test -v
 executable:
-	go build -o large-model-proxy main.go
+	go build -o large-model-proxy
 clean:
 	go clean
 	cd test-server

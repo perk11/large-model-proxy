@@ -21,31 +21,6 @@ import (
 	"time"
 )
 
-type Config struct {
-	ShutDownAfterInactivitySeconds                                time.Duration
-	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *time.Duration
-	Services                                                      []ServiceConfig `json:"Services"`
-	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
-	OpenAiApi                                                     OpenAiApi
-}
-
-type ServiceConfig struct {
-	Name                            string
-	ListenPort                      string
-	ProxyTargetHost                 string
-	ProxyTargetPort                 string
-	Command                         string
-	Args                            string
-	LogFilePath                     string
-	Workdir                         string
-	HealthcheckCommand              string
-	HealthcheckIntervalMilliseconds time.Duration
-	ShutDownAfterInactivitySeconds  time.Duration
-	RestartOnConnectionFailure      bool
-	OpenAiApi                       bool
-	OpenAiApiModels                 []string
-	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
-}
 type RunningService struct {
 	manageMutex          *sync.Mutex
 	cmd                  *exec.Cmd
@@ -54,9 +29,7 @@ type RunningService struct {
 	idleTimer            *time.Timer
 	resourceRequirements map[string]int
 }
-type OpenAiApi struct {
-	ListenPort string
-}
+
 type ResourceManager struct {
 	serviceMutex    *sync.Mutex
 	resourcesInUse  map[string]int
@@ -142,11 +115,13 @@ func main() {
 	configFilePath := flag.String("c", "config.json", "path to config.json")
 	flag.Parse()
 
-	localConfig, err := loadConfig(*configFilePath)
+	var err error
+	config, err = loadConfig(*configFilePath)
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		log.Printf("Error loading %s:\n", *configFilePath)
+		FprintfError("%v\n", err)
+		os.Exit(1)
 	}
-	config = localConfig
 
 	resourceManager = ResourceManager{
 		resourcesInUse:  make(map[string]int),
@@ -392,25 +367,6 @@ func signalToString(sig os.Signal) string {
 	default:
 		return sig.String()
 	}
-}
-
-func loadConfig(filePath string) (Config, error) {
-	var config Config
-
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		return config, err
-	}
-
-	decoder := json.NewDecoder(bytes.NewReader(file))
-	decoder.DisallowUnknownFields()
-
-	err = decoder.Decode(&config)
-	if err != nil {
-		return config, err
-	}
-
-	return config, nil
 }
 
 func startProxy(serviceConfig ServiceConfig) {

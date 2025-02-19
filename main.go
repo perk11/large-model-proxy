@@ -19,6 +19,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/shlex"
 )
 
 type RunningService struct {
@@ -777,7 +779,14 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 		serviceConfig.LogFilePath,
 		serviceConfig.Workdir,
 	)
-	cmd := exec.Command(serviceConfig.Command, strings.Split(serviceConfig.Args, " ")...)
+
+	args, err := shlex.Split(serviceConfig.Args)
+	if err != nil {
+		log.Printf("[%s] Failed to parse service arguments %s: %v", serviceConfig.Name, serviceConfig.Args, err)
+		return nil
+	}
+
+	cmd := exec.Command(serviceConfig.Command, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 		Pgid:    0,

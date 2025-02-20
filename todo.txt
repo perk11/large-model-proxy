@@ -10,15 +10,10 @@ Support more endpoints
     /v1/audio/translations
     /v1/embeddings
 
-release
-
-
 fix output when args is empty
 periodically check if commands stopped on their own
 JSON5
 logging level
 bug? workdir not respected sometimes
 support spaces in cmd args
-check for duplicate service names in config
 env variables
-Allow non-local addresses

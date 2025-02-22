@@ -25,6 +25,7 @@ func main() {
 	durationSleepAfterWritingPid := flag.Duration("sleep-after-writing-pid-duration", 0, "How much time to sleep after respond with PID before closing the connection, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
+	procPort := flag.String("procinfo-port", "", "Port to expose process information")
 	flag.Parse()
 
 	if *port != "" {
@@ -41,6 +42,9 @@ func main() {
 	}
 	if *OpenAiApiPort != "" {
 		go OpenAiApiListen(OpenAiApiPort)
+	}
+	if *procPort != "" {
+		go procListen(*procPort)
 	}
 	for {
 		time.Sleep(time.Duration(1<<63 - 1))
@@ -543,4 +547,29 @@ func parseAndValidateChatRequest(w http.ResponseWriter, r *http.Request) (OpenAi
 	}
 	w.Header().Set("Content-Type", "application/json")
 	return req, false
+}
+
+func procListen(port string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/procinfo", handleProcinfo)
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+	server.SetKeepAlivesEnabled(false)
+	log.Printf("proc info server listening on :%s", port)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Could not start proc info server: %s\n", err.Error())
+	}
+}
+
+func handleProcinfo(w http.ResponseWriter, r *http.Request) {
+	err := json.NewEncoder(w).Encode(map[string]any{
+		"args": os.Args,
+		"env":  os.Environ(),
+	})
+	if err != nil {
+		log.Printf("Failed to encode args and env: %v", err)
+	}
 }

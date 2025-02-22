@@ -1,0 +1,12 @@
+{
+  "Services": [
+    {
+      "Name": "test-args-and-env",
+      "ListenPort": "2026",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12028",
+      "Command": "env",
+      "Args": "COOL_VARIABLE=1    ./test-server/test-server     -procinfo-port 12028"
+    }
+  ]
+}

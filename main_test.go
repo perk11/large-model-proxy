@@ -685,6 +685,65 @@ func sendCompletionRequestExpectingSuccess(test *testing.T, address string, comp
 	return completionResp
 }
 
+func testVerifyArgsAndEnv(test *testing.T, procPort string, mustHaveEnv bool) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%s/procinfo", procPort), nil)
+	if err != nil {
+		test.Fatalf("Failed to create request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		test.Fatalf("/procinfo Request failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		test.Fatalf("Expected status code OK, got %d", resp.StatusCode)
+	}
+	value, err := io.ReadAll(resp.Body)
+	if err != nil {
+		test.Error(err)
+	}
+
+	var result map[string]any
+	err = json.Unmarshal(value, &result)
+	if err != nil {
+		test.Error(err)
+	}
+
+	if len(result) == 0 {
+		test.Fatal("Expected response to have non-empty value, got empty")
+	}
+
+	serverArgs := result["args"].([]any)
+	for index, arg := range serverArgs {
+		if arg.(string) == "" {
+			test.Fatalf("Found empty arg at index %d in args = %v", index, serverArgs)
+		}
+	}
+
+	hasEnv := false
+	serverEnv := result["env"].([]any)
+	for _, envString := range serverEnv {
+		envParts := strings.Split(envString.(string), "=")
+		key, value := envParts[0], envParts[1]
+		if key == "COOL_VARIABLE" && value == "1" {
+			hasEnv = true
+		}
+		if key == "COOL_VARIABLE" && value != "1" {
+			test.Fatalf("COOL_VARIABLE is not set to 1, it is %s", value)
+		}
+	}
+
+	if mustHaveEnv && !hasEnv {
+		test.Fatalf("COOL_VARIABLE not set")
+	}
+
+	err = resp.Body.Close()
+	if err != nil {
+		test.Error(err)
+	}
+}
+
 func sendCompletionRequest(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) *http.Response {
 	reqBody, err := json.Marshal(completionReq)
 	if err != nil {
@@ -1000,6 +1059,28 @@ func TestAppScenarios(test *testing.T) {
 			},
 			TestFunc: func(t *testing.T) {
 				openAiApiReusingConnection(t)
+			},
+		},
+		{
+			Name:       "args-with-whitespace",
+			ConfigPath: "test-server/args-with-whitespace.json",
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2025",
+				"localhost:12027",
+			},
+			TestFunc: func(t *testing.T) {
+				testVerifyArgsAndEnv(t, "2025", false)
+			},
+		},
+		{
+			Name:       "env-injection",
+			ConfigPath: "test-server/with-env.json",
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2026",
+				"localhost:12028",
+			},
+			TestFunc: func(t *testing.T) {
+				testVerifyArgsAndEnv(t, "2026", true)
 			},
 		},
 	}

@@ -1,7 +1,7 @@
 {
   "Services": [
     {
-      "Name": "test-args-and-env",
+      "Name": "test-args-with-whitespace",
       "ListenPort": "2025",
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12027",

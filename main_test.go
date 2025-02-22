@@ -1073,8 +1073,8 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "env-injection",
-			ConfigPath: "test-server/with-env.json",
+			Name:       "args-with-env",
+			ConfigPath: "test-server/args-with-env.json",
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2026",
 				"localhost:12028",

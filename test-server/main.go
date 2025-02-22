@@ -564,7 +564,7 @@ func procListen(port string) {
 	}
 }
 
-func handleProcinfo(w http.ResponseWriter, r *http.Request) {
+func handleProcinfo(w http.ResponseWriter, _ *http.Request) {
 	log.Printf("Received /procinfo request, args and env: %s, %s", os.Args, os.Environ())
 	err := json.NewEncoder(w).Encode(map[string]any{
 		"args": os.Args,

@@ -35,7 +35,7 @@ To the client this should be fully transparent with the only exception being tha
     ```
 4. Build the project:
     ```sh
-    go build -o large-model-proxy main.go
+    go build -o large-model-proxy
     ```
     or
    ```sh

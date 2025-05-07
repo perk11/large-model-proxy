@@ -574,11 +574,11 @@ func performHealthCheck(serviceConfig ServiceConfig) {
 		err := cmd.Run()
 
 		if err == nil {
-			log.Printf("[%s] Healthceck \"%s\" returned exit code 0, healthcheck completed", serviceConfig.Name, serviceConfig.HealthcheckCommand)
+			log.Printf("[%s] Healthcheck \"%s\" returned exit code 0, healthcheck completed", serviceConfig.Name, serviceConfig.HealthcheckCommand)
 			break
 		} else {
 			log.Printf(
-				"[%s] Healtcheck \"%s\" returned exit code %d, trying again in %dms",
+				"[%s] Healthcheck \"%s\" returned exit code %d, trying again in %dms",
 				serviceConfig.Name,
 				serviceConfig.HealthcheckCommand,
 				cmd.ProcessState.ExitCode(),

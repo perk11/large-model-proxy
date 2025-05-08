@@ -141,6 +141,9 @@ func main() {
 	if config.OpenAiApi.ListenPort != "" {
 		go startOpenAiApi(config.OpenAiApi, config.Services)
 	}
+	if config.ManagementApi.ListenPort != "" {
+		go startManagementApi(config.ManagementApi, config.Services)
+	}
 	for {
 		receivedSignal := <-exit
 		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))

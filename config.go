@@ -16,6 +16,7 @@ type Config struct {
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
 	OpenAiApi                                                     OpenAiApi
+	ManagementApi                                                 ManagementApi
 }
 
 type ServiceConfig struct {
@@ -36,7 +37,11 @@ type ServiceConfig struct {
 	OpenAiApiModels                 []string
 	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
 }
+
 type OpenAiApi struct {
+	ListenPort string
+}
+type ManagementApi struct {
 	ListenPort string
 }
 
@@ -164,6 +169,14 @@ func validateConfig(cfg Config) error {
 		if err != nil || portVal <= 0 || portVal > 65535 {
 			issues = append(issues,
 				fmt.Sprintf("top-level OpenAiApi.ListenPort is invalid: %q", cfg.OpenAiApi.ListenPort))
+		}
+	}
+
+	if cfg.ManagementApi.ListenPort != "" {
+		portVal, err := strconv.Atoi(cfg.ManagementApi.ListenPort)
+		if err != nil || portVal <= 0 || portVal > 65535 {
+			issues = append(issues,
+				fmt.Sprintf("top-level ManagementApi.ListenPort is invalid: %q", cfg.ManagementApi.ListenPort))
 		}
 	}
 

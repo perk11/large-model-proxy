@@ -224,6 +224,9 @@ func TestValidateConfig(t *testing.T) {
 				OpenAiApi: OpenAiApi{
 					ListenPort: "6060",
 				},
+				ManagementApi: ManagementApi{
+					ListenPort: "7071",
+				},
 				Services: []ServiceConfig{
 					{
 						Name:       "svcOk",
@@ -245,6 +248,24 @@ func TestValidateConfig(t *testing.T) {
 				},
 			},
 			wantErr: false,
+		},
+		{
+			name: "Invalid ManagementApi port",
+			cfg: Config{
+				ResourcesAvailable: map[string]int{"RAM": 10000},
+				ManagementApi: ManagementApi{
+					ListenPort: "99999",
+				},
+				Services: []ServiceConfig{
+					{
+						Name:       "svcOk",
+						ListenPort: "9000",
+						Command:    "/bin/echo",
+					},
+				},
+			},
+			wantErr:        true,
+			expectedErrMsg: []string{"top-level ManagementApi.ListenPort is invalid: \"99999\""},
 		},
 	}
 

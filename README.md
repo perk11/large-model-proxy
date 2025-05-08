@@ -127,6 +127,7 @@ Bellow is a breakdown of what this configuration does:
    * Automatic1111's Stable Diffusion web UI on port 7860
    * llama.cpp with Gemma2 on port 8081
    * OpenAI API on port 7070, supporting Gemma2 via llama.cpp and Qwen2.5-7B-Instruct via vLLM, depending on the `model` specified in the JSON payload.
+   * Management server on port 7071 (optional). If `ManagementServer.ListenPort` is not specified in the config, the management server will not run.
    * ComfyUI on port 8188 through a Docker container, which exposes the internal port 8188 as 18188 on the host, which is then proxied back to 8188 when active.
 2. Internally large-model-proxy will expect Automatic1111 to be available on port 17860, Gemma27B on port 18081, Qwen2.5-7B-Instruct on port 18082, and ComfyUI on port 18188 once it runs the commands given in "Command" parameter and healthcheck passes. 
 3. This config allocates up to 24GB of VRAM and 32GB of RAM for them. No more GPU or RAM will be attempted to be used (assuming the values in ResourceRequirements are correct).
@@ -153,6 +154,17 @@ Currently, the following OpenAI API endpoints are supported:
 * `/v1/chat/completions`
 * `/v1/models` (This one makes it work with e.g. Open WebUI seamlessly).
 * More to come
+
+## Management API
+
+The management API is a simple HTTP API that allows you to get the status of the proxy and the services it is proxying.
+
+To enable it, you need to specify `ManagementApi.ListenPort` in the config.
+
+Currently, the only endpoint is `/status`, which returns a JSON object with the following fields:
+* `all_services`: A list of all services managed by the proxy.
+* `running_services`: A list of all services that are currently running.
+* `resources`: A map of all resources managed by the proxy and their usage.
 
 ## Logs
 

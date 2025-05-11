@@ -143,7 +143,18 @@ Currently, the following OpenAI API endpoints are supported:
 Output from each service is logged to a separate file. Default behavior is to log it into logs/{name}.log,
 but it can be redefined by specifying `LogFilePath` parameter for each service.
 
+## Contributing
+
+Pull requests and features suggestions are welcome.
+
+Due to concurrent nature, race conditions are very common in large-model-proxy, making manual testing impractical.
+Therefore I am striving to have close to 100% automated test coverage.
+
+If you're adding a new feature, implementing automated tests for it is going to be required to merge it.
+
 ## Contacts
 
-Please join my Telegram group for any feedback, questions and collaboration:
+I review all the issues submitted on Github, including feature suggestions.
+
+Feel free to join my Telegram group for any feedback, questions and collaboration:
 https://t.me/large_model_proxy

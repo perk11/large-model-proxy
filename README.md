@@ -93,17 +93,31 @@ Below is an example config.json:
       }
     },
     {
-        "Name": "Qwen/Qwen2.5-7B-Instruct",
-        "OpenAiApi": true,
-        "ProxyTargetHost": "localhost",
-        "ProxyTargetPort": "18082",
-        "Command": "/home/user/.conda/envs/vllm/bin/vllm",
-        "LogFilePath": "/var/log/Qwen2.5-7B.log",
-        "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
-        "ResourceRequirements": {
-           "VRAM-GPU-1": 17916
-        }
-     }
+      "Name": "Qwen/Qwen2.5-7B-Instruct",
+      "OpenAiApi": true,
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "18082",
+      "Command": "/home/user/.conda/envs/vllm/bin/vllm",
+      "LogFilePath": "/var/log/Qwen2.5-7B.log",
+      "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
+      "ResourceRequirements": {
+         "VRAM-GPU-1": 17916
+      }
+    },
+    {
+      "Name": "ComfyUI",
+      "ListenPort": "8188",
+      "TargetPort": "18188",
+      "Command": "docker",
+      "Args": "run --rm --name comfyui --device nvidia.com/gpu=all -v /opt/comfyui:/workspace -p 18188:8188 pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel /bin/bash -c 'cd /workspace && source .venv/bin/activate && apt update && apt install -y git && pip install -r requirements.txt && python main.py --listen'",
+      "KillCommand": "docker kill comfyui",
+      "RestartOnConnectionFailure": true,
+      "ShutDownAfterInactivitySeconds": 600,
+      "ResourceRequirements": {
+        "VRAM-GPU-1": 20000,
+        "RAM": 16000
+      }
+    }
   ]
 }
 ```
@@ -113,10 +127,12 @@ Bellow is a breakdown of what this configuration does:
    * Automatic1111's Stable Diffusion web UI on port 7860
    * llama.cpp with Gemma2 on port 8081
    * OpenAI API on port 7070, supporting Gemma2 via llama.cpp and Qwen2.5-7B-Instruct via vLLM, depending on the `model` specified in the JSON payload.
-2. Internally large-model-proxy will expect Automatic1111 to be available on port 17860, Gemma27B on port 18081 and Qwen2.5-7B-Instruct on port 18082 once it runs the commands given in "Command" parameter and healthcheck passes. 
+   * ComfyUI on port 8188 through a Docker container, which exposes the internal port 8188 as 18188 on the host, which is then proxied back to 8188 when active.
+2. Internally large-model-proxy will expect Automatic1111 to be available on port 17860, Gemma27B on port 18081, Qwen2.5-7B-Instruct on port 18082, and ComfyUI on port 18188 once it runs the commands given in "Command" parameter and healthcheck passes. 
 3. This config allocates up to 24GB of VRAM and 32GB of RAM for them. No more GPU or RAM will be attempted to be used (assuming the values in ResourceRequirements are correct).
-4. The Stable Diffusion web UI is expected to use up to 3GB of VRAM and 30GB of RAM, while Gemma27B will use up to 20GB of VRAM and 3GB of RAM and Qwen2.5-7B-Instruct up to 18GB of VRAM and no RAM (for example's sake).
-5. Automatic111 and Gemma2 logs will be in logs/ directory of the current dir, while Qwen logs will be in /var/log/Qwen.log 
+4. The Stable Diffusion web UI is expected to use up to 3GB of VRAM and 30GB of RAM, while Gemma27B will use up to 20GB of VRAM and 3GB of RAM, Qwen2.5-7B-Instruct up to 18GB of VRAM and no RAM (for example's sake), and ComfyUI up to 20GB of VRAM and 16GB of RAM.
+5. Automatic1111, Gemma2, and ComfyUI logs will be in logs/ directory of the current dir, while Qwen logs will be in /var/log/Qwen.log 
+6. When ComfyUI is no longer in use, its container will be killed using "docker kill comfyui" command. Other services will be terminated normally.
 
 Note how Qwen is not available directly, but is only available via OpenAI API.
 

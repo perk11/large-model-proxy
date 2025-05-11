@@ -147,7 +147,7 @@ but it can be redefined by specifying `LogFilePath` parameter for each service.
 
 Pull requests and features suggestions are welcome.
 
-Due to concurrent nature, race conditions are very common in large-model-proxy, making manual testing impractical.
+Due to its concurrent nature, race conditions are very common in large-model-proxy, making manual testing impractical.
 Therefore I am striving to have close to 100% automated test coverage.
 
 If you're adding a new feature, implementing automated tests for it is going to be required to merge it.

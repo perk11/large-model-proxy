@@ -49,17 +49,21 @@ It will probably not work on Windows natively as it is using Unix Process Groups
 ## Configuration
 
 Below is an example config.json:
+
 ```json
 {
-   "OpenAiApi": {
-      "ListenPort": "7070"
-   }, 
+  "OpenAiApi": {
+    "ListenPort": "7070"
+  },
+  "ManagementApi": {
+    "ListenPort": "7071"
+  },
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-     "VRAM-GPU-1": 24000,
-     "RAM": 32000
-  }, 
+    "VRAM-GPU-1": 24000,
+    "RAM": 32000
+  },
   "Services": [
     {
       "Name": "automatic1111",
@@ -68,7 +72,7 @@ Below is an example config.json:
       "ProxyTargetPort": "17860",
       "Command": "/opt/stable-diffusion-webui/webui.sh",
       "Args": "--port 17860",
-      "WorkDir": "/opt/stable-diffusion-webui", 
+      "WorkDir": "/opt/stable-diffusion-webui",
       "ShutDownAfterInactivitySeconds": 600,
       "RestartOnConnectionFailure": true,
       "ResourceRequirements": {
@@ -84,7 +88,7 @@ Below is an example config.json:
       "ProxyTargetPort": "18081",
       "Command": "/opt/llama.cpp/llama-server",
       "Args": "-m /opt/Gemma-27B-v1_Q4km.gguf -c 8192 -ngl 100 -t 4 --port 18081",
-      "HealthcheckCommand": "curl --fail http://localhost:18081/health", 
+      "HealthcheckCommand": "curl --fail http://localhost:18081/health",
       "HealthcheckIntervalMilliseconds": 200,
       "RestartOnConnectionFailure": false,
       "ResourceRequirements": {

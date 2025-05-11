@@ -1064,7 +1064,7 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "llm-api",
+			Name:       "openai-api",
 			ConfigPath: "test-server/openai-api.json",
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2016",
@@ -1086,7 +1086,7 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "llm-api-keep-alive",
+			Name:       "openai-api-keep-alive",
 			ConfigPath: "test-server/openai-api-reusing-connection.json",
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2024",

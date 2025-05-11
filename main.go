@@ -30,6 +30,7 @@ type RunningService struct {
 	lastUsed             time.Time
 	idleTimer            *time.Timer
 	resourceRequirements map[string]int
+	killCommand          *string
 }
 
 type ResourceManager struct {
@@ -98,6 +99,7 @@ func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) Runn
 		activeConnections:    0,
 		lastUsed:             time.Now(),
 		manageMutex:          &sync.Mutex{},
+		killCommand:          serviceConfig.KillCommand,
 	}
 	rm.storeRunningService(serviceConfig.Name, rs)
 	return rs
@@ -884,6 +886,22 @@ func stopService(serviceName string) {
 		runningService.idleTimer.Stop()
 	}
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
+		if runningService.killCommand != nil {
+			log.Printf("[%s] Sending custom kill command: %s", serviceName, *runningService.killCommand)
+			cmd := exec.Command("sh", "-c", *runningService.killCommand)
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setpgid: true,
+				Pgid:    0,
+			}
+			err := cmd.Start()
+			if err != nil {
+				log.Printf("[%s] Failed to start custom kill command: %v", serviceName, err)
+			}
+			err = cmd.Wait()
+			if err != nil {
+				log.Printf("[%s] Failed to wait for custom kill command: %v", serviceName, err)
+			}
+		}
 		log.Printf("[%s] Sending SIGTERM to service process group: -%d", serviceName, runningService.cmd.Process.Pid)
 		err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGTERM)
 		if err != nil {

@@ -744,6 +744,56 @@ func testVerifyArgsAndEnv(test *testing.T, procPort string, mustHaveEnv bool) {
 	}
 }
 
+func killCommand(test *testing.T, proxyAddress string) {
+	const killCommandOutputFile = "/tmp/test-server-kill-command-output"
+
+	// Delete the kill command output file if it exists
+	err := os.Remove(killCommandOutputFile)
+	if err != nil && !os.IsNotExist(err) {
+		test.Errorf("Failed to delete kill command output file: %v", err)
+	}
+
+	pid := runReadPidCloseConnection(test, proxyAddress)
+	if pid == 0 {
+		//runReadPidCloseConnection already failed the test
+		return
+	}
+	secondPid := runReadPidCloseConnection(test, proxyAddress)
+	if secondPid != pid {
+		test.Errorf("pid is different during second connection")
+		return
+	}
+
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(pid) {
+		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
+		return
+	}
+
+	thirdPid := runReadPidCloseConnection(test, proxyAddress)
+	if thirdPid == 0 {
+		return
+	}
+	if thirdPid == pid {
+		test.Errorf("pid during third connection is the same as during first connection ")
+		return
+	}
+
+	time.Sleep(4 * time.Second)
+	if isProcessRunning(pid) {
+		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
+	}
+
+	// Check if the kill command output file was created and is 'success'
+	content, err := os.ReadFile(killCommandOutputFile)
+	if err != nil {
+		test.Errorf("Failed to read kill command output file: %v", err)
+	}
+	if string(content) != "success" {
+		test.Errorf("Kill command output file content is not 'success', it is '%s'", string(content))
+	}
+}
+
 func sendCompletionRequest(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) *http.Response {
 	reqBody, err := json.Marshal(completionReq)
 	if err != nil {
@@ -1081,6 +1131,14 @@ func TestAppScenarios(test *testing.T) {
 			},
 			TestFunc: func(t *testing.T) {
 				testVerifyArgsAndEnv(t, "2026", true)
+			},
+		},
+		{
+			Name:                          "kill-command",
+			ConfigPath:                    "test-server/kill-command.json",
+			AddressesToCheckAfterStopping: []string{"localhost:2034"},
+			TestFunc: func(t *testing.T) {
+				killCommand(t, "localhost:2034")
 			},
 		},
 	}

@@ -200,6 +200,21 @@ func TestValidateConfig(t *testing.T) {
 			expectedErrMsg: []string{"has negative ShutDownAfterInactivitySeconds", "serviceNegDuration"},
 		},
 		{
+			name: "Standard KillCommand works",
+			cfg: Config{
+				ResourcesAvailable: map[string]int{"RAM": 10000},
+				Services: []ServiceConfig{
+					{
+						Name:        "killCommandWorks",
+						ListenPort:  "8090",
+						Command:     "/bin/echo",
+						KillCommand: stringPtr("/bin/echo"),
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "All checks pass (bigger example)",
 			cfg: Config{
 				ResourcesAvailable: map[string]int{
@@ -219,9 +234,10 @@ func TestValidateConfig(t *testing.T) {
 						},
 					},
 					{
-						Name:       "svcOk2",
-						ListenPort: "9001",
-						Command:    "/bin/echo",
+						Name:        "svcOk2",
+						ListenPort:  "9001",
+						Command:     "/bin/echo",
+						KillCommand: stringPtr("/bin/echo"),
 						ResourceRequirements: map[string]int{
 							"VRAM-GPU-1": 3000,
 						},
@@ -254,4 +270,8 @@ func TestValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stringPtr(s string) *string {
+	return &s
 }

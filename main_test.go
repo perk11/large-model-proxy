@@ -758,25 +758,11 @@ func killCommand(test *testing.T, proxyAddress string) {
 		//runReadPidCloseConnection already failed the test
 		return
 	}
-	secondPid := runReadPidCloseConnection(test, proxyAddress)
-	if secondPid != pid {
-		test.Errorf("pid is different during second connection")
-		return
-	}
-
-	time.Sleep(4 * time.Second)
-	if isProcessRunning(pid) {
-		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
-		return
-	}
-
-	thirdPid := runReadPidCloseConnection(test, proxyAddress)
-	if thirdPid == 0 {
-		return
-	}
-	if thirdPid == pid {
-		test.Errorf("pid during third connection is the same as during first connection ")
-		return
+	_, err = os.ReadFile(killCommandOutputFile)
+	if err == nil {
+		test.Errorf("File \"%s\" exists before kill command was supposed to run", killCommandOutputFile)
+	} else if !os.IsNotExist(err) {
+		test.Errorf("Unexpected error trying to read \"%s\", expecting file to not exist instead", killCommandOutputFile)
 	}
 
 	time.Sleep(4 * time.Second)

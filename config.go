@@ -25,6 +25,7 @@ type ServiceConfig struct {
 	ProxyTargetPort                 string
 	Command                         string
 	Args                            string
+	KillCommand                     *string
 	LogFilePath                     string
 	Workdir                         string
 	HealthcheckCommand              string

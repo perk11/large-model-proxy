@@ -1,0 +1,46 @@
+{
+  "ShutDownAfterInactivitySeconds": 4,
+  "ResourcesAvailable": {
+    "CPU": 4,
+    "GPU": 2
+  },
+  "ManagementApi": {
+    "ListenPort": "2040"
+  },
+  "Services": [
+    {
+      "Name": "service1-cpu",
+      "ListenPort": "2041",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12041",
+      "Command": "test-server/test-server",
+      "Args": "-p 12041",
+      "ResourceRequirements": {
+        "CPU": 2
+      }
+    },
+    {
+      "Name": "service2-gpu",
+      "ListenPort": "2042",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12042",
+      "Command": "test-server/test-server",
+      "Args": "-p 12042",
+      "ResourceRequirements": {
+        "GPU": 1
+      }
+    },
+    {
+      "Name": "service3-cpu-gpu",
+      "ListenPort": "2043",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12043",
+      "Command": "test-server/test-server",
+      "Args": "-p 12043",
+      "ResourceRequirements": {
+        "CPU": 2,
+        "GPU": 1
+      }
+    }
+  ]
+}

@@ -11,12 +11,12 @@ import (
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
 	// ServiceStatus represents the current state of a service
 	type ServiceStatus struct {
-		Name               string         `json:"name"`
-		ListenPort         string         `json:"listen_port"`
-		IsRunning          bool           `json:"is_running"`
-		ActiveConnections  int            `json:"active_connections"`
-		LastUsed           time.Time      `json:"last_used"`
-		ResourceAllocation map[string]int `json:"resource_allocation"`
+		Name                 string         `json:"name"`
+		ListenPort           string         `json:"listen_port"`
+		IsRunning            bool           `json:"is_running"`
+		ActiveConnections    int            `json:"active_connections"`
+		LastUsed             *time.Time     `json:"last_used"`
+		ResourceRequirements map[string]int `json:"resource_requirements"`
 	}
 
 	// ResourceUsage represents the current usage of a resource
@@ -31,6 +31,11 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		AllServices     []ServiceStatus          `json:"all_services"`
 		RunningServices []ServiceStatus          `json:"running_services"`
 		Resources       map[string]ResourceUsage `json:"resources"`
+	}
+
+	if request.Method != "GET" {
+		http.Error(responseWriter, "Only GET requests allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
 	responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -57,9 +62,9 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	// Process all services
 	for _, service := range services {
 		status := ServiceStatus{
-			Name:               service.Name,
-			ListenPort:         service.ListenPort,
-			ResourceAllocation: service.ResourceRequirements,
+			Name:                 service.Name,
+			ListenPort:           service.ListenPort,
+			ResourceRequirements: service.ResourceRequirements,
 		}
 
 		// Check if service is running

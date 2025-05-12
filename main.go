@@ -27,7 +27,7 @@ type RunningService struct {
 	manageMutex          *sync.Mutex
 	cmd                  *exec.Cmd
 	activeConnections    int
-	lastUsed             time.Time
+	lastUsed             *time.Time
 	idleTimer            *time.Timer
 	resourceRequirements map[string]int
 	killCommand          *string
@@ -94,10 +94,11 @@ func (rm ResourceManager) incrementConnection(name string, count int) {
 }
 
 func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) RunningService {
+	now := time.Now()
 	rs := RunningService{
 		resourceRequirements: serviceConfig.ResourceRequirements,
 		activeConnections:    0,
-		lastUsed:             time.Now(),
+		lastUsed:             &now,
 		manageMutex:          &sync.Mutex{},
 		killCommand:          serviceConfig.KillCommand,
 	}
@@ -705,10 +706,13 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 		if !canBeStopped(serviceName) {
 			continue
 		}
-		timeDifference := resourceManager.runningServices[requestingService].lastUsed.Sub(earliestTime)
-		if timeDifference < 0 {
-			earliestLastUsedService = serviceName
-			earliestTime = resourceManager.runningServices[requestingService].lastUsed
+		lastUsed := resourceManager.runningServices[serviceName].lastUsed
+		if lastUsed != nil {
+			timeDifference := lastUsed.Sub(earliestTime)
+			if timeDifference < 0 {
+				earliestLastUsedService = serviceName
+				earliestTime = *lastUsed
+			}
 		}
 	}
 
@@ -740,7 +744,8 @@ func trackServiceLastUsed(serviceConfig ServiceConfig) {
 		log.Printf("[%s] Warning, tried to track service usage, but couldn't find it in the list of running services, it was probably stopped", serviceConfig.Name)
 		return
 	}
-	runningService.lastUsed = time.Now()
+	now := time.Now()
+	runningService.lastUsed = &now
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
 	}

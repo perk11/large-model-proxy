@@ -49,17 +49,21 @@ It will probably not work on Windows natively as it is using Unix Process Groups
 ## Configuration
 
 Below is an example config.json:
+
 ```json
 {
-   "OpenAiApi": {
-      "ListenPort": "7070"
-   }, 
+  "OpenAiApi": {
+    "ListenPort": "7070"
+  },
+  "ManagementApi": {
+    "ListenPort": "7071"
+  },
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-     "VRAM-GPU-1": 24000,
-     "RAM": 32000
-  }, 
+    "VRAM-GPU-1": 24000,
+    "RAM": 32000
+  },
   "Services": [
     {
       "Name": "automatic1111",
@@ -68,7 +72,7 @@ Below is an example config.json:
       "ProxyTargetPort": "17860",
       "Command": "/opt/stable-diffusion-webui/webui.sh",
       "Args": "--port 17860",
-      "WorkDir": "/opt/stable-diffusion-webui", 
+      "WorkDir": "/opt/stable-diffusion-webui",
       "ShutDownAfterInactivitySeconds": 600,
       "RestartOnConnectionFailure": true,
       "ResourceRequirements": {
@@ -84,7 +88,7 @@ Below is an example config.json:
       "ProxyTargetPort": "18081",
       "Command": "/opt/llama.cpp/llama-server",
       "Args": "-m /opt/Gemma-27B-v1_Q4km.gguf -c 8192 -ngl 100 -t 4 --port 18081",
-      "HealthcheckCommand": "curl --fail http://localhost:18081/health", 
+      "HealthcheckCommand": "curl --fail http://localhost:18081/health",
       "HealthcheckIntervalMilliseconds": 200,
       "RestartOnConnectionFailure": false,
       "ResourceRequirements": {
@@ -127,6 +131,7 @@ Bellow is a breakdown of what this configuration does:
    * Automatic1111's Stable Diffusion web UI on port 7860
    * llama.cpp with Gemma2 on port 8081
    * OpenAI API on port 7070, supporting Gemma2 via llama.cpp and Qwen2.5-7B-Instruct via vLLM, depending on the `model` specified in the JSON payload.
+   * Management server on port 7071 (optional). If `ManagementServer.ListenPort` is not specified in the config, the management server will not run.
    * ComfyUI on port 8188 through a Docker container, which exposes the internal port 8188 as 18188 on the host, which is then proxied back to 8188 when active.
 2. Internally large-model-proxy will expect Automatic1111 to be available on port 17860, Gemma27B on port 18081, Qwen2.5-7B-Instruct on port 18082, and ComfyUI on port 18188 once it runs the commands given in "Command" parameter and healthcheck passes. 
 3. This config allocates up to 24GB of VRAM and 32GB of RAM for them. No more GPU or RAM will be attempted to be used (assuming the values in ResourceRequirements are correct).
@@ -153,6 +158,17 @@ Currently, the following OpenAI API endpoints are supported:
 * `/v1/chat/completions`
 * `/v1/models` (This one makes it work with e.g. Open WebUI seamlessly).
 * More to come
+
+## Management API
+
+The management API is a simple HTTP API that allows you to get the status of the proxy and the services it is proxying.
+
+To enable it, you need to specify `ManagementApi.ListenPort` in the config.
+
+Currently, the only endpoint is `/status`, which returns a JSON object with the following fields:
+* `all_services`: A list of all services managed by the proxy.
+* `running_services`: A list of all services that are currently running.
+* `resources`: A map of all resources managed by the proxy and their usage.
 
 ## Logs
 

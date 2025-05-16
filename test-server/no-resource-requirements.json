@@ -10,6 +10,7 @@
       "ProxyTargetPort": "12032",
       "Command": "test-server/test-server",
       "Args": "-p 12032",
+      "LogFilePath": "test-logs/test-server_no-resource-requirements-1.log",
       "ResourceRequirements": {
         "VRAM": 20
       }
@@ -20,7 +21,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12033",
       "Command": "test-server/test-server",
-      "Args": "-p 12033"
+      "Args": "-p 12033",
+      "LogFilePath": "test-logs/test-server_no-resource-requirements-2.log"
     }
   ]
 }

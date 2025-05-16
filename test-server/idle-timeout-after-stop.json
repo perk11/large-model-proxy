@@ -13,7 +13,8 @@
       "Args": "-p 12008 -request-processing-duration 2s",
       "ResourceRequirements": {
         "RAM": 1
-      }
+      },
+      "LogFilePath": "test-logs/test-server_idle-timeout-after-stop-1.log"
     },
     {
       "Name": "test-server_idle-timeout-after-stop-2",
@@ -24,7 +25,8 @@
       "Args": "-p 12009",
       "ResourceRequirements": {
         "RAM": 1
-      }
+      },
+      "LogFilePath": "test-logs/test-server_idle-timeout-after-stop-2.log"
     }
   ]
 }

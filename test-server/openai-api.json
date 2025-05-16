@@ -10,6 +10,7 @@
       "ProxyTargetPort": "12017",
       "Command": "test-server/test-server",
       "Args": "-openai-api-port 12017 -p 12018",
+      "LogFilePath": "test-logs/test-server_openai-api-1.log",
       "OpenAiApi": true
     },
     {
@@ -19,11 +20,9 @@
       "ProxyTargetPort": "12019",
       "Command": "test-server/test-server",
       "Args": "-openai-api-port 12019 -p 12020",
+      "LogFilePath": "test-logs/test-server_openai-api-2.log",
       "OpenAiApi": true,
-      "OpenAiApiModels": [
-        "fizz",
-        "buzz"
-      ]
+      "OpenAiApiModels": ["fizz", "buzz"]
     },
     {
       "Name": "test-non-llm-1",
@@ -32,6 +31,7 @@
       "ProxyTargetPort": "12021",
       "Command": "test-server/test-server",
       "Args": "-p 12021",
+      "LogFilePath": "test-logs/test-server_non-llm-1.log",
       "OpenAiApi": false
     },
     {
@@ -41,6 +41,7 @@
       "ProxyTargetPort": "12022",
       "Command": "test-server/test-server",
       "Args": "-openai-api-port 12022 -p 12023",
+      "LogFilePath": "test-logs/test-server_non-llm-2.log",
       "OpenAiApi": false
     }
   ]

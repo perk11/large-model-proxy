@@ -9,6 +9,7 @@
       "ProxyTargetPort": "12025",
       "Command": "test-server/test-server",
       "Args": "-openai-api-port 12025 -p 12026",
+      "LogFilePath": "test-logs/test-server_openai-api-keep-alive.log",
       "OpenAiApi": true
     }
   ]

@@ -7,7 +7,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12029",
       "Command": "test-server/test-server",
-      "Args": "-p 12029 -sleep-after-writing-pid-duration 10s"
+      "Args": "-p 12029 -sleep-after-writing-pid-duration 10s",
+      "LogFilePath": "test-logs/test-server_client-close-full-idle-timeout.log"
     }
   ]
 }

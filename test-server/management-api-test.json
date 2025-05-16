@@ -15,6 +15,7 @@
       "ProxyTargetPort": "12041",
       "Command": "test-server/test-server",
       "Args": "-p 12041",
+      "LogFilePath": "test-logs/test-server_service1-cpu.log",
       "ResourceRequirements": {
         "CPU": 2
       }
@@ -26,6 +27,7 @@
       "ProxyTargetPort": "12042",
       "Command": "test-server/test-server",
       "Args": "-p 12042",
+      "LogFilePath": "test-logs/test-server_service2-gpu.log",
       "ResourceRequirements": {
         "GPU": 1
       }
@@ -37,6 +39,7 @@
       "ProxyTargetPort": "12043",
       "Command": "test-server/test-server",
       "Args": "-p 12043",
+      "LogFilePath": "test-logs/test-server_service3-cpu-gpu.log",
       "ResourceRequirements": {
         "CPU": 2,
         "GPU": 1

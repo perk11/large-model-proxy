@@ -6,7 +6,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12006",
       "Command": "test-server/test-server",
-      "Args": "-p 12006 -startup-duration 24h"
+      "Args": "-p 12006 -startup-duration 24h",
+      "LogFilePath": "test-logs/test-server_service-stuck-no-healthcheck.log"
     }
   ]
 }

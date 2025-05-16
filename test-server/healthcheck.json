@@ -8,7 +8,8 @@
       "Command": "test-server/test-server",
       "Args": "-p 12001 -healthcheck-port 2011 -sleep-before-listening 10s -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
       "HealthcheckCommand": "curl --fail http://localhost:2011",
-      "HealthcheckIntervalMilliseconds": 200
+      "HealthcheckIntervalMilliseconds": 200,
+      "LogFilePath": "test-logs/test-server_healthcheck.log"
     }
   ]
 }

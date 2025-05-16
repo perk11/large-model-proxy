@@ -4,78 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
 
-// OpenAiApiCompletionResponse is what /v1/completions returns
-type OpenAiApiCompletionResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Text         string `json:"text"`
-		Index        int    `json:"index"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-// OpenAiApiCompletionRequest is used by /v1/completions
-type OpenAiApiCompletionRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
-}
-
-// OpenAiApiChatCompletionRequest is used by /v1/chat/completions
-type OpenAiApiChatCompletionRequest struct {
-	Model    string        `json:"model,omitempty"`
-	Messages []ChatMessage `json:"messages,omitempty"`
-	Stream   bool          `json:"stream,omitempty"`
-}
-
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// OpenAiApiChatCompletionResponse is what /v1/chat/completions returns
-type OpenAiApiChatCompletionResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int         `json:"index"`
-		Message      ChatMessage `json:"message"`
-		Delta        ChatMessage `json:"delta"`
-		FinishReason string      `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-func connectOnly(test *testing.T, proxyAddress string) {
+func testImplConnectOnly(test *testing.T, proxyAddress string) {
 	_, err := net.Dial("tcp", proxyAddress)
 	if err != nil {
 		test.Error(err)
@@ -86,7 +25,7 @@ func connectOnly(test *testing.T, proxyAddress string) {
 	time.Sleep(1 * time.Second)
 }
 
-func connectTwo2ServersSimultaneouslyAssertBothAreRunning(test *testing.T, proxyOneAddress string, proxyTwoAddress string) {
+func testImplConnectTwo2ServersSimultaneouslyAssertBothAreRunning(test *testing.T, proxyOneAddress string, proxyTwoAddress string) {
 	pidOne := runReadPidCloseConnection(test, proxyOneAddress)
 	clientTwoConnectTime := time.Now()
 	pidTwo := runReadPidCloseConnection(test, proxyTwoAddress)
@@ -101,7 +40,8 @@ func connectTwo2ServersSimultaneouslyAssertBothAreRunning(test *testing.T, proxy
 		test.Fatalf("PID %d is not running, but it's supposed to", pidTwo)
 	}
 }
-func idleTimeout(test *testing.T, proxyAddress string) {
+
+func testIdleTimeout(test *testing.T, proxyAddress string) {
 	pid := runReadPidCloseConnection(test, proxyAddress)
 	if pid == 0 {
 		//runReadPidCloseConnection already failed the test
@@ -134,7 +74,7 @@ func idleTimeout(test *testing.T, proxyAddress string) {
 	}
 }
 
-func idleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serviceTwoAddress string) {
+func testIdleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, serviceTwoAddress string) {
 	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		test.Error(err)
@@ -275,7 +215,7 @@ func testClientClose(t *testing.T, address1 string, address1Internal string, add
 	assertPortsAreClosed(t, []string{address1Internal})
 }
 
-func openAiApi(test *testing.T) {
+func testOpenAiApi(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
@@ -349,37 +289,7 @@ func openAiApi(test *testing.T) {
 	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
 }
 
-func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Response) {
-	var modelsResp OpenAiApiModels
-	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
-		test.Fatalf("Failed to decode /v1/models response: %v", err)
-	}
-
-	foundIDs := make([]bool, len(expectedIDs))
-
-	if len(modelsResp.Data) != len(expectedIDs) {
-		test.Fatalf("Expected %d models, but got %d", len(expectedIDs), len(modelsResp.Data))
-	}
-	for _, model := range modelsResp.Data {
-		idx := indexOf(expectedIDs, model.ID)
-		if idx == -1 {
-			test.Errorf("Unexpected model ID returned: %s", model.ID)
-			continue
-		}
-		foundIDs[idx] = true
-
-		if model.Object == "" {
-			test.Errorf("Model %s has an empty 'object' field", model.ID)
-		}
-		if model.Created == 0 {
-			test.Errorf("Model %s has 'created' == 0 (expected a non-zero timestamp)", model.ID)
-		}
-		if model.OwnedBy == "" {
-			test.Errorf("Model %s has an empty 'owned_by' field", model.ID)
-		}
-	}
-}
-func openAiApiReusingConnection(test *testing.T) {
+func testOpenAiApiReusingConnection(test *testing.T) {
 	//sanity check  that nothing is running before initial connection
 	assertPortsAreClosed(test, []string{"localhost:12025", "localhost:12026"})
 	client := &http.Client{}
@@ -415,35 +325,6 @@ func openAiApiReusingConnection(test *testing.T) {
 	}
 }
 
-func modelsRequestExpectingSuccess(test *testing.T, url string, client *http.Client) *http.Response {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		test.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		test.Fatalf("/v1/models Request failed: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
-	}
-	if resp.Header.Get("Content-Type") != "application/json; charset=utf-8" {
-		test.Fatalf("Expected Content Type \"application/json; charset=utf-8\", got %s", resp.Header.Get("Content-Type"))
-	}
-	return resp
-}
-
-func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []string) {
-	for _, address := range servicesToCheckForClosedPorts {
-		err := checkPortClosed(address)
-		if err != nil {
-			test.Errorf("Port %s is open when service is not supposed to be running", address)
-		}
-	}
-}
-
 // testCompletionStreamingExpectingSuccess checks streaming completions from /v1/completions
 func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 	address := "http://localhost:2016"
@@ -473,6 +354,7 @@ func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 		},
 	)
 }
+
 func testCompletionRequest(test *testing.T, address string, model string, client *http.Client) {
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
 
@@ -564,7 +446,6 @@ func testChatCompletionStreamingExpectingSuccess(t *testing.T, address, model st
 }
 
 func testStreamingRequest(t *testing.T, url string, requestBodyObject any, expectedChunks []string, readChunkFunc func(t *testing.T, payload string) string) {
-
 	reqBody, err := json.Marshal(requestBodyObject)
 	if err != nil {
 		t.Fatalf("%s: Failed to marshal JSON: %v", url, err)
@@ -627,64 +508,6 @@ func testStreamingRequest(t *testing.T, url string, requestBodyObject any, expec
 	}
 }
 
-func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) OpenAiApiChatCompletionResponse {
-	resp := sendChatCompletionRequest(t, address, chatReq)
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
-	}
-
-	var chatResp OpenAiApiChatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		t.Fatalf("Failed to decode /v1/chat/completions response: %v", err)
-	}
-	return chatResp
-}
-
-// sendChatCompletionRequest sends a POST to /v1/chat/completions with the given JSON body
-func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) *http.Response {
-	reqBody, err := json.Marshal(chatReq)
-	if err != nil {
-		t.Fatalf("Failed to marshal JSON body: %v", err)
-	}
-
-	url := fmt.Sprintf("%s/v1/chat/completions", address)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
-	if err != nil {
-		t.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("/v1/chat/completions request failed: %v", err)
-	}
-	return resp
-}
-
-func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) OpenAiApiCompletionResponse {
-	resp := sendCompletionRequest(test, address, completionReq, client)
-	defer func(Body io.ReadCloser) {
-		if cerr := Body.Close(); cerr != nil {
-			test.Error(cerr)
-		}
-	}(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		test.Fatalf("Expected status code 200, got %d", resp.StatusCode)
-	}
-
-	var completionResp OpenAiApiCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&completionResp); err != nil {
-		test.Fatalf("Failed to decode /v1/completions response: %v", err)
-	}
-	return completionResp
-}
-
 func testVerifyArgsAndEnv(test *testing.T, procPort string, mustHaveEnv bool) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%s/procinfo", procPort), nil)
@@ -744,7 +567,7 @@ func testVerifyArgsAndEnv(test *testing.T, procPort string, mustHaveEnv bool) {
 	}
 }
 
-func killCommand(test *testing.T, proxyAddress string) {
+func testKillCommand(test *testing.T, proxyAddress string) {
 	const killCommandOutputFile = "/tmp/test-server-kill-command-output"
 
 	// Delete the kill command output file if it exists
@@ -780,183 +603,6 @@ func killCommand(test *testing.T, proxyAddress string) {
 	}
 }
 
-func sendCompletionRequest(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) *http.Response {
-	reqBody, err := json.Marshal(completionReq)
-	if err != nil {
-		test.Fatalf("Failed to marshal JSON body: %v", err)
-	}
-
-	url := fmt.Sprintf("%s/v1/completions", address)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
-	if err != nil {
-		test.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if client == nil {
-		client = &http.Client{}
-		client.Timeout = 5 * time.Second
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		test.Fatalf("/v1/completions Request failed: %v", err)
-	}
-	return resp
-}
-
-// indexOf returns the index of target in arr, or -1 if not found.
-func indexOf(arr []string, target string) int {
-	for i, val := range arr {
-		if val == target {
-			return i
-		}
-	}
-	return -1
-}
-
-func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
-	buffer := make([]byte, 1024)
-	bytesRead, err := conn.Read(buffer)
-	if err != nil {
-		if err != io.EOF {
-			test.Error(err)
-			return 0
-		}
-	}
-	pidString := string(buffer[:bytesRead])
-	if !isNumeric(pidString) {
-		test.Fatalf("value \"%s\" is not numeric, expected a pid", pidString)
-		return 0
-	}
-	pidInt, err := strconv.Atoi(pidString)
-	if err != nil {
-		test.Fatal(err, pidString)
-		return 0
-	}
-	if pidInt <= 0 {
-		test.Fatalf("value \"%s\" is not a valid pid", pidString)
-		return 0
-	}
-	return pidInt
-}
-func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
-	conn, err := net.Dial("tcp", proxyAddress)
-	if err != nil {
-		test.Error(err)
-		return 0
-	}
-
-	pid := readPidFromOpenConnection(test, conn)
-
-	if !isProcessRunning(pid) {
-		test.Errorf("process \"%d\" is not running while connection is still open", pid)
-		return 0
-	}
-
-	err = conn.Close()
-	if err != nil {
-		test.Error(err)
-		return 0
-	}
-
-	return pid
-}
-func minimal(test *testing.T, proxyAddress string) {
-	runReadPidCloseConnection(test, proxyAddress)
-}
-
-func isNumeric(s string) bool {
-	for _, char := range s {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
-}
-func isProcessRunning(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, syscall.ESRCH) {
-		return false
-	}
-	if errors.Is(err, syscall.EPERM) {
-		return true
-	}
-	return false
-}
-func startLargeModelProxy(testCaseName string, configPath string, waitChannel chan error) (*exec.Cmd, error) {
-	cmd := exec.Command("./large-model-proxy", "-c", configPath)
-	testLogsFolder := "test-logs"
-	if _, err := os.Stat(testLogsFolder); os.IsNotExist(err) {
-		os.Mkdir(testLogsFolder, 0755)
-	}
-	logFilePath := fmt.Sprintf("%s/test_%s.log", testLogsFolder, testCaseName)
-	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
-	} else {
-		log.Printf("Failed to open log file for test %s", logFilePath)
-	}
-	if err := cmd.Start(); err != nil {
-		waitChannel <- err
-		return nil, err
-	}
-	go func() {
-		waitChannel <- cmd.Wait()
-	}()
-
-	time.Sleep(1 * time.Second)
-
-	select {
-	case err := <-waitChannel:
-		if err != nil {
-			return nil, fmt.Errorf("large-model-proxy exited prematurely with error %v", err)
-		} else {
-			return nil, fmt.Errorf("large-model-proxy exited prematurely with success")
-		}
-	default:
-	}
-
-	err = cmd.Process.Signal(syscall.Signal(0))
-	if err != nil {
-		if err.Error() == "os: process already finished" {
-			return nil, fmt.Errorf("large-model-proxy exited prematurely")
-		}
-		return nil, fmt.Errorf("error checking process state: %w", err)
-	}
-
-	return cmd, nil
-}
-
-func stopApplication(cmd *exec.Cmd, waitChannel chan error) error {
-	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
-		return err
-	}
-
-	select {
-	case err := <-waitChannel:
-		if err != nil && err.Error() != "waitid: no child processes" && err.Error() != "wait: no child processes" {
-			return err
-		}
-		return nil
-	case <-time.After(15 * time.Second):
-		// Optionally kill the process if it hasn't exited
-		_ = cmd.Process.Kill()
-		return errors.New("large-model-proxy process did not stop within 15 seconds after receiving SIGINT")
-	}
-}
-
-func checkPortClosed(address string) error {
-	_, err := net.DialTimeout("tcp", address, time.Second)
-	if err == nil {
-		return fmt.Errorf("port %s is still open", address)
-	}
-	return nil
-}
-
 func TestAppScenarios(test *testing.T) {
 	tests := []struct {
 		Name                          string
@@ -969,7 +615,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/minimal.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2000", "localhost:12000"},
 			TestFunc: func(t *testing.T) {
-				minimal(t, "localhost:2000")
+				testImplMinimal(t, "localhost:2000")
 			},
 		},
 		{
@@ -977,7 +623,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/no-resource-requirements.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2032", "localhost:12032", "localhost:2033", "localhost:12033"},
 			TestFunc: func(t *testing.T) {
-				connectTwo2ServersSimultaneouslyAssertBothAreRunning(t, "localhost:2032", "localhost:2033")
+				testImplConnectTwo2ServersSimultaneouslyAssertBothAreRunning(t, "localhost:2032", "localhost:2033")
 			},
 		},
 		{
@@ -985,7 +631,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/healthcheck.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2001", "localhost:12001", "localhost:2011"},
 			TestFunc: func(t *testing.T) {
-				minimal(t, "localhost:2001")
+				testImplMinimal(t, "localhost:2001")
 			},
 		},
 		{
@@ -993,7 +639,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/healthcheck-immediate-listen-start.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2002", "localhost:12002", "localhost:2012"},
 			TestFunc: func(t *testing.T) {
-				minimal(t, "localhost:2002")
+				testImplMinimal(t, "localhost:2002")
 			},
 		},
 		{
@@ -1001,7 +647,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2003", "localhost:12003", "localhost:2013"},
 			TestFunc: func(t *testing.T) {
-				minimal(t, "localhost:2003")
+				testImplMinimal(t, "localhost:2003")
 			},
 		},
 		{
@@ -1009,7 +655,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/healthcheck-immediate-startup.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2004", "localhost:2014"},
 			TestFunc: func(t *testing.T) {
-				minimal(t, "localhost:2004")
+				testImplMinimal(t, "localhost:2004")
 			},
 		},
 		{
@@ -1017,7 +663,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/healthcheck-stuck.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2005", "localhost:12005", "localhost:2015"},
 			TestFunc: func(t *testing.T) {
-				connectOnly(t, "localhost:2005")
+				testImplConnectOnly(t, "localhost:2005")
 			},
 		},
 		{
@@ -1025,7 +671,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/service-stuck-no-healthcheck.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2006"},
 			TestFunc: func(t *testing.T) {
-				connectOnly(t, "localhost:2006")
+				testImplConnectOnly(t, "localhost:2006")
 			},
 		},
 		{
@@ -1033,7 +679,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/idle-timeout.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2007"},
 			TestFunc: func(t *testing.T) {
-				idleTimeout(t, "localhost:2007")
+				testIdleTimeout(t, "localhost:2007")
 			},
 		},
 		{
@@ -1041,7 +687,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/idle-timeout-after-stop.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2008", "localhost:2009"},
 			TestFunc: func(t *testing.T) {
-				idleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
+				testIdleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
 			},
 		},
 		{
@@ -1086,7 +732,7 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:12023",
 			},
 			TestFunc: func(t *testing.T) {
-				openAiApi(t)
+				testOpenAiApi(t)
 			},
 		},
 		{
@@ -1098,7 +744,7 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:12026",
 			},
 			TestFunc: func(t *testing.T) {
-				openAiApiReusingConnection(t)
+				testOpenAiApiReusingConnection(t)
 			},
 		},
 		{
@@ -1128,7 +774,7 @@ func TestAppScenarios(test *testing.T) {
 			ConfigPath:                    "test-server/kill-command.json",
 			AddressesToCheckAfterStopping: []string{"localhost:2034"},
 			TestFunc: func(t *testing.T) {
-				killCommand(t, "localhost:2034")
+				testKillCommand(t, "localhost:2034")
 			},
 		},
 	}

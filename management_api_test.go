@@ -178,7 +178,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	}
 
 	// Wait for status to update
-	time.Sleep(1 * time.Second)
+	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 1
 	resp = getStatusFromManagementAPI(t)
@@ -196,7 +196,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	}
 
 	// Wait for status to update
-	time.Sleep(1 * time.Second)
+	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 2
 	resp = getStatusFromManagementAPI(t)
@@ -215,7 +215,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	}
 
 	// Wait for status to update
-	time.Sleep(1 * time.Second)
+	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 3
 	resp = getStatusFromManagementAPI(t)
@@ -229,7 +229,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Wait for Service 1 to terminate due to inactivity timeout
 	t.Log("Waiting for Service 1 to terminate due to timeout")
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
 	verifyServiceStatus(t, resp, "service1-cpu", false, nil)
@@ -242,7 +242,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Wait for Service 2 to terminate due to inactivity timeout
 	t.Log("Waiting for Service 2 to terminate due to timeout")
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
 	verifyServiceStatus(t, resp, "service1-cpu", false, nil)
@@ -255,7 +255,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Wait for Service 3 to terminate due to inactivity timeout
 	t.Log("Waiting for Service 3 to terminate due to timeout")
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
 	verifyServiceStatus(t, resp, "service1-cpu", false, nil)

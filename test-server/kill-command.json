@@ -8,7 +8,8 @@
       "ProxyTargetPort": "12034",
       "Command": "test-server/test-server",
       "Args": "-p 12034",
-      "KillCommand": "echo -n 'success' > /tmp/test-server-kill-command-output"
+      "KillCommand": "echo -n 'success' > /tmp/test-server-kill-command-output",
+      "LogFilePath": "test-logs/test-server_kill-command.log"
     }
   ]
 }

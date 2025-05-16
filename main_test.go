@@ -888,7 +888,11 @@ func isProcessRunning(pid int) bool {
 }
 func startLargeModelProxy(testCaseName string, configPath string, waitChannel chan error) (*exec.Cmd, error) {
 	cmd := exec.Command("./large-model-proxy", "-c", configPath)
-	logFilePath := fmt.Sprintf("logs/test_%s.log", testCaseName)
+	testLogsFolder := "test-logs"
+	if _, err := os.Stat(testLogsFolder); os.IsNotExist(err) {
+		os.Mkdir(testLogsFolder, 0755)
+	}
+	logFilePath := fmt.Sprintf("%s/test_%s.log", testLogsFolder, testCaseName)
 	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		cmd.Stdout = logFile

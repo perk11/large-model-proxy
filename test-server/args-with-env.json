@@ -6,7 +6,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12028",
       "Command": "env",
-      "Args": "COOL_VARIABLE=1    ./test-server/test-server     -procinfo-port 12028"
+      "Args": "COOL_VARIABLE=1    ./test-server/test-server     -procinfo-port 12028",
+      "LogFilePath": "test-logs/test-server_args-with-env.log"
     }
   ]
 }

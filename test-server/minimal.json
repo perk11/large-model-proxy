@@ -6,7 +6,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12000",
       "Command": "test-server/test-server",
-      "Args": "-p 12000"
+      "Args": "-p 12000",
+      "LogFilePath": "test-logs/test-server_minimal.log"
     }
   ]
 }

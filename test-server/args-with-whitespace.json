@@ -6,7 +6,8 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12027",
       "Command": "test-server/test-server",
-      "Args": "   -procinfo-port 12027"
+      "Args": "   -procinfo-port 12027",
+      "LogFilePath": "test-logs/test-server_args-with-whitespace.log"
     }
   ]
 }

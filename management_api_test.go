@@ -130,6 +130,7 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	// Setup test environment
 	waitChannel := make(chan error, 1)
+	const testName = "management-api-test" // Define test name for standardization
 
 	cfg := Config{
 		ShutDownAfterInactivitySeconds: 4,
@@ -148,7 +149,6 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 				ProxyTargetPort: "12041",
 				Command:         "./test-server/test-server",
 				Args:            "-p 12041",
-				LogFilePath:     "test-logs/test-server_service1-cpu.log",
 				ResourceRequirements: map[string]int{
 					"CPU": 2,
 				},
@@ -160,7 +160,6 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 				ProxyTargetPort: "12042",
 				Command:         "./test-server/test-server",
 				Args:            "-p 12042",
-				LogFilePath:     "test-logs/test-server_service2-gpu.log",
 				ResourceRequirements: map[string]int{
 					"GPU": 1,
 				},
@@ -172,7 +171,6 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 				ProxyTargetPort: "12043",
 				Command:         "./test-server/test-server",
 				Args:            "-p 12043",
-				LogFilePath:     "test-logs/test-server_service3-cpu-gpu.log",
 				ResourceRequirements: map[string]int{
 					"CPU": 2,
 					"GPU": 1,
@@ -181,10 +179,11 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		},
 	}
 
+	StandardizeConfigNamesAndPaths(&cfg, testName, t) // Standardize names and paths
 	configFilePath := createTempConfig(t, cfg)
 
 	// Start large-model-proxy with our test configuration
-	cmd, err := startLargeModelProxy("management-api-test", configFilePath, waitChannel)
+	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
 	if err != nil {
 		t.Fatalf("Could not start application: %v", err)
 	}
@@ -234,7 +233,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 1
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", true, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 0,
@@ -252,8 +251,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 2
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", true, map[string]int{"CPU": 2})
-	verifyServiceStatus(t, resp, "service2-gpu", true, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 1,
@@ -271,9 +270,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 3
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", true, map[string]int{"CPU": 2})
-	verifyServiceStatus(t, resp, "service2-gpu", true, map[string]int{"GPU": 1})
-	verifyServiceStatus(t, resp, "service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 4,
 		"GPU": 2,
@@ -284,9 +283,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "service2-gpu", true, map[string]int{"GPU": 1})
-	verifyServiceStatus(t, resp, "service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 2,
@@ -297,9 +296,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "service2-gpu", false, nil)
-	verifyServiceStatus(t, resp, "service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 1,
@@ -310,9 +309,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t)
-	verifyServiceStatus(t, resp, "service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "service2-gpu", false, nil)
-	verifyServiceStatus(t, resp, "service3-cpu-gpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", false, nil)
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 0,
 		"GPU": 0,

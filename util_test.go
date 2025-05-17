@@ -403,3 +403,23 @@ func createTempConfig(t *testing.T, cfg Config) string {
 func ptrToString(s string) *string {
 	return &s
 }
+
+// Given a config with services, each service will be given a unique name and log file path.
+// If no service name is provided, one will be allocated based on the index in the config.
+// The resulting service name will be standardized to include both the test name and the service name.
+// The log file will also use the standardized name.
+func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.T) {
+	for i := range config.Services {
+		service := &config.Services[i] // Get a pointer to modify the struct in the slice
+		originalServiceName := service.Name
+		if originalServiceName == "" {
+			// If no name was provided in the config, generate a default one based on index.
+			// This ensures that even services without explicit names get a unique original name part.
+			originalServiceName = fmt.Sprintf("service%d", i)
+		}
+
+		standardizedServiceName := fmt.Sprintf("%s_%s", testName, originalServiceName)
+		service.Name = standardizedServiceName
+		service.LogFilePath = fmt.Sprintf("test-logs/%s.log", standardizedServiceName)
+	}
+}

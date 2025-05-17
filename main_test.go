@@ -221,7 +221,7 @@ func testOpenAiApi(test *testing.T) {
 
 	client := &http.Client{}
 	resp := modelsRequestExpectingSuccess(test, "http://localhost:2016/v1/models", client)
-	assertModelsResponse(test, []string{"test-openai-api-1", "fizz", "buzz"}, resp)
+	assertModelsResponse(test, []string{"openai-api_openai-api-1", "fizz", "buzz"}, resp)
 
 	resp = sendCompletionRequest(test, "http://localhost:2016", OpenAiApiCompletionRequest{
 		Model:  "non-existent",
@@ -238,12 +238,12 @@ func testOpenAiApi(test *testing.T) {
 	//Still no services should be running
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
-	testCompletionRequest(test, "http://localhost:2016", "test-openai-api-1", nil)
+	testCompletionRequest(test, "http://localhost:2016", "openai-api_openai-api-1", nil)
 	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
-	testCompletionStreamingExpectingSuccess(test, "test-openai-api-1")
-	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "test-openai-api-1")
-	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "test-openai-api-1")
+	testCompletionStreamingExpectingSuccess(test, "openai-api_openai-api-1")
+	testChatCompletionRequestExpectingSuccess(test, "http://localhost:2016", "openai-api_openai-api-1")
+	testChatCompletionStreamingExpectingSuccess(test, "http://localhost:2016", "openai-api_openai-api-1")
 
 	llm1Pid := runReadPidCloseConnection(test, "localhost:12018")
 	assertPortsAreClosed(test, []string{"localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
@@ -251,7 +251,7 @@ func testOpenAiApi(test *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	if isProcessRunning(llm1Pid) {
-		test.Fatalf("test-openai-api-1 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("openai-api_openai-api-1 service is still running, but inactivity timeout should have shut it down by now")
 	}
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12019", "localhost:12020", "localhost:12021", "localhost:12022", "localhost:12023"})
 
@@ -269,7 +269,7 @@ func testOpenAiApi(test *testing.T) {
 	llm2Pid := runReadPidCloseConnection(test, "localhost:12020")
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("openai-api_openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 
 	testCompletionRequest(test, "http://localhost:2016", "buzz", nil)
@@ -277,14 +277,14 @@ func testOpenAiApi(test *testing.T) {
 	time.Sleep(4 * time.Second)
 	assertPortsAreClosed(test, []string{"localhost:12017", "localhost:12018", "localhost:12021", "localhost:12022", "localhost:12023"})
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("openai-api_openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 
 	testCompletionRequest(test, "http://localhost:2019", "foo", nil)
 	llm2Pid = runReadPidCloseConnection(test, "localhost:12020")
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(llm2Pid) {
-		test.Fatalf("test-openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
+		test.Fatalf("openai-api_openai-api-2 service is still running, but inactivity timeout should have shut it down by now")
 	}
 	assertPortsAreClosed(test, []string{"localhost:12011", "localhost:12012", "localhost:12013", "localhost:12014", "localhost:12016", "localhost:12017", "localhost:12018"})
 }
@@ -294,12 +294,12 @@ func testOpenAiApiReusingConnection(test *testing.T) {
 	assertPortsAreClosed(test, []string{"localhost:12025", "localhost:12026"})
 	client := &http.Client{}
 	resp := modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
-	assertModelsResponse(test, []string{"test-openai-api-keep-alive"}, resp)
+	assertModelsResponse(test, []string{"openai-api-keep-alive_service0"}, resp)
 	resp = modelsRequestExpectingSuccess(test, "http://localhost:2024/v1/models", client)
-	assertModelsResponse(test, []string{"test-openai-api-keep-alive"}, resp)
+	assertModelsResponse(test, []string{"openai-api-keep-alive_service0"}, resp)
 
-	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
-	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "openai-api-keep-alive_service0", client)
+	testCompletionRequest(test, "http://localhost:2024", "openai-api-keep-alive_service0", client)
 	//TODO: Enable Keep-Alive in test server
 	//TODO: add streaming request
 	//TODO: add assertions about number of connections open
@@ -317,7 +317,7 @@ func testOpenAiApiReusingConnection(test *testing.T) {
 		test.Fatalf("Expected status code 404, got %d", resp.StatusCode)
 	}
 	//TODO: this is not maintaining a connection currently, fix this
-	testCompletionRequest(test, "http://localhost:2024", "test-openai-api-keep-alive", client)
+	testCompletionRequest(test, "http://localhost:2024", "openai-api-keep-alive_service0", client)
 
 	err = resp.Body.Close()
 	if err != nil {
@@ -606,23 +606,21 @@ func testKillCommand(test *testing.T, proxyAddress string) {
 func TestAppScenarios(test *testing.T) {
 	tests := []struct {
 		Name                          string
-		GetConfig                     func(t *testing.T) Config
+		GetConfig                     func(t *testing.T, testName string) Config
 		AddressesToCheckAfterStopping []string
 		TestFunc                      func(t *testing.T)
 	}{
 		{
 			Name: "minimal",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:            "test-server_minimal",
 							ListenPort:      "2000",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12000",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12000",
-							LogFilePath:     "test-logs/test-server_minimal.log",
 						},
 					},
 				}
@@ -634,28 +632,24 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "no-resource-requirements",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ResourcesAvailable: map[string]int{"VRAM": 20},
 					Services: []ServiceConfig{
 						{
-							Name:                 "test-server_no-resource-requirements-1",
 							ListenPort:           "2032",
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12032",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12032",
-							LogFilePath:          "test-logs/test-server_no-resource-requirements-1.log",
 							ResourceRequirements: map[string]int{"VRAM": 20},
 						},
 						{
-							Name:            "test-server_no-resource-requirements-2",
 							ListenPort:      "2033",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12033",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12033",
-							LogFilePath:     "test-logs/test-server_no-resource-requirements-2.log",
 						},
 					},
 				}
@@ -667,11 +661,10 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "healthcheck",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:                            "test-server_healthcheck",
 							ListenPort:                      "2001",
 							ProxyTargetHost:                 "localhost",
 							ProxyTargetPort:                 "12001",
@@ -679,7 +672,6 @@ func TestAppScenarios(test *testing.T) {
 							Args:                            "-p 12001 -healthcheck-port 2011 -sleep-before-listening 10s -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
 							HealthcheckCommand:              "curl --fail http://localhost:2011",
 							HealthcheckIntervalMilliseconds: 200,
-							LogFilePath:                     "test-logs/test-server_healthcheck.log",
 						},
 					},
 				}
@@ -691,11 +683,10 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "healthcheck-immediate-listen-start",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:                            "test-server_healthcheck-immediate-listen-start",
 							ListenPort:                      "2002",
 							ProxyTargetHost:                 "localhost",
 							ProxyTargetPort:                 "12002",
@@ -703,7 +694,6 @@ func TestAppScenarios(test *testing.T) {
 							Args:                            "-p 12002 -healthcheck-port 2012 -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
 							HealthcheckCommand:              "curl --fail http://localhost:2012",
 							HealthcheckIntervalMilliseconds: 200,
-							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-listen-start.log",
 						},
 					},
 				}
@@ -715,11 +705,10 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "healthcheck-immediate-startup-delayed-healthcheck",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:                            "test-server_healthcheck-immediate-startup-delayed-healthcheck",
 							ListenPort:                      "2003",
 							ProxyTargetHost:                 "localhost",
 							ProxyTargetPort:                 "12003",
@@ -727,7 +716,6 @@ func TestAppScenarios(test *testing.T) {
 							Args:                            "-p 12003 -healthcheck-port 2013 -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
 							HealthcheckCommand:              "curl --fail http://localhost:2013",
 							HealthcheckIntervalMilliseconds: 200,
-							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-startup-delayed-healthcheck.log",
 						},
 					},
 				}
@@ -739,11 +727,10 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "healthcheck-immediate-startup",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:                            "test-server_healthcheck-immediate-startup",
 							ListenPort:                      "2004",
 							ProxyTargetHost:                 "localhost",
 							ProxyTargetPort:                 "12004",
@@ -751,7 +738,6 @@ func TestAppScenarios(test *testing.T) {
 							Args:                            "-p 12004 -healthcheck-port 2014",
 							HealthcheckCommand:              "curl --fail http://localhost:2014",
 							HealthcheckIntervalMilliseconds: 200,
-							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-startup.log",
 						},
 					},
 				}
@@ -763,11 +749,10 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "healthcheck-stuck",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:                            "test-server_healthcheck-stuck",
 							ListenPort:                      "2005",
 							ProxyTargetHost:                 "localhost",
 							ProxyTargetPort:                 "12005",
@@ -775,7 +760,6 @@ func TestAppScenarios(test *testing.T) {
 							Args:                            "-p 12005 -healthcheck-port 2015",
 							HealthcheckCommand:              "false",
 							HealthcheckIntervalMilliseconds: 200,
-							LogFilePath:                     "test-logs/test-server_healthcheck-stuck.log",
 						},
 					},
 				}
@@ -787,17 +771,15 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "service-stuck-no-healthcheck",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:            "test-server_service-stuck-no-healthcheck",
 							ListenPort:      "2006",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12006",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12006 -startup-duration 24h",
-							LogFilePath:     "test-logs/test-server_service-stuck-no-healthcheck.log",
 						},
 					},
 				}
@@ -809,18 +791,16 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "idle-timeout",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
 					Services: []ServiceConfig{
 						{
-							Name:            "test-server_idle-timeout",
 							ListenPort:      "2007",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12007",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12007",
-							LogFilePath:     "test-logs/test-server_idle-timeout.log",
 						},
 					},
 				}
@@ -832,30 +812,26 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "idle-timeout-after-stop",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
 					ResourcesAvailable:             map[string]int{"RAM": 1},
 					Services: []ServiceConfig{
 						{
-							Name:                 "test-server_idle-timeout-after-stop-1",
 							ListenPort:           "2008",
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12008",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12008 -request-processing-duration 2s",
 							ResourceRequirements: map[string]int{"RAM": 1},
-							LogFilePath:          "test-logs/test-server_idle-timeout-after-stop-1.log",
 						},
 						{
-							Name:                 "test-server_idle-timeout-after-stop-2",
 							ListenPort:           "2009",
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12009",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12009",
 							ResourceRequirements: map[string]int{"RAM": 1},
-							LogFilePath:          "test-logs/test-server_idle-timeout-after-stop-2.log",
 						},
 					},
 				}
@@ -867,28 +843,24 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "client-close-full",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ResourcesAvailable: map[string]int{"VRAM": 1},
 					Services: []ServiceConfig{
 						{
-							Name:                 "test-server_client-close-full-1",
 							ListenPort:           "2030",
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12030",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12030 -sleep-after-writing-pid-duration 10s",
-							LogFilePath:          "test-logs/test-server_client-close-full-1.log",
 							ResourceRequirements: map[string]int{"VRAM": 1},
 						},
 						{
-							Name:                 "test-server_client-close-full-2",
 							ListenPort:           "2031",
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12031",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12031",
-							LogFilePath:          "test-logs/test-server_client-close-full-2.log",
 							ResourceRequirements: map[string]int{"VRAM": 1},
 						},
 					},
@@ -908,18 +880,16 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "client-close-full-idle-timeout",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
 					Services: []ServiceConfig{
 						{
-							Name:            "test-server_client-close-half-write-idle-timeout",
 							ListenPort:      "2029",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12029",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12029 -sleep-after-writing-pid-duration 10s",
-							LogFilePath:     "test-logs/test-server_client-close-full-idle-timeout.log",
 						},
 					},
 				}
@@ -931,49 +901,45 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "openai-api",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					OpenAiApi:                      OpenAiApi{ListenPort: "2016"},
 					ShutDownAfterInactivitySeconds: 3,
 					Services: []ServiceConfig{
 						{
-							Name:            "test-openai-api-1",
+							Name:            "openai-api-1",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12017",
 							Command:         "./test-server/test-server",
 							Args:            "-openai-api-port 12017 -p 12018",
-							LogFilePath:     "test-logs/test-server_openai-api-1.log",
 							OpenAiApi:       true,
 						},
 						{
-							Name:            "test-openai-api-2",
+							Name:            "openai-api-2",
 							ListenPort:      "2019",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12019",
 							Command:         "./test-server/test-server",
 							Args:            "-openai-api-port 12019 -p 12020",
-							LogFilePath:     "test-logs/test-server_openai-api-2.log",
 							OpenAiApi:       true,
 							OpenAiApiModels: []string{"fizz", "buzz"},
 						},
 						{
-							Name:            "test-non-llm-1",
+							Name:            "non-llm-1",
 							ListenPort:      "2021",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12021",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12021",
-							LogFilePath:     "test-logs/test-server_non-llm-1.log",
 							OpenAiApi:       false,
 						},
 						{
-							Name:            "test-non-llm-2",
+							Name:            "non-llm-2",
 							ListenPort:      "2022",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12022",
 							Command:         "./test-server/test-server",
 							Args:            "-openai-api-port 12022 -p 12023",
-							LogFilePath:     "test-logs/test-server_non-llm-2.log",
 							OpenAiApi:       false,
 						},
 					},
@@ -1000,17 +966,15 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "openai-api-keep-alive",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					OpenAiApi: OpenAiApi{ListenPort: "2024"},
 					Services: []ServiceConfig{
 						{
-							Name:            "test-openai-api-keep-alive",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12025",
 							Command:         "./test-server/test-server",
 							Args:            "-openai-api-port 12025 -p 12026",
-							LogFilePath:     "test-logs/test-server_openai-api-keep-alive.log",
 							OpenAiApi:       true,
 						},
 					},
@@ -1027,17 +991,15 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "args-with-whitespace",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:            "test-args-with-whitespace",
 							ListenPort:      "2025",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12027",
 							Command:         "./test-server/test-server",
 							Args:            "   -procinfo-port 12027",
-							LogFilePath:     "test-logs/test-server_args-with-whitespace.log",
 						},
 					},
 				}
@@ -1052,17 +1014,15 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "args-with-env",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					Services: []ServiceConfig{
 						{
-							Name:            "test-args-with-env",
 							ListenPort:      "2026",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12028",
 							Command:         "env",
 							Args:            "COOL_VARIABLE=1 ./test-server/test-server -procinfo-port 12028",
-							LogFilePath:     "test-logs/test-server_args-with-env.log",
 						},
 					},
 				}
@@ -1077,19 +1037,17 @@ func TestAppScenarios(test *testing.T) {
 		},
 		{
 			Name: "kill-command",
-			GetConfig: func(t *testing.T) Config {
+			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
 					Services: []ServiceConfig{
 						{
-							Name:            "test-server_kill-command",
 							ListenPort:      "2034",
 							ProxyTargetHost: "localhost",
 							ProxyTargetPort: "12034",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12034",
 							KillCommand:     ptrToString("echo -n 'success' > /tmp/test-server-kill-command-output"),
-							LogFilePath:     "test-logs/test-server_kill-command.log",
 						},
 					},
 				}
@@ -1107,7 +1065,8 @@ func TestAppScenarios(test *testing.T) {
 			t.Parallel()
 			waitChannel := make(chan error, 1)
 
-			currentConfig := testCase.GetConfig(t)
+			currentConfig := testCase.GetConfig(t, testCase.Name)
+			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name, t)
 			configFilePath := createTempConfig(t, currentConfig)
 
 			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, waitChannel)

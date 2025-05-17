@@ -606,93 +606,294 @@ func testKillCommand(test *testing.T, proxyAddress string) {
 func TestAppScenarios(test *testing.T) {
 	tests := []struct {
 		Name                          string
-		ConfigPath                    string
+		GetConfig                     func(t *testing.T) Config
 		AddressesToCheckAfterStopping []string
 		TestFunc                      func(t *testing.T)
 	}{
 		{
-			Name:                          "minimal",
-			ConfigPath:                    "test-server/minimal.json",
+			Name: "minimal",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "test-server_minimal",
+							ListenPort:      "2000",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12000",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12000",
+							LogFilePath:     "test-logs/test-server_minimal.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2000", "localhost:12000"},
 			TestFunc: func(t *testing.T) {
 				testImplMinimal(t, "localhost:2000")
 			},
 		},
 		{
-			Name:                          "no-resource-requirements",
-			ConfigPath:                    "test-server/no-resource-requirements.json",
+			Name: "no-resource-requirements",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ResourcesAvailable: map[string]int{"VRAM": 20},
+					Services: []ServiceConfig{
+						{
+							Name:                 "test-server_no-resource-requirements-1",
+							ListenPort:           "2032",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12032",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12032",
+							LogFilePath:          "test-logs/test-server_no-resource-requirements-1.log",
+							ResourceRequirements: map[string]int{"VRAM": 20},
+						},
+						{
+							Name:            "test-server_no-resource-requirements-2",
+							ListenPort:      "2033",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12033",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12033",
+							LogFilePath:     "test-logs/test-server_no-resource-requirements-2.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2032", "localhost:12032", "localhost:2033", "localhost:12033"},
 			TestFunc: func(t *testing.T) {
 				testImplConnectTwo2ServersSimultaneouslyAssertBothAreRunning(t, "localhost:2032", "localhost:2033")
 			},
 		},
 		{
-			Name:                          "healthcheck",
-			ConfigPath:                    "test-server/healthcheck.json",
+			Name: "healthcheck",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:                            "test-server_healthcheck",
+							ListenPort:                      "2001",
+							ProxyTargetHost:                 "localhost",
+							ProxyTargetPort:                 "12001",
+							Command:                         "./test-server/test-server",
+							Args:                            "-p 12001 -healthcheck-port 2011 -sleep-before-listening 10s -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
+							HealthcheckCommand:              "curl --fail http://localhost:2011",
+							HealthcheckIntervalMilliseconds: 200,
+							LogFilePath:                     "test-logs/test-server_healthcheck.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2001", "localhost:12001", "localhost:2011"},
 			TestFunc: func(t *testing.T) {
 				testImplMinimal(t, "localhost:2001")
 			},
 		},
 		{
-			Name:                          "healthcheck-immediate-listen-start",
-			ConfigPath:                    "test-server/healthcheck-immediate-listen-start.json",
+			Name: "healthcheck-immediate-listen-start",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:                            "test-server_healthcheck-immediate-listen-start",
+							ListenPort:                      "2002",
+							ProxyTargetHost:                 "localhost",
+							ProxyTargetPort:                 "12002",
+							Command:                         "./test-server/test-server",
+							Args:                            "-p 12002 -healthcheck-port 2012 -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
+							HealthcheckCommand:              "curl --fail http://localhost:2012",
+							HealthcheckIntervalMilliseconds: 200,
+							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-listen-start.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2002", "localhost:12002", "localhost:2012"},
 			TestFunc: func(t *testing.T) {
 				testImplMinimal(t, "localhost:2002")
 			},
 		},
 		{
-			Name:                          "healthcheck-immediate-startup-delayed-healthcheck",
-			ConfigPath:                    "test-server/healthcheck-immediate-startup-delayed-healthcheck.json",
+			Name: "healthcheck-immediate-startup-delayed-healthcheck",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:                            "test-server_healthcheck-immediate-startup-delayed-healthcheck",
+							ListenPort:                      "2003",
+							ProxyTargetHost:                 "localhost",
+							ProxyTargetPort:                 "12003",
+							Command:                         "./test-server/test-server",
+							Args:                            "-p 12003 -healthcheck-port 2013 -sleep-before-listening-for-healthcheck 3s -startup-duration 5s",
+							HealthcheckCommand:              "curl --fail http://localhost:2013",
+							HealthcheckIntervalMilliseconds: 200,
+							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-startup-delayed-healthcheck.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2003", "localhost:12003", "localhost:2013"},
 			TestFunc: func(t *testing.T) {
 				testImplMinimal(t, "localhost:2003")
 			},
 		},
 		{
-			Name:                          "healthcheck-immediate-startup",
-			ConfigPath:                    "test-server/healthcheck-immediate-startup.json",
+			Name: "healthcheck-immediate-startup",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:                            "test-server_healthcheck-immediate-startup",
+							ListenPort:                      "2004",
+							ProxyTargetHost:                 "localhost",
+							ProxyTargetPort:                 "12004",
+							Command:                         "./test-server/test-server",
+							Args:                            "-p 12004 -healthcheck-port 2014",
+							HealthcheckCommand:              "curl --fail http://localhost:2014",
+							HealthcheckIntervalMilliseconds: 200,
+							LogFilePath:                     "test-logs/test-server_healthcheck-immediate-startup.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2004", "localhost:2014"},
 			TestFunc: func(t *testing.T) {
 				testImplMinimal(t, "localhost:2004")
 			},
 		},
 		{
-			Name:                          "healthcheck-stuck",
-			ConfigPath:                    "test-server/healthcheck-stuck.json",
+			Name: "healthcheck-stuck",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:                            "test-server_healthcheck-stuck",
+							ListenPort:                      "2005",
+							ProxyTargetHost:                 "localhost",
+							ProxyTargetPort:                 "12005",
+							Command:                         "./test-server/test-server",
+							Args:                            "-p 12005 -healthcheck-port 2015",
+							HealthcheckCommand:              "false",
+							HealthcheckIntervalMilliseconds: 200,
+							LogFilePath:                     "test-logs/test-server_healthcheck-stuck.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2005", "localhost:12005", "localhost:2015"},
 			TestFunc: func(t *testing.T) {
 				testImplConnectOnly(t, "localhost:2005")
 			},
 		},
 		{
-			Name:                          "service-stuck-no-healthcheck",
-			ConfigPath:                    "test-server/service-stuck-no-healthcheck.json",
+			Name: "service-stuck-no-healthcheck",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "test-server_service-stuck-no-healthcheck",
+							ListenPort:      "2006",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12006",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12006 -startup-duration 24h",
+							LogFilePath:     "test-logs/test-server_service-stuck-no-healthcheck.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2006"},
 			TestFunc: func(t *testing.T) {
 				testImplConnectOnly(t, "localhost:2006")
 			},
 		},
 		{
-			Name:                          "idle-timeout",
-			ConfigPath:                    "test-server/idle-timeout.json",
+			Name: "idle-timeout",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ShutDownAfterInactivitySeconds: 3,
+					Services: []ServiceConfig{
+						{
+							Name:            "test-server_idle-timeout",
+							ListenPort:      "2007",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12007",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12007",
+							LogFilePath:     "test-logs/test-server_idle-timeout.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2007"},
 			TestFunc: func(t *testing.T) {
 				testIdleTimeout(t, "localhost:2007")
 			},
 		},
 		{
-			Name:                          "idle-timeout-after-stop",
-			ConfigPath:                    "test-server/idle-timeout-after-stop.json",
+			Name: "idle-timeout-after-stop",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ShutDownAfterInactivitySeconds: 3,
+					ResourcesAvailable:             map[string]int{"RAM": 1},
+					Services: []ServiceConfig{
+						{
+							Name:                 "test-server_idle-timeout-after-stop-1",
+							ListenPort:           "2008",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12008",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12008 -request-processing-duration 2s",
+							ResourceRequirements: map[string]int{"RAM": 1},
+							LogFilePath:          "test-logs/test-server_idle-timeout-after-stop-1.log",
+						},
+						{
+							Name:                 "test-server_idle-timeout-after-stop-2",
+							ListenPort:           "2009",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12009",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12009",
+							ResourceRequirements: map[string]int{"RAM": 1},
+							LogFilePath:          "test-logs/test-server_idle-timeout-after-stop-2.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2008", "localhost:2009"},
 			TestFunc: func(t *testing.T) {
 				testIdleTimeoutMultipleServices(t, "localhost:2008", "localhost:2009")
 			},
 		},
 		{
-			Name:                          "client-close-full",
-			ConfigPath:                    "test-server/client-close-full.json",
+			Name: "client-close-full",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ResourcesAvailable: map[string]int{"VRAM": 1},
+					Services: []ServiceConfig{
+						{
+							Name:                 "test-server_client-close-full-1",
+							ListenPort:           "2030",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12030",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12030 -sleep-after-writing-pid-duration 10s",
+							LogFilePath:          "test-logs/test-server_client-close-full-1.log",
+							ResourceRequirements: map[string]int{"VRAM": 1},
+						},
+						{
+							Name:                 "test-server_client-close-full-2",
+							ListenPort:           "2031",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12031",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12031",
+							LogFilePath:          "test-logs/test-server_client-close-full-2.log",
+							ResourceRequirements: map[string]int{"VRAM": 1},
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2030", "localhost:12030", "localhost:2031", "localhost:12031"},
 			TestFunc: func(t *testing.T) {
 				testClientClose(t, "localhost:2030",
@@ -706,16 +907,78 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:                          "client-close-full-idle-timeout",
-			ConfigPath:                    "test-server/client-close-full-idle-timeout.json",
+			Name: "client-close-full-idle-timeout",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ShutDownAfterInactivitySeconds: 3,
+					Services: []ServiceConfig{
+						{
+							Name:            "test-server_client-close-half-write-idle-timeout",
+							ListenPort:      "2029",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12029",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12029 -sleep-after-writing-pid-duration 10s",
+							LogFilePath:     "test-logs/test-server_client-close-full-idle-timeout.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2029", "localhost:12029"},
 			TestFunc: func(t *testing.T) {
 				testHalfCloseClientCloseWriteIdleTimeout(t)
 			},
 		},
 		{
-			Name:       "openai-api",
-			ConfigPath: "test-server/openai-api.json",
+			Name: "openai-api",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					OpenAiApi:                      OpenAiApi{ListenPort: "2016"},
+					ShutDownAfterInactivitySeconds: 3,
+					Services: []ServiceConfig{
+						{
+							Name:            "test-openai-api-1",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12017",
+							Command:         "./test-server/test-server",
+							Args:            "-openai-api-port 12017 -p 12018",
+							LogFilePath:     "test-logs/test-server_openai-api-1.log",
+							OpenAiApi:       true,
+						},
+						{
+							Name:            "test-openai-api-2",
+							ListenPort:      "2019",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12019",
+							Command:         "./test-server/test-server",
+							Args:            "-openai-api-port 12019 -p 12020",
+							LogFilePath:     "test-logs/test-server_openai-api-2.log",
+							OpenAiApi:       true,
+							OpenAiApiModels: []string{"fizz", "buzz"},
+						},
+						{
+							Name:            "test-non-llm-1",
+							ListenPort:      "2021",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12021",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12021",
+							LogFilePath:     "test-logs/test-server_non-llm-1.log",
+							OpenAiApi:       false,
+						},
+						{
+							Name:            "test-non-llm-2",
+							ListenPort:      "2022",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12022",
+							Command:         "./test-server/test-server",
+							Args:            "-openai-api-port 12022 -p 12023",
+							LogFilePath:     "test-logs/test-server_non-llm-2.log",
+							OpenAiApi:       false,
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2016",
 				"localhost:2018",
@@ -736,8 +999,23 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "openai-api-keep-alive",
-			ConfigPath: "test-server/openai-api-reusing-connection.json",
+			Name: "openai-api-keep-alive",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					OpenAiApi: OpenAiApi{ListenPort: "2024"},
+					Services: []ServiceConfig{
+						{
+							Name:            "test-openai-api-keep-alive",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12025",
+							Command:         "./test-server/test-server",
+							Args:            "-openai-api-port 12025 -p 12026",
+							LogFilePath:     "test-logs/test-server_openai-api-keep-alive.log",
+							OpenAiApi:       true,
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2024",
 				"localhost:12025",
@@ -748,8 +1026,22 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "args-with-whitespace",
-			ConfigPath: "test-server/args-with-whitespace.json",
+			Name: "args-with-whitespace",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "test-args-with-whitespace",
+							ListenPort:      "2025",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12027",
+							Command:         "./test-server/test-server",
+							Args:            "   -procinfo-port 12027",
+							LogFilePath:     "test-logs/test-server_args-with-whitespace.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2025",
 				"localhost:12027",
@@ -759,8 +1051,22 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:       "args-with-env",
-			ConfigPath: "test-server/args-with-env.json",
+			Name: "args-with-env",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "test-args-with-env",
+							ListenPort:      "2026",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12028",
+							Command:         "env",
+							Args:            "COOL_VARIABLE=1 ./test-server/test-server -procinfo-port 12028",
+							LogFilePath:     "test-logs/test-server_args-with-env.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2026",
 				"localhost:12028",
@@ -770,8 +1076,24 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
-			Name:                          "kill-command",
-			ConfigPath:                    "test-server/kill-command.json",
+			Name: "kill-command",
+			GetConfig: func(t *testing.T) Config {
+				return Config{
+					ShutDownAfterInactivitySeconds: 3,
+					Services: []ServiceConfig{
+						{
+							Name:            "test-server_kill-command",
+							ListenPort:      "2034",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12034",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12034",
+							KillCommand:     ptrToString("echo -n 'success' > /tmp/test-server-kill-command-output"),
+							LogFilePath:     "test-logs/test-server_kill-command.log",
+						},
+					},
+				}
+			},
 			AddressesToCheckAfterStopping: []string{"localhost:2034"},
 			TestFunc: func(t *testing.T) {
 				testKillCommand(t, "localhost:2034")
@@ -784,7 +1106,11 @@ func TestAppScenarios(test *testing.T) {
 		test.Run(testCase.Name, func(t *testing.T) {
 			t.Parallel()
 			waitChannel := make(chan error, 1)
-			cmd, err := startLargeModelProxy(testCase.Name, testCase.ConfigPath, waitChannel)
+
+			currentConfig := testCase.GetConfig(t)
+			configFilePath := createTempConfig(t, currentConfig)
+
+			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, waitChannel)
 			if err != nil {
 				t.Fatalf("could not start application: %v", err)
 			}

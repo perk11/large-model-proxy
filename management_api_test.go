@@ -131,8 +131,60 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	// Setup test environment
 	waitChannel := make(chan error, 1)
 
+	cfg := Config{
+		ShutDownAfterInactivitySeconds: 4,
+		ResourcesAvailable: map[string]int{
+			"CPU": 4,
+			"GPU": 2,
+		},
+		ManagementApi: ManagementApi{
+			ListenPort: "2040",
+		},
+		Services: []ServiceConfig{
+			{
+				Name:            "service1-cpu",
+				ListenPort:      "2041",
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "12041",
+				Command:         "./test-server/test-server",
+				Args:            "-p 12041",
+				LogFilePath:     "test-logs/test-server_service1-cpu.log",
+				ResourceRequirements: map[string]int{
+					"CPU": 2,
+				},
+			},
+			{
+				Name:            "service2-gpu",
+				ListenPort:      "2042",
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "12042",
+				Command:         "./test-server/test-server",
+				Args:            "-p 12042",
+				LogFilePath:     "test-logs/test-server_service2-gpu.log",
+				ResourceRequirements: map[string]int{
+					"GPU": 1,
+				},
+			},
+			{
+				Name:            "service3-cpu-gpu",
+				ListenPort:      "2043",
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "12043",
+				Command:         "./test-server/test-server",
+				Args:            "-p 12043",
+				LogFilePath:     "test-logs/test-server_service3-cpu-gpu.log",
+				ResourceRequirements: map[string]int{
+					"CPU": 2,
+					"GPU": 1,
+				},
+			},
+		},
+	}
+
+	configFilePath := createTempConfig(t, cfg)
+
 	// Start large-model-proxy with our test configuration
-	cmd, err := startLargeModelProxy("management-api-test", "test-server/management-api-test.json", waitChannel)
+	cmd, err := startLargeModelProxy("management-api-test", configFilePath, waitChannel)
 	if err != nil {
 		t.Fatalf("Could not start application: %v", err)
 	}

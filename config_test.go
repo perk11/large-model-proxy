@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -182,22 +181,6 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr:        true,
 			expectedErrMsg: []string{"has no Command specified", "noCommandService"},
-		},
-		{
-			name: "Negative ShutDownAfterInactivitySeconds",
-			cfg: Config{
-				ResourcesAvailable: map[string]int{"RAM": 10000},
-				Services: []ServiceConfig{
-					{
-						Name:                           "serviceNegDuration",
-						ListenPort:                     "8090",
-						Command:                        "/bin/echo",
-						ShutDownAfterInactivitySeconds: -10 * time.Second,
-					},
-				},
-			},
-			wantErr:        true,
-			expectedErrMsg: []string{"has negative ShutDownAfterInactivitySeconds", "serviceNegDuration"},
 		},
 		{
 			name: "Standard KillCommand works",

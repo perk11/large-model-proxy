@@ -509,8 +509,7 @@ func getIdleTimeout(serviceConfig ServiceConfig) time.Duration {
 	if idleTimeout == 0 {
 		idleTimeout = 2 * 60
 	}
-	idleTimeout = idleTimeout * time.Second
-	return idleTimeout
+	return time.Duration(idleTimeout) * time.Second
 }
 
 func startService(serviceConfig ServiceConfig) (net.Conn, error) {
@@ -590,7 +589,7 @@ func performHealthCheck(serviceConfig ServiceConfig) {
 				cmd.ProcessState.ExitCode(),
 				serviceConfig.HealthcheckIntervalMilliseconds,
 			)
-			time.Sleep(serviceConfig.HealthcheckIntervalMilliseconds * time.Millisecond)
+			time.Sleep(time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond)
 		}
 	}
 }
@@ -662,7 +661,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	if config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds == nil {
 		maxWaitTime = 120 * time.Second
 	} else {
-		maxWaitTime = *config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds * time.Second
+		maxWaitTime = time.Duration(*config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds) * time.Second
 	}
 	startTime := time.Now()
 	var iteration = 0

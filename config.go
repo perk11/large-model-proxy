@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"time"
 )
 
 type Config struct {
-	ShutDownAfterInactivitySeconds                                time.Duration
-	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *time.Duration
+	ShutDownAfterInactivitySeconds                                uint
+	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
 	OpenAiApi                                                     OpenAiApi
@@ -30,8 +29,8 @@ type ServiceConfig struct {
 	LogFilePath                     string
 	Workdir                         string
 	HealthcheckCommand              string
-	HealthcheckIntervalMilliseconds time.Duration
-	ShutDownAfterInactivitySeconds  time.Duration
+	HealthcheckIntervalMilliseconds uint
+	ShutDownAfterInactivitySeconds  uint
 	RestartOnConnectionFailure      bool
 	OpenAiApi                       bool
 	OpenAiApiModels                 []string
@@ -149,18 +148,6 @@ func validateConfig(cfg Config) error {
 		if svc.Command == "" {
 			issues = append(issues,
 				fmt.Sprintf("service %s has no Command specified", nameOrIndex))
-		}
-	}
-
-	for i, svc := range cfg.Services {
-		nameOrIndex := serviceNameOrIndex(svc.Name, i)
-		if svc.ShutDownAfterInactivitySeconds < 0 {
-			issues = append(issues,
-				fmt.Sprintf("service %s has negative ShutDownAfterInactivitySeconds", nameOrIndex))
-		}
-		if svc.HealthcheckIntervalMilliseconds < 0 {
-			issues = append(issues,
-				fmt.Sprintf("service %s has negative HealthcheckIntervalMilliseconds", nameOrIndex))
 		}
 	}
 

@@ -367,3 +367,39 @@ func checkPortClosed(address string) error {
 	}
 	return nil
 }
+
+func createTempConfig(t *testing.T, cfg Config) string {
+	t.Helper()
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal config to JSON: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-config-*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp config file: %v", err)
+	}
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		t.Fatalf("Failed to write to temp config file: %v", err)
+	}
+
+	filePath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp config file: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Remove(filePath); err != nil {
+			log.Printf("Warning: failed to remove temp config file %s: %v", filePath, err)
+		}
+	})
+
+	return filePath
+}
+
+func ptrToString(s string) *string {
+	return &s
+}

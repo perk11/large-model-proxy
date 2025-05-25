@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -95,6 +96,9 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	}
 }
 
+//go:embed management-ui/index.html
+var uiIndexContents []byte
+
 // startManagementApi starts the management API on the specified port
 func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 	mux := http.NewServeMux()
@@ -104,6 +108,21 @@ func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 		handleStatus(responseWriter, request, services)
 	})
 
+	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/" {
+			http.NotFound(responseWriter, request)
+			return
+		}
+		responseWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
+		responseWriter.WriteHeader(http.StatusOK)
+		bytesWritten, err := responseWriter.Write(uiIndexContents)
+		if err != nil {
+			log.Printf("Failed to send UI index page: %s\n", err.Error())
+		}
+		if bytesWritten != len(uiIndexContents) {
+			log.Printf("Incomplete index page written: %s\n", err.Error())
+		}
+	})
 	server := &http.Server{
 		Addr:    ":" + managementAPI.ListenPort,
 		Handler: mux,

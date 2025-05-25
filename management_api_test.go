@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 )
@@ -126,7 +129,82 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 		}
 	}
 }
+func TestManagementUI(t *testing.T) {
+	// Setup test environment
+	waitChannel := make(chan error, 1)
+	const testName = "management-ui-test" // Define test name for standardization
 
+	cfg := Config{
+		ShutDownAfterInactivitySeconds: 4,
+		ResourcesAvailable: map[string]int{
+			"CPU": 4,
+		},
+		ManagementApi: ManagementApi{
+			ListenPort: "2044",
+		},
+		Services: []ServiceConfig{
+			{
+				Name:            "service1-cpu",
+				ListenPort:      "2045",
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "12045",
+				Command:         "./test-server/test-server",
+				Args:            "-p 12045",
+				ResourceRequirements: map[string]int{
+					"CPU": 2,
+				},
+			},
+		},
+	}
+
+	StandardizeConfigNamesAndPaths(&cfg, testName, t) // Standardize names and paths
+	configFilePath := createTempConfig(t, cfg)
+
+	// Start large-model-proxy with our test configuration
+	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
+	if err != nil {
+		t.Fatalf("Could not start application: %v", err)
+	}
+
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+
+		// Verify all ports are closed after stopping
+		addresses := []string{
+			"localhost:2044", "localhost:2045",
+			"localhost:12044", "localhost:12045",
+		}
+		for _, address := range addresses {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("Port %s is still open after application exit", address)
+			}
+		}
+	}()
+
+	resp, err := http.Get("http://localhost:2044/")
+	if err != nil {
+		t.Fatalf("Failed to read UI homepage: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	expectedContents, err := os.ReadFile("management-ui/index.html")
+	if err != nil {
+		t.Fatalf("Failed to read expected UI homepage: %v", err)
+	}
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read UI response body: %v", err)
+	}
+	if !bytes.Equal(responseBody, expectedContents) {
+		t.Fatalf("Unexpected UI contents: \nExpected:\n%s\nActual:\n%s", expectedContents, responseBody)
+	}
+}
 func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	// Setup test environment
 	waitChannel := make(chan error, 1)

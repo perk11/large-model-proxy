@@ -22,7 +22,7 @@ jobs:
         go-version: '1.20'
 
     - name: Build
-      run: go build -v
+      run: make executable
 
     - name: Create logs directory
       run: mkdir logs
@@ -31,7 +31,7 @@ jobs:
       run: make build-test-server
 
     - name: Run Tests
-      run: go test -v ./...
+      run: make test
 
     - name: Archive logs
       uses: actions/upload-artifact@v4

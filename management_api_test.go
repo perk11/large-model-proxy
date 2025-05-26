@@ -130,6 +130,7 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 	}
 }
 func TestManagementUI(t *testing.T) {
+	t.Parallel()
 	// Setup test environment
 	waitChannel := make(chan error, 1)
 	const testName = "management-ui-test" // Define test name for standardization
@@ -206,6 +207,7 @@ func TestManagementUI(t *testing.T) {
 	}
 }
 func TestManagementAPIStatusAcrossServices(t *testing.T) {
+	t.Parallel()
 	// Setup test environment
 	waitChannel := make(chan error, 1)
 	const testName = "management-api-test" // Define test name for standardization

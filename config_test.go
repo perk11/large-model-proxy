@@ -251,9 +251,9 @@ func TestValidateConfig(t *testing.T) {
 			expectedErrMsg: []string{"top-level ManagementApi.ListenPort is invalid: \"99999\""},
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			err := validateConfig(tc.cfg)
 
 			if tc.wantErr && err == nil {

@@ -38,18 +38,12 @@
             background-color: #ffa5a5;
         }
 
-        .all-services .property-name .label {
-            display: none;
-        }
-
-        .all-services .property-name {
+        .all-services h2 {
             text-align: center; /* for multi-line names  */
             justify-self: center;
+            font-size: 18px;
             margin-bottom: 0.5rem;
-        }
-
-        .all-services .property-name .value {
-            font-weight: bold;
+            margin-top: 0.3rem;
         }
 
         .all-services .label {
@@ -128,7 +122,6 @@
                 const allServices = services.all_services;
                 let items = '';
                 const allServiceProperties = {
-                    'name': "Name",
                     'listen_port': "Listen Port",
                     'is_running': "Running",
                     'active_connections': "Active Connections",
@@ -137,6 +130,12 @@
                 for (let serviceIndex = 0; serviceIndex < allServices.length; serviceIndex++) {
                     const service = allServices[serviceIndex];
                     items += `<li class="${service.is_running ? 'running' : 'stopped'}">`
+                    if (!service.hasOwnProperty('name')) {
+                        displayError(`Invalid response from /status endpoint: A service in all_services is missing "name" property`);
+                        return;
+                    }
+                    items += `<h2>${escapeHtml(service.name)}</h2>`;
+
                     for (let propertyName in allServiceProperties) {
                         if (!service.hasOwnProperty(propertyName)) {
                             displayError(`Invalid response from /status endpoint: A service in all_services is missing "${propertyName}" property`);

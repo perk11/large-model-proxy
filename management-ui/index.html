@@ -21,49 +21,47 @@
         }
 
         .all-services {
-            list-style: none;
             margin: 0;
             padding: 0;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1rem;
         }
-
-        .all-services li {
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-            padding: 0.5rem 1rem 1rem;
-            display: grid;
-            row-gap: 0.5rem;
-            align-items: center;
+        .all-services tr.running  {
+            background-color: #c8ffb9;
         }
-
-        .all-services li.running {
-            background-color: #aeff9b;
+        .all-services tr.running:nth-child(even)  {
+            background-color: #d2ffc4;
         }
-
-        .all-services li.stopped {
+        .all-services tr.stopped {
+            background-color: #ffc6c6;
+        }
+        .all-services tr.stopped:nth-child(even) {
             background-color: #ffa5a5;
         }
 
-        .all-services h2 {
-            text-align: center; /* for multi-line names  */
-            justify-self: center;
-            font-size: 18px;
-            margin-bottom: 0.5rem;
-            margin-top: 0.3rem;
+        .all-services {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 1rem;
+            border: 1px solid #ddd;
         }
 
-        .all-services .label {
+        .all-services th, .all-services td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .all-services th {
+            background-color: #4CAF50;
+            color: white;
             font-weight: bold;
-            color: #666;
+            position: sticky;
+            top: 0;
+            z-index: 2;
         }
 
-        .all-services .value {
-            color: #222;
-            word-break: break-word;
+        .all-services td {
+            transition: background-color 0.2s ease-in-out;
         }
-
         #content.loading {
             opacity: 0.6;
             font-size: 5rem;
@@ -159,37 +157,40 @@
                 const allServices = services.all_services.sort(getSortFunction(sortOrder));
                 let items = '';
                 const allServiceProperties = {
+                    'name': "Name",
                     'listen_port': "Listen Port",
                     'is_running': "Running",
-                    'active_connections': "Active Connections",
+                    'active_connections': "Proxied Connections",
                     'last_used': "Last Used",
                 };
+                
+                items += `<thead><tr">
+                    ${Object.entries(allServiceProperties).map(([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`).join('')}`
+                items += `</tr></thead><tbody>`
+
                 for (let serviceIndex = 0; serviceIndex < allServices.length; serviceIndex++) {
                     const service = allServices[serviceIndex];
-                    items += `<li class="${service.is_running ? 'running' : 'stopped'}">`
+                    items += `<tr class="${service.is_running ? 'running' : 'stopped'}">`
                     if (!service.hasOwnProperty('name')) {
                         displayError(`Invalid response from /status endpoint: A service in all_services is missing "name" property`);
                         return;
                     }
-                    items += `<h2>${escapeHtml(service.name)}</h2>`;
 
                     for (let propertyName in allServiceProperties) {
                         if (!service.hasOwnProperty(propertyName)) {
                             displayError(`Invalid response from /status endpoint: A service in all_services is missing "${propertyName}" property`);
                             return;
                         }
-                        items += `<div class="property property-${propertyName}">
-<span class="label">${allServiceProperties[propertyName]}</span>
-<span class="value">${escapeHtml(String(service[propertyName]))}</span>
-</div>`
+                        items += `<td class="property-${propertyName}">${escapeHtml(String(service[propertyName]))}</td>`
                     }
-                    items += "</li>";
+                    items += "</tr>";
                 }
+                items += '</tbody>'
 
                 contentDomElement.innerHTML = `
-        <ul class="all-services">
+        <table class="all-services">
           ${items}
-        </ul>
+        </table>
       `;
                 contentDomElement.classList.remove('error');
             }
@@ -239,7 +240,7 @@
     <label for="sort-order-selector">Sort Order</label>
     <select id="sort-order-selector">
         <option value="last_used">Last Used</option>
-        <option value="active_connections">Active Connections</option>
+        <option value="active_connections">Proxied Connections</option>
         <option value="name">Name</option>
     </select>
 </header>

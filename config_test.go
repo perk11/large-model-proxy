@@ -294,3 +294,21 @@ func TestInvalidManagementApiPort(t *testing.T) {
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"top-level ManagementApi.ListenPort is invalid: \"99999\""})
 }
+
+func TestNegativeShutDownAfterInactivitySeconds(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"ShutDownAfterInactivitySeconds": -10,
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"cannot unmarshal number -10 into Go struct field Config.ShutDownAfterInactivitySeconds of type uint"})
+}

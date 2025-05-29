@@ -423,3 +423,99 @@ func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.
 		service.LogFilePath = fmt.Sprintf("test-logs/%s.log", standardizedServiceName)
 	}
 }
+
+// verifyTotalResourceUsage checks if the total resource usage matches the expected values
+func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
+	for resource, expectedAmount := range expectedUsage {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+
+		if resourceInfo.TotalInUse != expectedAmount {
+			t.Errorf("Expected total %s usage: %d, actual: %d",
+				resource, expectedAmount, resourceInfo.TotalInUse)
+		}
+	}
+}
+
+func getStatusFromManagementAPI(t *testing.T) StatusResponse {
+	resp, err := http.Get("http://localhost:2040/status")
+	if err != nil {
+		t.Fatalf("Failed to get status from management API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status code 200, got %d", resp.StatusCode)
+	}
+
+	var statusResp StatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		t.Fatalf("Failed to decode status response: %v", err)
+	}
+
+	return statusResp
+}
+
+// verifyServiceStatus checks if a specific service has the expected running status and resource usage
+func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
+	// Find service in allServices
+	var found bool
+	var service ServiceStatus
+
+	for _, s := range resp.AllServices {
+		if s.Name == serviceName {
+			service = s
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("Service %s not found in AllServices", serviceName)
+	}
+
+	// Check running status
+	if service.IsRunning != expectedRunning {
+		t.Errorf("Service %s - expected running: %v, actual: %v", serviceName, expectedRunning, service.IsRunning)
+	}
+
+	// Check if service is in running services if it should be running
+	foundInRunning := false
+	for _, s := range resp.RunningServices {
+		if s.Name == serviceName {
+			foundInRunning = true
+			break
+		}
+	}
+
+	if expectedRunning && !foundInRunning {
+		t.Errorf("Service %s expected to be in RunningServices but not found", serviceName)
+	} else if !expectedRunning && foundInRunning {
+		t.Errorf("Service %s not expected to be in RunningServices but was found", serviceName)
+	}
+
+	// Check resource usage
+	if expectedRunning {
+		for resource, expectedAmount := range expectedResources {
+			resourceInfo, ok := resp.Resources[resource]
+			if !ok {
+				t.Errorf("Resource %s not found in status response", resource)
+				continue
+			}
+
+			actualAmount, ok := resourceInfo.UsageByService[serviceName]
+			if !ok {
+				t.Errorf("Service %s not found in UsageByService for resource %s", serviceName, resource)
+				continue
+			}
+
+			if actualAmount != expectedAmount {
+				t.Errorf("Service %s - expected %s usage: %d, actual: %d",
+					serviceName, resource, expectedAmount, actualAmount)
+			}
+		}
+	}
+}

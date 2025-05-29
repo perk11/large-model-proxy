@@ -24,6 +24,7 @@ func main() {
 	durationRequestProcessing := flag.Duration("request-processing-duration", 0, "How much time to sleep after receiving a connection before responding with PID, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationSleepAfterWritingPid := flag.Duration("sleep-after-writing-pid-duration", 0, "How much time to sleep after respond with PID before closing the connection, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
+	exitAfterDuration := flag.Duration("exit-after-duration", time.Duration(1<<63-1), "How much time to exit after the program start, such as \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
 	procPort := flag.String("procinfo-port", "", "Port to expose process information")
 	flag.Parse()
@@ -46,9 +47,7 @@ func main() {
 	if *procPort != "" {
 		go procListen(*procPort)
 	}
-	for {
-		time.Sleep(time.Duration(1<<63 - 1))
-	}
+	time.Sleep(*exitAfterDuration)
 }
 
 type HealthcheckResponse struct {

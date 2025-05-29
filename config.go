@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 )
@@ -45,17 +46,20 @@ type ManagementApi struct {
 }
 
 func loadConfig(filePath string) (Config, error) {
-	var config Config
-
 	file, err := os.ReadFile(filePath)
 	if err != nil {
-		return config, err
+		return Config{}, err
 	}
+	return loadConfigFromReader(bytes.NewReader(file))
+}
 
-	decoder := json.NewDecoder(bytes.NewReader(file))
+func loadConfigFromReader(r io.Reader) (Config, error) {
+	var config Config
+
+	decoder := json.NewDecoder(r)
 	decoder.DisallowUnknownFields()
 
-	err = decoder.Decode(&config)
+	err := decoder.Decode(&config)
 	if err != nil {
 		return config, err
 	}

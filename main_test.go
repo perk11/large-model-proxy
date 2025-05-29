@@ -1052,7 +1052,7 @@ func TestAppScenarios(test *testing.T) {
 					},
 				}
 			},
-			AddressesToCheckAfterStopping: []string{"localhost:2034"},
+			AddressesToCheckAfterStopping: []string{"localhost:2034", "localhost:12034"},
 			TestFunc: func(t *testing.T) {
 				testKillCommand(t, "localhost:2034")
 			},

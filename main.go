@@ -50,7 +50,6 @@ type ModelContainingRequest struct {
 	Model string `json:"model"`
 }
 
-// maybeGetRunningServiceNoLock Only use if serviceMutex is already locked.
 func (rm ResourceManager) maybeGetRunningServiceNoLock(name string) (RunningService, bool) {
 	rs, ok := rm.runningServices[name]
 	return rs, ok
@@ -103,9 +102,10 @@ func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) Runn
 }
 
 var (
-	config          Config
-	resourceManager ResourceManager
-	interrupted     = false
+	config              Config
+	serviceConfigByName map[string]*ServiceConfig
+	resourceManager     ResourceManager
+	interrupted         = false
 )
 
 func main() {
@@ -122,6 +122,11 @@ func main() {
 		log.Printf("Error loading %s:\n", *configFilePath)
 		FprintfError("%v\n", err)
 		os.Exit(1)
+	}
+
+	serviceConfigByName = make(map[string]*ServiceConfig, len(config.Services))
+	for serviceIndex := range config.Services {
+		serviceConfigByName[config.Services[serviceIndex].Name] = &config.Services[serviceIndex]
 	}
 
 	resourceManager = ResourceManager{
@@ -141,6 +146,7 @@ func main() {
 	if config.ManagementApi.ListenPort != "" {
 		go startManagementApi(config.ManagementApi, config.Services)
 	}
+
 	for {
 		receivedSignal := <-exit
 		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))
@@ -148,12 +154,20 @@ func main() {
 		// no need to unlock as os.Exit will be called
 		resourceManager.serviceMutex.Lock()
 		for name := range resourceManager.runningServices {
-			stopService(findServiceConfigByName(name))
+			stopService(*findServiceConfigByName(name))
 		}
 		log.Printf("Done, exiting")
 		os.Exit(0)
 	}
 }
+
+func findServiceConfigByName(serviceName string) *ServiceConfig {
+	if service, ok := serviceConfigByName[serviceName]; ok {
+		return service
+	}
+	panic(fmt.Sprintf("Failed to find service config for service %s", serviceName))
+}
+
 func createOpenAiApiModel(name string) OpenAiApiModel {
 	return OpenAiApiModel{
 		ID:      name,
@@ -673,7 +687,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		earliestLastUsedService := findEarliestLastUsedServiceUsingResource(requestingService, *missingResource)
 		if earliestLastUsedService != "" {
 			log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)
-			stopService(findServiceConfigByName(earliestLastUsedService))
+			stopService(*findServiceConfigByName(earliestLastUsedService))
 			continue
 		}
 		log.Printf("[%s] Failed to find a service to stop, checking again in 1 second", requestingService)
@@ -962,13 +976,4 @@ func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {
 	if err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("%s error during data transfer: %v", logPrefix, err)
 	}
-}
-
-func findServiceConfigByName(serviceName string) ServiceConfig {
-	for _, serviceConfig := range config.Services {
-		if serviceConfig.Name == serviceName {
-			return serviceConfig
-		}
-	}
-	panic(fmt.Sprintf("Failed to find service config for service %s", serviceName))
 }

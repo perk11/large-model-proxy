@@ -65,12 +65,20 @@ func listenOnMainPort(
 ) {
 
 	// Simulate pre-listening work
-	time.Sleep(*sleepDuration)
+	if (*sleepDuration).Nanoseconds() > 0 {
+		log.Printf("Sleeping for %s before starting to listen on main port\n", *sleepDuration)
+		time.Sleep(*sleepDuration)
+	}
 
 	// Mark app as started after startupDuration
-	time.AfterFunc(*startupDuration, func() {
+	if (*startupDuration).Nanoseconds() == 0 {
 		appStarted = true
-	})
+	} else {
+		log.Printf("Sleeping for %s after starting listening to simulate app starting\n", *sleepDuration)
+		time.AfterFunc(*startupDuration, func() {
+			appStarted = true
+		})
+	}
 
 	listener, err := net.Listen("tcp", ":"+*port)
 	if err != nil {

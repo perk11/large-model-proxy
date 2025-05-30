@@ -440,8 +440,8 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 	}
 }
 
-func getStatusFromManagementAPI(t *testing.T) StatusResponse {
-	resp, err := http.Get("http://localhost:2040/status")
+func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
+	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {
 		t.Fatalf("Failed to get status from management API: %v", err)
 	}

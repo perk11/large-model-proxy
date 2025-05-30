@@ -165,6 +165,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	StandardizeConfigNamesAndPaths(&cfg, testName, t) // Standardize names and paths
 	configFilePath := createTempConfig(t, cfg)
+	const managementApiAddress = "localhost:2040"
 
 	// Start large-model-proxy with our test configuration
 	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
@@ -194,7 +195,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Initial check - no services should be running
 	t.Log("Checking initial status - no services should be running")
-	resp := getStatusFromManagementAPI(t)
+	resp := getStatusFromManagementAPI(t, managementApiAddress)
 
 	if len(resp.RunningServices) != 0 {
 		t.Errorf("Expected 0 running services, got %d", len(resp.RunningServices))
@@ -216,7 +217,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 1
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
@@ -234,7 +235,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 2
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
 	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
@@ -253,7 +254,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 
 	// Check status after starting Service 3
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
 	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
 	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
@@ -266,7 +267,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	t.Log("Waiting for Service 1 to terminate due to timeout")
 	time.Sleep(1250 * time.Millisecond)
 
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
 	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
 	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
@@ -279,7 +280,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	t.Log("Waiting for Service 2 to terminate due to timeout")
 	time.Sleep(1250 * time.Millisecond)
 
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
 	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
 	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
@@ -292,7 +293,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	t.Log("Waiting for Service 3 to terminate due to timeout")
 	time.Sleep(1250 * time.Millisecond)
 
-	resp = getStatusFromManagementAPI(t)
+	resp = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
 	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
 	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", false, nil)

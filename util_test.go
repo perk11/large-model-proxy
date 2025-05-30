@@ -498,24 +498,28 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 	}
 
 	// Check resource usage
-	if expectedRunning {
-		for resource, expectedAmount := range expectedResources {
-			resourceInfo, ok := resp.Resources[resource]
-			if !ok {
-				t.Errorf("Resource %s not found in status response", resource)
-				continue
+	for resource, expectedAmount := range expectedResources {
+		if !expectedRunning {
+			if expectedAmount != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no usage for resource %s when service is not running", serviceName, resource)
 			}
+			continue
+		}
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
 
-			actualAmount, ok := resourceInfo.UsageByService[serviceName]
-			if !ok {
-				t.Errorf("Service %s not found in UsageByService for resource %s", serviceName, resource)
-				continue
-			}
+		actualAmount, ok := resourceInfo.UsageByService[serviceName]
+		if !ok {
+			t.Errorf("Service %s not found in UsageByService for resource %s", serviceName, resource)
+			continue
+		}
 
-			if actualAmount != expectedAmount {
-				t.Errorf("Service %s - expected %s usage: %d, actual: %d",
-					serviceName, resource, expectedAmount, actualAmount)
-			}
+		if actualAmount != expectedAmount {
+			t.Errorf("Service %s - expected %s usage: %d, actual: %d",
+				serviceName, resource, expectedAmount, actualAmount)
 		}
 	}
 }

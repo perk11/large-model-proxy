@@ -24,13 +24,11 @@ import (
 )
 
 type RunningService struct {
-	manageMutex          *sync.Mutex
-	cmd                  *exec.Cmd
-	activeConnections    int
-	lastUsed             *time.Time
-	idleTimer            *time.Timer
-	resourceRequirements map[string]int
-	killCommand          *string
+	manageMutex       *sync.Mutex
+	cmd               *exec.Cmd
+	activeConnections int
+	lastUsed          *time.Time
+	idleTimer         *time.Timer
 }
 
 type ResourceManager struct {
@@ -96,11 +94,9 @@ func (rm ResourceManager) incrementConnection(name string, count int) {
 func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) RunningService {
 	now := time.Now()
 	rs := RunningService{
-		resourceRequirements: serviceConfig.ResourceRequirements,
-		activeConnections:    0,
-		lastUsed:             &now,
-		manageMutex:          &sync.Mutex{},
-		killCommand:          serviceConfig.KillCommand,
+		activeConnections: 0,
+		lastUsed:          &now,
+		manageMutex:       &sync.Mutex{},
 	}
 	rm.storeRunningService(serviceConfig.Name, rs)
 	return rs
@@ -152,7 +148,7 @@ func main() {
 		// no need to unlock as os.Exit will be called
 		resourceManager.serviceMutex.Lock()
 		for name := range resourceManager.runningServices {
-			stopService(name)
+			stopService(findServiceConfigByName(name))
 		}
 		log.Printf("Done, exiting")
 		os.Exit(0)
@@ -552,7 +548,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		resourceManager.serviceMutex.Unlock()
 		if shouldStop {
 			log.Printf("[%s] Idle timeout %s reached, stopping service", serviceConfig.Name, idleTimeout)
-			stopService(serviceConfig.Name)
+			stopService(serviceConfig)
 		} else {
 			log.Printf("[%s] Idle timeout %s reached, but service is busy, resetting idle time", serviceConfig.Name, idleTimeout)
 			runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
@@ -603,7 +599,7 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 			log.Printf("[%s] Restarting service due to connection error", serviceConfig.Name)
 			_, isRunning := resourceManager.maybeGetRunningService(serviceConfig.Name)
 			if isRunning {
-				stopService(serviceConfig.Name)
+				stopService(serviceConfig)
 			}
 			serviceConn, err = startService(serviceConfig)
 			if err != nil {
@@ -677,7 +673,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		earliestLastUsedService := findEarliestLastUsedServiceUsingResource(requestingService, *missingResource)
 		if earliestLastUsedService != "" {
 			log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)
-			stopService(earliestLastUsedService)
+			stopService(findServiceConfigByName(earliestLastUsedService))
 			continue
 		}
 		log.Printf("[%s] Failed to find a service to stop, checking again in 1 second", requestingService)
@@ -695,11 +691,12 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 	resourceManager.serviceMutex.Lock()
 	defer resourceManager.serviceMutex.Unlock()
 
-	for serviceName, service := range resourceManager.runningServices {
+	for serviceName := range resourceManager.runningServices {
 		if serviceName == requestingService {
 			continue
 		}
-		if service.resourceRequirements[missingResource] == 0 {
+		serviceConfig := findServiceConfigByName(serviceName)
+		if serviceConfig.ResourceRequirements[missingResource] == 0 {
 			continue
 		}
 		if !canBeStopped(serviceName) {
@@ -877,10 +874,10 @@ func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName
 	)
 }
 
-func stopService(serviceName string) {
-	runningService, ok := resourceManager.maybeGetRunningService(serviceName)
+func stopService(service ServiceConfig) {
+	runningService, ok := resourceManager.maybeGetRunningService(service.Name)
 	if !ok {
-		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, probably multiple stops requested. Stop aborted.", serviceName)
+		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, probably multiple stops requested. Stop aborted.", service.Name)
 		return
 	}
 	if interrupted {
@@ -893,51 +890,51 @@ func stopService(serviceName string) {
 		runningService.idleTimer.Stop()
 	}
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
-		if runningService.killCommand != nil {
-			log.Printf("[%s] Sending custom kill command: %s", serviceName, *runningService.killCommand)
-			cmd := exec.Command("sh", "-c", *runningService.killCommand)
+		if service.KillCommand != nil {
+			log.Printf("[%s] Sending custom kill command: %s", service.Name, *service.KillCommand)
+			cmd := exec.Command("sh", "-c", *service.KillCommand)
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setpgid: true,
 				Pgid:    0,
 			}
 			err := cmd.Start()
 			if err != nil {
-				log.Printf("[%s] Failed to start custom kill command: %v", serviceName, err)
+				log.Printf("[%s] Failed to start custom kill command: %v", service.Name, err)
 			}
 			err = cmd.Wait()
 			if err != nil {
-				log.Printf("[%s] Failed to wait for custom kill command: %v", serviceName, err)
+				log.Printf("[%s] Failed to wait for custom kill command: %v", service.Name, err)
 			}
 		}
-		log.Printf("[%s] Sending SIGTERM to service process group: -%d", serviceName, runningService.cmd.Process.Pid)
+		log.Printf("[%s] Sending SIGTERM to service process group: -%d", service.Name, runningService.cmd.Process.Pid)
 		err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGTERM)
 		if err != nil {
-			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", serviceName, runningService.cmd.Process.Pid, err)
+			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", service.Name, runningService.cmd.Process.Pid, err)
 		}
 
 		processExitedCleanly := waitForProcessToTerminate(runningService.cmd.Process)
 
 		if !processExitedCleanly {
-			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", serviceName, runningService.cmd.Process.Pid)
+			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", service.Name, runningService.cmd.Process.Pid)
 			err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGKILL)
 			if err != nil {
-				log.Printf("[%s] Failed to kill service: %v", serviceName, err)
+				log.Printf("[%s] Failed to kill service: %v", service.Name, err)
 				if runningService.cmd.ProcessState == nil {
-					log.Printf("[%s] Manual action required due to error when killing process", serviceName)
+					log.Printf("[%s] Manual action required due to error when killing process", service.Name)
 					return
 				}
 			}
-			log.Printf("[%s] Done killing pid %d", serviceName, runningService.cmd.Process.Pid)
+			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
 		} else {
-			log.Printf("[%s] Done stopping pid %d", serviceName, runningService.cmd.Process.Pid)
+			log.Printf("[%s] Done stopping pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
 
-	releaseResources(runningService.resourceRequirements)
+	releaseResources(service.ResourceRequirements)
 	if !interrupted {
 		runningService.manageMutex.Unlock()
 	}
-	delete(resourceManager.runningServices, serviceName)
+	delete(resourceManager.runningServices, service.Name)
 }
 
 func waitForProcessToTerminate(process *os.Process) bool {
@@ -965,4 +962,13 @@ func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {
 	if err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("%s error during data transfer: %v", logPrefix, err)
 	}
+}
+
+func findServiceConfigByName(serviceName string) ServiceConfig {
+	for _, serviceConfig := range config.Services {
+		if serviceConfig.Name == serviceName {
+			return serviceConfig
+		}
+	}
+	panic(fmt.Sprintf("Failed to find service config for service %s", serviceName))
 }

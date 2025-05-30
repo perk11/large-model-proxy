@@ -78,7 +78,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			response.RunningServices = append(response.RunningServices, status)
 
 			// Update resource usage by service
-			for resource, amount := range runningService.resourceRequirements {
+			for resource, amount := range service.ResourceRequirements {
 				if usage, ok := response.Resources[resource]; ok {
 					usage.UsageByService[service.Name] = amount
 					response.Resources[resource] = usage

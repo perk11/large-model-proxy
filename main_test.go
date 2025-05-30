@@ -101,43 +101,43 @@ func testIdleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, 
 		return
 	}
 	if isProcessRunning(pidOne) {
-		test.Errorf("first service is still running even though it was supposed to be stopped")
+		test.Errorf("first service is still running with PID %d even though it was supposed to be stopped", pidOne)
 	}
 	err = connTwo.Close()
 	if err != nil {
 		test.Error(err)
 	}
 	if !isProcessRunning(pidTwo) {
-		test.Errorf("second service is not running right after closing connection")
+		test.Errorf("second service is not running with pid %d right after closing connection", pidTwo)
 	}
 
 	time.Sleep(1 * time.Second)
 	newPid := runReadPidCloseConnection(test, serviceTwoAddress)
 	if newPid != pidTwo {
-		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+		test.Errorf("second service has changed pid when idle timeout wasn't reached. Expected %d, got %d", pidTwo, newPid)
 	}
 	time.Sleep(1 * time.Second)
 	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
 	if newPid != pidTwo {
-		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+		test.Errorf("second service has changed pid when idle timeout wasn't reached. Expected %d, got %d", pidTwo, newPid)
 	}
 	time.Sleep(1 * time.Second)
 	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
 	if newPid != pidTwo {
-		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+		test.Errorf("second service has changed pid when idle timeout wasn't reached. Expected %d, got %d", pidTwo, newPid)
 	}
 	time.Sleep(1 * time.Second)
 	newPid = runReadPidCloseConnection(test, serviceTwoAddress)
 	if newPid != pidTwo {
-		test.Errorf("second service has changed pid when idle timeout wasn't reached")
+		test.Errorf("second service has changed pid when idle timeout wasn't reached. Expected %d, got %d", pidTwo, newPid)
 	}
 	if !isProcessRunning(pidTwo) {
-		test.Errorf("second service is not running right after closing connection two")
+		test.Errorf("second service is not running with pid %d right after closing connection two", pidTwo)
 	}
 
 	time.Sleep(4 * time.Second)
 	if isProcessRunning(pidTwo) {
-		test.Errorf("Process is still running after connection is closed and ShutDownAfterInactivitySeconds have passed")
+		test.Errorf("Process is still running with pid %d after connection is closed and ShutDownAfterInactivitySeconds have passed", pidTwo)
 	}
 
 	// Maker sure large-model-proxy hasn't crashed

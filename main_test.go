@@ -80,6 +80,7 @@ func testIdleTimeoutMultipleServices(test *testing.T, serviceOneAddress string, 
 		test.Error(err)
 		return
 	}
+	time.Sleep(250 * time.Millisecond) //make sure connTwo is not opened before connOne
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
 	if err != nil {
 		test.Error(err)

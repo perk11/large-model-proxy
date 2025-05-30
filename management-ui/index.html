@@ -130,7 +130,7 @@
                         lastStatus = undefined;
                         lastContent = undefined;
                         if (err) {
-                            displayError(err.message);
+                            displayError("Error while updating service status: " + err);
                         } else {
                             displayError("Unknown error");
                         }
@@ -153,6 +153,9 @@
                     return;
                 }
                 let sortOrder = localStorage.getItem('sortOrder');
+                if (sortOrder === null) {
+                    sortOrder = 'last_used';
+                }
 
                 const allServices = services.all_services.sort(getSortFunction(sortOrder));
                 let items = '';
@@ -196,6 +199,7 @@
             }
 
             function displayError(error) {
+                console.error(error);
                 contentDomElement.classList.remove('loading');
                 contentDomElement.classList.add('error');
                 contentDomElement.innerHTML = `

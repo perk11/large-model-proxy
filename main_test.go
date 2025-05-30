@@ -605,6 +605,7 @@ func testKillCommand(test *testing.T, proxyAddress string) {
 }
 
 func TestAppScenarios(test *testing.T) {
+	test.Parallel()
 	tests := []struct {
 		Name                          string
 		GetConfig                     func(t *testing.T, testName string) Config

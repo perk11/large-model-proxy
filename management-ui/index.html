@@ -62,6 +62,18 @@
         .all-services td {
             transition: background-color 0.2s ease-in-out;
         }
+        
+        .all-services .property-name a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .all-services .property-name a:hover {
+            text-decoration: underline;
+            color: #1d4ed8;
+        }
+        
         #content.loading {
             opacity: 0.6;
             font-size: 5rem;
@@ -184,7 +196,17 @@
                             displayError(`Invalid response from /status endpoint: A service in all_services is missing "${propertyName}" property`);
                             return;
                         }
-                        items += `<td class="property-${propertyName}">${escapeHtml(String(service[propertyName]))}</td>`
+                        
+                        let cellContent;
+                        const propertyNameEscaped = escapeHtml(String(service[propertyName]));
+                        if (propertyName === 'name' && service.service_url) {
+                            // Make service name a clickable link if service_url is available
+                            cellContent = `<a href="${escapeHtml(service.service_url)}" target="_blank" rel="noopener noreferrer">${propertyNameEscaped}</a>`;
+                        } else {
+                            cellContent = propertyNameEscaped;
+                        }
+                        
+                        items += `<td class="property-${propertyName}">${cellContent}</td>`
                     }
                     items += "</tr>";
                 }

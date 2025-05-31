@@ -312,3 +312,105 @@ func TestNegativeShutDownAfterInactivitySeconds(t *testing.T) {
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"cannot unmarshal number -10 into Go struct field Config.ShutDownAfterInactivitySeconds of type uint"})
 }
+
+func TestDefaultServiceUrlWorks(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}}/status",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if cfg.DefaultServiceUrl == nil {
+		t.Fatal("expected DefaultServiceUrl to be set")
+	}
+	if *cfg.DefaultServiceUrl != "http://localhost:{{.PORT}}/status" {
+		t.Fatalf("expected DefaultServiceUrl to be 'http://localhost:{{.PORT}}/status', got %q", *cfg.DefaultServiceUrl)
+	}
+}
+
+func TestServiceSpecificUrlWorks(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": "https://custom.example.com:{{.PORT}}/health"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if cfg.Services[0].ServiceUrl == nil || !cfg.Services[0].ServiceUrl.IsSet() {
+		t.Fatal("expected ServiceUrl to be set")
+	}
+	if cfg.Services[0].ServiceUrl.Value() != "https://custom.example.com:{{.PORT}}/health" {
+		t.Fatalf("expected ServiceUrl to be 'https://custom.example.com:{{.PORT}}/health', got %q", cfg.Services[0].ServiceUrl.Value())
+	}
+}
+
+func TestServiceUrlExplicitlyNull(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}}/default",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": null
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if cfg.Services[0].ServiceUrl == nil || !cfg.Services[0].ServiceUrl.IsSet() {
+		t.Fatal("expected ServiceUrl to be explicitly set")
+	}
+	if !cfg.Services[0].ServiceUrl.IsNull() {
+		t.Fatal("expected ServiceUrl to be explicitly null")
+	}
+}
+
+func TestServiceUrlNotSpecifiedUsesDefault(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}}/default",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if cfg.Services[0].ServiceUrl != nil {
+		t.Fatal("expected ServiceUrl to not be set (should fall back to default)")
+	}
+}

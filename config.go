@@ -10,9 +10,76 @@ import (
 	"strconv"
 )
 
+// ServiceUrlOption represents an optional service URL that can distinguish between
+// not set, explicitly null, and set to a value
+type ServiceUrlOption struct {
+	value *string
+	isSet bool
+}
+
+// UnmarshalJSON implements json.Unmarshaler to handle the three states:
+// 1. Field not present: isSet = false
+// 2. Field explicitly null: isSet = true, value = nil
+// 3. Field set to string: isSet = true, value = &string
+func (s *ServiceUrlOption) UnmarshalJSON(data []byte) error {
+	s.isSet = true
+	if string(data) == "null" {
+		s.value = nil
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	s.value = &str
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler to properly serialize the ServiceUrlOption
+func (s *ServiceUrlOption) MarshalJSON() ([]byte, error) {
+	if !s.isSet {
+		// This should not be called for unset fields due to omitempty,
+		// but if it is, treat as null
+		return []byte("null"), nil
+	}
+	if s.value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*s.value)
+}
+
+// IsSet returns true if the field was present in JSON (even if null)
+func (s *ServiceUrlOption) IsSet() bool {
+	return s.isSet
+}
+
+// IsNull returns true if the field was explicitly set to null
+func (s *ServiceUrlOption) IsNull() bool {
+	return s.isSet && s.value == nil
+}
+
+// Value returns the string value if set, or empty string if not set/null
+func (s *ServiceUrlOption) Value() string {
+	if s.value == nil {
+		return ""
+	}
+	return *s.value
+}
+
+// StringPtr returns the string pointer (nil if not set or explicitly null)
+func (s *ServiceUrlOption) StringPtr() *string {
+	return s.value
+}
+
+// IsEmpty returns true if the field should be omitted during JSON marshaling
+func (s *ServiceUrlOption) IsEmpty() bool {
+	return !s.isSet
+}
+
 type Config struct {
 	ShutDownAfterInactivitySeconds                                uint
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
+	DefaultServiceUrl                                             *string         `json:"DefaultServiceUrl"`
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
 	OpenAiApi                                                     OpenAiApi
@@ -35,7 +102,37 @@ type ServiceConfig struct {
 	RestartOnConnectionFailure      bool
 	OpenAiApi                       bool
 	OpenAiApiModels                 []string
-	ResourceRequirements            map[string]int `json:"ResourceRequirements"`
+	ServiceUrl                      *ServiceUrlOption `json:"ServiceUrl,omitempty"`
+	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
+}
+
+// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl properly
+func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
+	// Create a type alias to avoid infinite recursion
+	type Alias ServiceConfig
+	aux := &struct {
+		ServiceUrl json.RawMessage `json:"ServiceUrl"`
+		*Alias
+	}{
+		Alias: (*Alias)(sc),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Handle ServiceUrl field
+	if aux.ServiceUrl != nil {
+		// Field is present in JSON
+		serviceUrl := &ServiceUrlOption{}
+		if err := serviceUrl.UnmarshalJSON(aux.ServiceUrl); err != nil {
+			return err
+		}
+		sc.ServiceUrl = serviceUrl
+	}
+	// If aux.ServiceUrl is nil, the field was not present, so sc.ServiceUrl remains nil
+
+	return nil
 }
 
 type OpenAiApi struct {

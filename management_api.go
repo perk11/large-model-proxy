@@ -1,12 +1,35 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"log"
 	"net/http"
+	"text/template"
 	"time"
 )
+
+// renderServiceUrl renders a service URL template with the given port
+func renderServiceUrl(urlTemplate, port string) (string, error) {
+	if urlTemplate == "" {
+		return "", nil
+	}
+
+	tmpl, err := template.New("serviceUrl").Parse(urlTemplate)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	data := map[string]string{"PORT": port}
+	err = tmpl.Execute(&buf, data)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
 
 // handleStatus handles the /status endpoint request
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
@@ -17,6 +40,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		IsRunning            bool           `json:"is_running"`
 		ActiveConnections    int            `json:"active_connections"`
 		LastUsed             *time.Time     `json:"last_used"`
+		ServiceUrl           *string        `json:"service_url,omitempty"`
 		ResourceRequirements map[string]int `json:"resource_requirements"`
 	}
 
@@ -66,6 +90,32 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			Name:                 service.Name,
 			ListenPort:           service.ListenPort,
 			ResourceRequirements: service.ResourceRequirements,
+		}
+
+		// Determine service URL template to use
+		var urlTemplate string
+		if service.ServiceUrl != nil && service.ServiceUrl.IsSet() {
+			if service.ServiceUrl.IsNull() {
+				// ServiceUrl explicitly set to null - no URL desired
+				urlTemplate = ""
+			} else {
+				// ServiceUrl set to a specific template
+				urlTemplate = service.ServiceUrl.Value()
+			}
+		} else if config.DefaultServiceUrl != nil {
+			// ServiceUrl not specified - fall back to DefaultServiceUrl
+			urlTemplate = *config.DefaultServiceUrl
+		}
+
+		// Render service URL if template is available and not empty
+		// Only skip rendering if ServiceUrl was explicitly set to null
+		if urlTemplate != "" && service.ListenPort != "" && !(service.ServiceUrl != nil && service.ServiceUrl.IsSet() && service.ServiceUrl.IsNull()) {
+			renderedUrl, err := renderServiceUrl(urlTemplate, service.ListenPort)
+			if err != nil {
+				log.Printf("Failed to render service URL template for service %s: %v", service.Name, err)
+			} else if renderedUrl != "" {
+				status.ServiceUrl = &renderedUrl
+			}
 		}
 
 		// Check if service is running

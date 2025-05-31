@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,6 +24,7 @@ type ServiceStatus struct {
 	IsRunning            bool           `json:"is_running"`
 	ActiveConnections    int            `json:"active_connections"`
 	LastUsed             *time.Time     `json:"last_used"`
+	ServiceUrl           *string        `json:"service_url,omitempty"`
 	ResourceRequirements map[string]int `json:"resource_requirements"`
 }
 
@@ -319,5 +321,103 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	}
 	if isProcessRunning(pid3) {
 		t.Errorf("Service 3 (pid %d) is still running but should be terminated", pid3)
+	}
+}
+
+func TestManagementAPIServiceUrls(t *testing.T) {
+	t.Parallel()
+	// Setup test environment
+	waitChannel := make(chan error, 1)
+	const testName = "management-api-serviceurl-test"
+
+	// Create a temporary config file with explicit null for ServiceUrl
+	configContent := `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}}/default",
+		"ResourcesAvailable": {
+			"CPU": 4
+		},
+		"ManagementApi": {
+			"ListenPort": "2050"
+		},
+		"Services": [
+			{
+				"Name": "service-with-default-url",
+				"ListenPort": "2051",
+				"ProxyTargetHost": "localhost",
+				"ProxyTargetPort": "12051",
+				"Command": "./test-server/test-server",
+				"Args": "-p 12051"
+			},
+			{
+				"Name": "service-with-custom-url",
+				"ListenPort": "2052",
+				"ProxyTargetHost": "localhost",
+				"ProxyTargetPort": "12052",
+				"Command": "./test-server/test-server",
+				"Args": "-p 12052",
+				"ServiceUrl": "https://example.com:{{.PORT}}/custom"
+			},
+			{
+				"Name": "service-with-no-url",
+				"ListenPort": "2053",
+				"ProxyTargetHost": "localhost",
+				"ProxyTargetPort": "12053",
+				"Command": "./test-server/test-server",
+				"Args": "-p 12053",
+				"ServiceUrl": null
+			}
+		]
+	}`
+
+	cfg, err := loadConfigFromReader(strings.NewReader(configContent))
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	StandardizeConfigNamesAndPaths(&cfg, testName, t)
+	configFilePath := createTempConfig(t, cfg)
+
+	// Start large-model-proxy
+	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
+	if err != nil {
+		t.Fatalf("Could not start application: %v", err)
+	}
+
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+	}()
+
+	// Give the management API time to start
+	time.Sleep(2 * time.Second)
+
+	// Get status from management API
+	resp := getStatusFromManagementAPI(t, "localhost:2050")
+
+	// Verify service URLs are correctly rendered
+	for _, service := range resp.AllServices {
+		switch service.Name {
+		case testName + "_service-with-default-url":
+			expectedUrl := "http://localhost:2051/default"
+			if service.ServiceUrl == nil {
+				t.Errorf("Expected service %s to have ServiceUrl %q, but got nil", service.Name, expectedUrl)
+			} else if *service.ServiceUrl != expectedUrl {
+				t.Errorf("Expected service %s to have ServiceUrl %q, but got %q", service.Name, expectedUrl, *service.ServiceUrl)
+			}
+
+		case testName + "_service-with-custom-url":
+			expectedUrl := "https://example.com:2052/custom"
+			if service.ServiceUrl == nil {
+				t.Errorf("Expected service %s to have ServiceUrl %q, but got nil", service.Name, expectedUrl)
+			} else if *service.ServiceUrl != expectedUrl {
+				t.Errorf("Expected service %s to have ServiceUrl %q, but got %q", service.Name, expectedUrl, *service.ServiceUrl)
+			}
+
+		case testName + "_service-with-no-url":
+			if service.ServiceUrl != nil {
+				t.Errorf("Expected service %s to have no ServiceUrl, but got %q", service.Name, *service.ServiceUrl)
+			}
+		}
 	}
 }

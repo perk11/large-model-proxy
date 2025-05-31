@@ -54,6 +54,7 @@ Below is an example `config.json`:
 
 ```json
 {
+  "DefaultServiceUrl": "http://localhost:{{.PORT}}/",
   "OpenAiApi": {
     "ListenPort": "7070"
   },
@@ -90,6 +91,7 @@ Below is an example `config.json`:
       "ProxyTargetPort": "18081",
       "Command": "/opt/llama.cpp/llama-server",
       "Args": "-m /opt/Gemma-27B-v1_Q4km.gguf -c 8192 -ngl 100 -t 4 --port 18081",
+      "ServiceUrl": "http://gemma-proxy-server/",
       "HealthcheckCommand": "curl --fail http://localhost:18081/health",
       "HealthcheckIntervalMilliseconds": 200,
       "RestartOnConnectionFailure": false,
@@ -106,6 +108,7 @@ Below is an example `config.json`:
       "Command": "/home/user/.conda/envs/vllm/bin/vllm",
       "LogFilePath": "/var/log/Qwen2.5-7B.log",
       "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
+      "ServiceUrl": null,
       "ResourceRequirements": {
         "VRAM-GPU-1": 17916
       }
@@ -141,6 +144,13 @@ Below is a breakdown of what this configuration does:
 4. The Stable Diffusion web UI is expected to use up to 3GB of VRAM and 30GB of RAM, while Gemma27B will use up to 20GB of VRAM and 3GB of RAM, Qwen2.5-7B-Instruct up to 18GB of VRAM and no RAM (for example's sake), and ComfyUI up to 20GB of VRAM and 16GB of RAM.
 5. Automatic1111, Gemma2, and ComfyUI logs will be in the `logs/` directory of the current dir, while Qwen logs will be in `/var/log/Qwen2.5-7B.log`.
 6. When ComfyUI is no longer in use, its container will be killed using the `docker kill comfyui` command. Other services will be terminated normally.
+7. Service URLs are configured as follows:
+   - **Automatic1111**: Uses the default URL template (`DefaultServiceUrl`) which resolves to `http://localhost:7860/`
+   - **Gemma27B**: Uses a custom static URL `http://gemma-proxy-server/` (no port templating)
+   - **Qwen2.5-7B-Instruct**: Explicitly set to `null`, so no URL will be generated even though a default is available
+   - **ComfyUI**: No `ServiceUrl` specified, so it uses the default template resolving to `http://localhost:8188/`
+   
+   These URLs appear in the management API responses and make service names clickable in the web dashboard for easy access to service interfaces.
 
 Note how Qwen is not available directly, but is only available via OpenAI API.
 
@@ -170,11 +180,33 @@ The management API is a simple HTTP API that allows you to get the status of the
 
 To enable it, you need to specify `ManagementApi.ListenPort` in the config.
 
-Currently, the only endpoint is `/status`, which returns a JSON object with the following fields:
+### Web Dashboard
 
+Access the web dashboard at `http://localhost:{ManagementApi.ListenPort}/` for a real-time view of all services, their status, resource usage, and active connections. The dashboard automatically refreshes every second and does the following:
+
+- shows all services with their current state (running/stopped), listen ports, active connections, and last used timestamps
+- when services have URLs configured, their names become clickable links that open the service's web interface in a new tab
+- sorting by name, active connections, or last used time
+
+### API Endpoints
+
+**GET /status**: Returns a JSON object with comprehensive proxy and service information.
+
+Response fields:
 - `all_services`: A list of all services managed by the proxy.
 - `running_services`: A list of all services that are currently running.
 - `resources`: A map of all resources managed by the proxy and their usage.
+
+Each service in the `all_services` and `running_services` arrays includes the following fields:
+- `name`: Service name
+- `listen_port`: Port the service listens on
+- `is_running`: Whether the service is currently running
+- `active_connections`: Number of active connections to the service
+- `last_used`: Timestamp when the service was last used (for running services)
+- `service_url`: The rendered service URL (if configured), or `null` if no URL is available
+- `resource_requirements`: Resources required by the service
+
+The `service_url` field is generated from the service's `ServiceUrl` or `DefaultServiceUrl` configuration, with the `{{.PORT}}` template variable replaced by the service's `ListenPort`. The web dashboard consumes this endpoint to display real-time status information and enable clickable service navigation.
 
 ## Logs
 

@@ -955,8 +955,6 @@ func stopService(service ServiceConfig) {
 				}
 			}
 			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
-		} else {
-			log.Printf("[%s] Done stopping pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
 	cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)

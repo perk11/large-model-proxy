@@ -159,15 +159,15 @@
             }
 
             function updateContent(newContent) {
-                let services;
+                let statusJSON;
                 try {
-                    services = JSON.parse(newContent);
+                    statusJSON = JSON.parse(newContent);
                 } catch (e) {
                     displayError(`Error when parsing status JSON: ${e}\n\n${newContent}`);
                     return;
                 }
-                if (!services.hasOwnProperty('all_services')) {
-                    displayError('Invalid response from /status endpoint: Missing all_services property');
+                if (!statusJSON.hasOwnProperty('services')) {
+                    displayError('Invalid response from /status endpoint: Missing services property');
                     return;
                 }
                 let sortOrder = localStorage.getItem('sortOrder');
@@ -175,7 +175,7 @@
                     sortOrder = 'last_used';
                 }
 
-                const allServices = services.all_services.sort(getSortFunction(sortOrder));
+                const services = statusJSON.services.sort(getSortFunction(sortOrder));
                 let items = '';
                 const allServiceProperties = {
                     'name': "Name",
@@ -189,17 +189,17 @@
                     ${Object.entries(allServiceProperties).map(([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`).join('')}`
                 items += `</tr></thead><tbody>`
 
-                for (let serviceIndex = 0; serviceIndex < allServices.length; serviceIndex++) {
-                    const service = allServices[serviceIndex];
+                for (let serviceIndex = 0; serviceIndex < services.length; serviceIndex++) {
+                    const service = services[serviceIndex];
                     items += `<tr class="${service.is_running ? 'running' : 'stopped'}">`
                     if (!service.hasOwnProperty('name')) {
-                        displayError(`Invalid response from /status endpoint: A service in all_services is missing "name" property`);
+                        displayError(`Invalid response from /status endpoint: A service in services is missing "name" property`);
                         return;
                     }
 
                     for (let propertyName in allServiceProperties) {
                         if (!service.hasOwnProperty(propertyName)) {
-                            displayError(`Invalid response from /status endpoint: A service in all_services is missing "${propertyName}" property`);
+                            displayError(`Invalid response from /status endpoint: A service in services is missing "${propertyName}" property`);
                             return;
                         }
 

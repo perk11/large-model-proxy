@@ -195,7 +195,7 @@ Access the web dashboard at `http://localhost:{ManagementApi.ListenPort}/` for a
 **GET /status**: Returns a JSON object with comprehensive proxy and service information.
 
 Response fields:
-- `all_services`: A list of all services managed by the proxy.
+- `services`: A list of all services managed by the proxy.
 - `resources`: A map of all resources managed by the proxy and their usage.
 
 Each service in the `services` array includes the following fields:

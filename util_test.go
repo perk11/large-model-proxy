@@ -471,11 +471,11 @@ func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) Statu
 // verifyServiceStatus checks if a specific service has the expected running status and resource usage
 func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
 	t.Helper()
-	// Find service in allServices
+	// Find service in Services
 	var found bool
 	var service ServiceStatus
 
-	for _, s := range resp.AllServices {
+	for _, s := range resp.Services {
 		if s.Name == serviceName {
 			service = s
 			found = true
@@ -484,7 +484,7 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 	}
 
 	if !found {
-		t.Fatalf("Service %s not found in AllServices", serviceName)
+		t.Fatalf("Service %s not found in Services", serviceName)
 	}
 
 	// Check running status

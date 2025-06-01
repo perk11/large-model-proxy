@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tidwall/jsonc"
 	"io"
 	"os"
 	"strconv"
@@ -182,14 +183,17 @@ func loadConfig(filePath string) (Config, error) {
 
 func loadConfigFromReader(r io.Reader) (Config, error) {
 	var config Config
-
-	decoder := json.NewDecoder(r)
-	decoder.DisallowUnknownFields()
-
-	err := decoder.Decode(&config)
+	configBytes, err := io.ReadAll(r)
 	if err != nil {
 		return config, err
 	}
+
+	jsonConfigBytes := jsonc.ToJSON(configBytes)
+	err = json.Unmarshal(jsonConfigBytes, &config)
+	if err != nil {
+		return config, err
+	}
+
 	err = validateConfig(config)
 	if err != nil {
 		return config, err

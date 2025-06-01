@@ -27,17 +27,20 @@ func TestValidConfigMinimal(t *testing.T) {
 	t.Parallel()
 	_, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": {
-			"RAM": 10000,
-			"VRAM-GPU-1": 20000
+			"RAM": 10000, //Random access memory!
+			"VRAM-GPU-1": 20000, /* Wow, VRAM! */
 		},
-		"OpenAiApi": {
+        /* A multi-line comment
+           to make sure JSONc works
+        */
+		"OpenAiApi": { // Commenting after opening brace? Why not
 			"ListenPort": "7070"
 		},
 		"Services": [
 			{
 				"Name": "serviceA",
 				"ListenPort": "8080",
-				"Command": "/bin/echo"
+				"Command": "/bin/echo",
 			},
 			{
 				"Name": "serviceB",
@@ -61,7 +64,7 @@ func TestDuplicateServiceNames(t *testing.T) {
 			{
 				"Name": "serviceX",
 				"ListenPort": "8090",
-				"Command": "/bin/echo"
+				"Command": "/bin/echo",
 			},
 			{
 				"Name": "serviceX",
@@ -137,13 +140,13 @@ func TestOpenAiApiNoListenPort(t *testing.T) {
 	t.Parallel()
 	_, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": {
-			"RAM": 10000
+			"RAM": 10000,
 		},
 		"Services": [
 			{
 				"Name": "serviceOpenAI",
 				"OpenAiApi": false,
-				"Command": "/bin/echo"
+				"Command": "/bin/echo",
 			}
 		]
 	}`)
@@ -339,7 +342,7 @@ func TestFalseConsiderStoppedOnProcessExitValueIsParsed(t *testing.T) {
 				"Name": "testService",
 				"ListenPort": "8080",
 				"Command": "/bin/echo",
-				"ConsiderStoppedOnProcessExit": false
+				"ConsiderStoppedOnProcessExit": false,
 			}
 		]
 	}`)
@@ -358,7 +361,7 @@ func TestTrueConsiderStoppedOnProcessExitProcessValueIsParsed(t *testing.T) {
 				"Name": "testService",
 				"ListenPort": "8080",
 				"Command": "/bin/echo",
-				"ConsiderStoppedOnProcessExit": true
+				"ConsiderStoppedOnProcessExit": true,
 			}
 		]
 	}`)

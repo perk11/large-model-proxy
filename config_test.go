@@ -471,3 +471,152 @@ func TestServiceUrlNotSpecifiedUsesDefault(t *testing.T) {
 		t.Fatal("expected ServiceUrl to not be set (should fall back to default)")
 	}
 }
+
+func TestValidDefaultServiceUrlTemplate(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}}/status",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error for valid template but got: %v", err)
+	}
+}
+
+func TestValidServiceUrlTemplate(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": "https://testy:{{.PORT}}/"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error for valid template but got: %v", err)
+	}
+}
+
+func TestInvalidDefaultServiceUrlTemplate(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "http://localhost:{{.PORT}/",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"DefaultServiceUrl contains invalid Go template"})
+}
+
+func TestInvalidServiceUrlTemplateMissingCloseBrace(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": "https://example.com:{{.PORT"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"service \"testService\" has invalid Go template in ServiceUrl"})
+}
+
+func TestEmptyTemplatesAreValid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": ""
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error for empty templates but got: %v", err)
+	}
+}
+
+func TestNullServiceUrlNotValidated(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": null
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error for null ServiceUrl but got: %v", err)
+	}
+}
+
+func TestMultipleServicesWithInvalidTemplates(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"DefaultServiceUrl": "{{.PORT",
+		"ResourcesAvailable": {
+			"RAM": 10000
+		},
+		"Services": [
+			{
+				"Name": "service1",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ServiceUrl": "{{.HOST"
+			},
+			{
+				"Name": "service2",
+				"ListenPort": "8081",
+				"Command": "/bin/echo",
+				"ServiceUrl": "valid://example.com:{{.PORT}}"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"DefaultServiceUrl contains invalid Go template",
+		"service \"service1\" has invalid Go template in ServiceUrl",
+	})
+	// Should not mention service2 since its template is valid
+	if strings.Contains(err.Error(), "service2") {
+		t.Errorf("error should not mention service2 with valid template: %v", err)
+	}
+}

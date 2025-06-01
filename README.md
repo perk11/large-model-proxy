@@ -49,6 +49,7 @@ It will probably not work on Windows natively, as it is using Unix Process Group
 **macOS**: Might work using "Other Distros" instruction, but I do not own any Apple devices to check, please let me know if it does!
 
 ## Configuration
+
 Configuration support JSONC (JSON with comments and trailing commas).
 
 Below is an example `config.jsonc`:
@@ -82,7 +83,7 @@ Below is an example `config.jsonc`:
       "ResourceRequirements": {
         "VRAM-GPU-1": 2000,
         "RAM": 30000,
-      }
+      },
     },
     {
       "Name": "Gemma-27B",
@@ -99,7 +100,7 @@ Below is an example `config.jsonc`:
       "ResourceRequirements": {
         "VRAM-GPU-1": 20000,
         "RAM": 3000,
-      }
+      },
     },
     {
       "Name": "Qwen/Qwen2.5-7B-Instruct",
@@ -108,12 +109,12 @@ Below is an example `config.jsonc`:
       "ProxyTargetPort": "18082",
       "Command": "/home/user/.conda/envs/vllm/bin/vllm",
       "LogFilePath": "/var/log/Qwen2.5-7B.log",
-      "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082", 
+      "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
       "ConsiderStoppedOnProcessExit": true,
       "ServiceUrl": null,
       "ResourceRequirements": {
         "VRAM-GPU-1": 17916,
-      }
+      },
     },
     {
       "Name": "ComfyUI",
@@ -127,9 +128,9 @@ Below is an example `config.jsonc`:
       "ResourceRequirements": {
         "VRAM-GPU-1": 20000,
         "RAM": 16000,
-      }
+      },
     },
-  ]
+  ],
 }
 ```
 
@@ -147,11 +148,12 @@ Below is a breakdown of what this configuration does:
 5. Automatic1111, Gemma2, and ComfyUI logs will be in the `logs/` directory of the current dir, while Qwen logs will be in `/var/log/Qwen2.5-7B.log`.
 6. When ComfyUI is no longer in use, its container will be killed using the `docker kill comfyui` command. Other services will be terminated normally.
 7. Service URLs are configured as follows:
+
    - **Automatic1111**: Uses the default URL template (`DefaultServiceUrl`) which resolves to `http://localhost:7860/`
    - **Gemma27B**: Uses a custom static URL `http://gemma-proxy-server/` (no port templating)
    - **Qwen2.5-7B-Instruct**: Explicitly set to `null`, so no URL will be generated even though a default is available
    - **ComfyUI**: No `ServiceUrl` specified, so it uses the default template resolving to `http://localhost:8188/`
-   
+
    These URLs appear in the management API responses and make service names clickable in the web dashboard for easy access to service interfaces.
 
 8. No ListenPort in Qwen configuration makes it only available via OpenAI API.
@@ -196,10 +198,12 @@ Access the web dashboard at `http://localhost:{ManagementApi.ListenPort}/` for a
 **GET /status**: Returns a JSON object with comprehensive proxy and service information.
 
 Response fields:
+
 - `services`: A list of all services managed by the proxy.
 - `resources`: A map of all resources managed by the proxy and their usage.
 
 Each service in the `services` array includes the following fields:
+
 - `name`: Service name
 - `listen_port`: Port the service listens on
 - `is_running`: Whether the service is currently running

@@ -1,283 +1,306 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
     <title>large-model-proxy Management UI</title>
     <style>
-        body {
-            font-family: sans-serif;
-            background-color: #f5f7fa;
-            color: #333;
-            margin: 0;
-            padding: 1rem;
-        }
+      body {
+        font-family: sans-serif;
+        background-color: #f5f7fa;
+        color: #333;
+        margin: 0;
+        padding: 1rem;
+      }
 
-        #settings {
-            margin-bottom: 10px;
-            padding: 10px;
-            background-color: #cbcbcb;
-        }
+      #settings {
+        margin-bottom: 10px;
+        padding: 10px;
+        background-color: #cbcbcb;
+      }
 
-        #settings h2 {
-            margin-top: 0;
-        }
+      #settings h2 {
+        margin-top: 0;
+      }
 
-        .all-services {
-            margin: 0;
-            padding: 0;
-        }
+      .all-services {
+        margin: 0;
+        padding: 0;
+      }
 
-        .all-services tr.running {
-            background-color: #c8ffb9;
-        }
+      .all-services tr.running {
+        background-color: #c8ffb9;
+      }
 
-        .all-services tr.running:nth-child(even) {
-            background-color: #d2ffc4;
-        }
+      .all-services tr.running:nth-child(even) {
+        background-color: #d2ffc4;
+      }
 
-        .all-services tr.stopped {
-            background-color: #ffc6c6;
-        }
+      .all-services tr.stopped {
+        background-color: #ffc6c6;
+      }
 
-        .all-services tr.stopped:nth-child(even) {
-            background-color: #ffa5a5;
-        }
+      .all-services tr.stopped:nth-child(even) {
+        background-color: #ffa5a5;
+      }
 
-        .all-services {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 1rem;
-            border: 1px solid #ddd;
-        }
+      .all-services {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1rem;
+        border: 1px solid #ddd;
+      }
 
-        .all-services th, .all-services td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
+      .all-services th,
+      .all-services td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
 
-        .all-services th {
-            background-color: #2563eb;
-            color: white;
-            font-weight: bold;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
+      .all-services th {
+        background-color: #2563eb;
+        color: white;
+        font-weight: bold;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
 
-        .all-services td {
-            transition: background-color 0.2s ease-in-out;
-        }
+      .all-services td {
+        transition: background-color 0.2s ease-in-out;
+      }
 
-        .all-services .property-name a {
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: 500;
-        }
+      .all-services .property-name a {
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 500;
+      }
 
-        .all-services .property-name a:hover {
-            text-decoration: underline;
-            color: #1d4ed8;
-        }
+      .all-services .property-name a:hover {
+        text-decoration: underline;
+        color: #1d4ed8;
+      }
 
-        #content.loading {
-            opacity: 0.6;
-            font-size: 5rem;
-            text-align: center;
-            margin: 0 auto;
-            width: 100%;
-        }
+      #content.loading {
+        opacity: 0.6;
+        font-size: 5rem;
+        text-align: center;
+        margin: 0 auto;
+        width: 100%;
+      }
 
-        #content.error {
-            color: #c00;
-            text-align: center;
-        }
+      #content.error {
+        color: #c00;
+        text-align: center;
+      }
     </style>
     <script>
-        const refreshIntervalMilliseconds = 1000;
+      const refreshIntervalMilliseconds = 1000;
 
-        function getSortFunction(sortOrder) {
-            switch (sortOrder) {
-                case 'last_used':
-                    return (a, b) => {
-                        if (a.last_used === b.last_used) return a.name.toUpperCase() > b.name.toUpperCase();
-                        if (a.last_used === null && b.last_used !== null) {
-                            return 1
-                        }
-                        if (a.last_used !== null && b.last_used === null) {
-                            return -1;
-                        }
-                        return a.last_used < b.last_used;
-                    };
-                case 'active_connections':
-                    return (a, b) => {
-                        if (a.active_connections === b.active_connections) {
-                            return a.name.toUpperCase() > b.name.toUpperCase()
-                        }
-                        return a.active_connections < b.active_connections;
-                    };
-                case 'name':
-                    return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
-                default:
-                    throw `Unexpected sort order: ${sortOrder}`;
-            }
+      function getSortFunction(sortOrder) {
+        switch (sortOrder) {
+          case "last_used":
+            return (a, b) => {
+              if (a.last_used === b.last_used)
+                return a.name.toUpperCase() > b.name.toUpperCase();
+              if (a.last_used === null && b.last_used !== null) {
+                return 1;
+              }
+              if (a.last_used !== null && b.last_used === null) {
+                return -1;
+              }
+              return a.last_used < b.last_used;
+            };
+          case "active_connections":
+            return (a, b) => {
+              if (a.active_connections === b.active_connections) {
+                return a.name.toUpperCase() > b.name.toUpperCase();
+              }
+              return a.active_connections < b.active_connections;
+            };
+          case "name":
+            return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
+          default:
+            throw `Unexpected sort order: ${sortOrder}`;
+        }
+      }
+
+      window.onload = function () {
+        const contentDomElement = document.getElementById("content");
+        let lastContent;
+        let lastStatus;
+
+        function refreshContent() {
+          fetch("/status")
+            .then((response) => {
+              if (!response.ok) {
+                displayError(
+                  `HTTP error: ${response.status} ${response.statusText} ${lastContent}`,
+                );
+                return Promise.reject(response.statusText);
+              }
+              return response.text();
+            })
+            .then((text) => {
+              if (text === lastContent) {
+                return;
+              }
+              lastContent = text;
+              contentDomElement.classList.remove("loading");
+              updateContent(text);
+            })
+            .catch((err) => {
+              lastStatus = undefined;
+              lastContent = undefined;
+              if (err) {
+                displayError("Error while updating service status: " + err);
+              } else {
+                displayError("Unknown error");
+              }
+            })
+            .finally(() => {
+              setTimeout(refreshContent, refreshIntervalMilliseconds);
+            });
         }
 
-        window.onload = function () {
-            const contentDomElement = document.getElementById('content');
-            let lastContent;
-            let lastStatus;
+        function updateContent(newContent) {
+          let statusJSON;
+          try {
+            statusJSON = JSON.parse(newContent);
+          } catch (e) {
+            displayError(
+              `Error when parsing status JSON: ${e}\n\n${newContent}`,
+            );
+            return;
+          }
+          if (!statusJSON.hasOwnProperty("services")) {
+            displayError(
+              "Invalid response from /status endpoint: Missing services property",
+            );
+            return;
+          }
+          let sortOrder = localStorage.getItem("sortOrder");
+          if (sortOrder === null) {
+            sortOrder = "last_used";
+          }
 
-            function refreshContent() {
-                fetch('/status')
-                    .then(response => {
-                        if (!response.ok) {
-                            displayError(`HTTP error: ${response.status} ${response.statusText} ${lastContent}`);
-                            return Promise.reject(response.statusText);
-                        }
-                        return response.text();
-                    }).then(text => {
-                    if (text === lastContent) {
-                        return;
-                    }
-                    lastContent = text;
-                    contentDomElement.classList.remove('loading');
-                    updateContent(text);
-                })
-                    .catch(err => {
-                        lastStatus = undefined;
-                        lastContent = undefined;
-                        if (err) {
-                            displayError("Error while updating service status: " + err);
-                        } else {
-                            displayError("Unknown error");
-                        }
-                    })
-                    .finally(() => {
-                        setTimeout(refreshContent, refreshIntervalMilliseconds);
-                    });
+          const services = statusJSON.services.sort(getSortFunction(sortOrder));
+          let items = "";
+          const allServiceProperties = {
+            name: "Name",
+            listen_port: "Listen Port",
+            is_running: "Running",
+            active_connections: "Proxied Connections",
+            last_used: "Last Used",
+          };
+
+          items += `<thead><tr">
+                    ${Object.entries(allServiceProperties)
+                      .map(
+                        ([key, label]) =>
+                          `<th class="${key}">${escapeHtml(label)}</th>`,
+                      )
+                      .join("")}`;
+          items += `</tr></thead><tbody>`;
+
+          for (
+            let serviceIndex = 0;
+            serviceIndex < services.length;
+            serviceIndex++
+          ) {
+            const service = services[serviceIndex];
+            items += `<tr class="${service.is_running ? "running" : "stopped"}">`;
+            if (!service.hasOwnProperty("name")) {
+              displayError(
+                `Invalid response from /status endpoint: A service in services is missing "name" property`,
+              );
+              return;
             }
 
-            function updateContent(newContent) {
-                let statusJSON;
-                try {
-                    statusJSON = JSON.parse(newContent);
-                } catch (e) {
-                    displayError(`Error when parsing status JSON: ${e}\n\n${newContent}`);
-                    return;
-                }
-                if (!statusJSON.hasOwnProperty('services')) {
-                    displayError('Invalid response from /status endpoint: Missing services property');
-                    return;
-                }
-                let sortOrder = localStorage.getItem('sortOrder');
-                if (sortOrder === null) {
-                    sortOrder = 'last_used';
-                }
+            for (let propertyName in allServiceProperties) {
+              if (!service.hasOwnProperty(propertyName)) {
+                displayError(
+                  `Invalid response from /status endpoint: A service in services is missing "${propertyName}" property`,
+                );
+                return;
+              }
 
-                const services = statusJSON.services.sort(getSortFunction(sortOrder));
-                let items = '';
-                const allServiceProperties = {
-                    'name': "Name",
-                    'listen_port': "Listen Port",
-                    'is_running': "Running",
-                    'active_connections': "Proxied Connections",
-                    'last_used': "Last Used",
-                };
+              let cellContent;
+              const propertyNameEscaped = escapeHtml(
+                String(service[propertyName]),
+              );
+              if (propertyName === "name" && service.service_url) {
+                // Make service name a clickable link if service_url is available
+                cellContent = `<a href="${escapeHtml(service.service_url)}" target="_blank" rel="noopener noreferrer">${propertyNameEscaped}</a>`;
+              } else {
+                cellContent = propertyNameEscaped;
+              }
 
-                items += `<thead><tr">
-                    ${Object.entries(allServiceProperties).map(([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`).join('')}`
-                items += `</tr></thead><tbody>`
+              items += `<td class="property-${propertyName}">${cellContent}</td>`;
+            }
+            items += "</tr>";
+          }
+          items += "</tbody>";
 
-                for (let serviceIndex = 0; serviceIndex < services.length; serviceIndex++) {
-                    const service = services[serviceIndex];
-                    items += `<tr class="${service.is_running ? 'running' : 'stopped'}">`
-                    if (!service.hasOwnProperty('name')) {
-                        displayError(`Invalid response from /status endpoint: A service in services is missing "name" property`);
-                        return;
-                    }
-
-                    for (let propertyName in allServiceProperties) {
-                        if (!service.hasOwnProperty(propertyName)) {
-                            displayError(`Invalid response from /status endpoint: A service in services is missing "${propertyName}" property`);
-                            return;
-                        }
-
-                        let cellContent;
-                        const propertyNameEscaped = escapeHtml(String(service[propertyName]));
-                        if (propertyName === 'name' && service.service_url) {
-                            // Make service name a clickable link if service_url is available
-                            cellContent = `<a href="${escapeHtml(service.service_url)}" target="_blank" rel="noopener noreferrer">${propertyNameEscaped}</a>`;
-                        } else {
-                            cellContent = propertyNameEscaped;
-                        }
-
-                        items += `<td class="property-${propertyName}">${cellContent}</td>`
-                    }
-                    items += "</tr>";
-                }
-                items += '</tbody>'
-
-                contentDomElement.innerHTML = `
+          contentDomElement.innerHTML = `
         <table class="all-services">
           ${items}
         </table>
       `;
-                contentDomElement.classList.remove('error');
-            }
+          contentDomElement.classList.remove("error");
+        }
 
-            function displayError(error) {
-                console.error(error);
-                contentDomElement.classList.remove('loading');
-                contentDomElement.classList.add('error');
-                contentDomElement.innerHTML = `
+        function displayError(error) {
+          console.error(error);
+          contentDomElement.classList.remove("loading");
+          contentDomElement.classList.add("error");
+          contentDomElement.innerHTML = `
         Failed to read status from large-model-proxy.
         <div class="error-message">${error}</div>
       `;
-            }
-
-            refreshContent();
-            let sortOrderSelector = document.getElementById('sort-order-selector')
-            sortOrderSelector.addEventListener('change', event => {
-                localStorage.setItem('sortOrder', event.target.value);
-                updateContent(lastContent);
-            });
-            let sortOrder = localStorage.getItem('sortOrder');
-            if (sortOrder === null) {
-                sortOrder = 'last_used'
-            }
-            let optionToSelect = sortOrderSelector.querySelector(`option[value="${sortOrder}"]`);
-            if (optionToSelect === null) {
-                console.error('Failed to find sort order option: ' + sortOrder);
-            } else {
-                optionToSelect.selected = true;
-            }
-        };
-
-        function escapeHtml(unsafe) {
-            return unsafe
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
         }
 
+        refreshContent();
+        let sortOrderSelector = document.getElementById("sort-order-selector");
+        sortOrderSelector.addEventListener("change", (event) => {
+          localStorage.setItem("sortOrder", event.target.value);
+          updateContent(lastContent);
+        });
+        let sortOrder = localStorage.getItem("sortOrder");
+        if (sortOrder === null) {
+          sortOrder = "last_used";
+        }
+        let optionToSelect = sortOrderSelector.querySelector(
+          `option[value="${sortOrder}"]`,
+        );
+        if (optionToSelect === null) {
+          console.error("Failed to find sort order option: " + sortOrder);
+        } else {
+          optionToSelect.selected = true;
+        }
+      };
+
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
     </script>
-</head>
-<body>
-<h1>large-model-proxy Management UI</h1>
-<header id="settings">
-    <h2>Settings</h2>
-    <label for="sort-order-selector">Sort Order</label>
-    <select id="sort-order-selector">
+  </head>
+  <body>
+    <h1>large-model-proxy Management UI</h1>
+    <header id="settings">
+      <h2>Settings</h2>
+      <label for="sort-order-selector">Sort Order</label>
+      <select id="sort-order-selector">
         <option value="last_used">Last Used</option>
         <option value="active_connections">Proxied Connections</option>
         <option value="name">Name</option>
-    </select>
-</header>
-<main id="content" class="loading">
-    Loading...
-</main>
-</body>
+      </select>
+    </header>
+    <main id="content" class="loading">Loading...</main>
+  </body>
 </html>

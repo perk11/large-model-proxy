@@ -120,9 +120,19 @@ func main() {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 
-	configFilePath := flag.String("c", "config.json", "path to config.json")
+	configFilePath := flag.String("c", "", "path to the config file. If not specified, will look for config.json or config.jsonc in the current directory")
 	flag.Parse()
 
+	if (*configFilePath) == "" {
+		if _, err := os.Stat("config.json"); err == nil {
+			*configFilePath = "config.json"
+		} else if _, err := os.Stat("config.jsonc"); err == nil {
+			*configFilePath = "config.jsonc"
+		} else {
+			FprintfError("Could not find config file. Please specify the path to the config file using the -c flag or create a config.jsonc file in the current directory\n")
+			os.Exit(1)
+		}
+	}
 	var err error
 	config, err = loadConfig(*configFilePath)
 	if err != nil {

@@ -67,7 +67,7 @@ func TestManagementUI(t *testing.T) {
 	configFilePath := createTempConfig(t, cfg)
 
 	// Start large-model-proxy with our test configuration
-	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
 	if err != nil {
 		t.Fatalf("Could not start application: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	const managementApiAddress = "localhost:2040"
 
 	// Start large-model-proxy with our test configuration
-	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
 	if err != nil {
 		t.Fatalf("Could not start application: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestManagementAPIServiceUrls(t *testing.T) {
 	configFilePath := createTempConfig(t, cfg)
 
 	// Start large-model-proxy
-	cmd, err := startLargeModelProxy(testName, configFilePath, waitChannel)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
 	if err != nil {
 		t.Fatalf("Could not start application: %v", err)
 	}

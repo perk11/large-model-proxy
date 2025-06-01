@@ -49,23 +49,24 @@ It will probably not work on Windows natively, as it is using Unix Process Group
 **macOS**: Might work using "Other Distros" instruction, but I do not own any Apple devices to check, please let me know if it does!
 
 ## Configuration
+Configuration support JSONC (JSON with comments and trailing commas).
 
-Below is an example `config.json`:
+Below is an example `config.jsonc`:
 
-```json
+```jsonc
 {
   "DefaultServiceUrl": "http://localhost:{{.PORT}}/",
   "OpenAiApi": {
-    "ListenPort": "7070"
+    "ListenPort": "7070",
   },
   "ManagementApi": {
-    "ListenPort": "7071"
+    "ListenPort": "7071",
   },
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
     "VRAM-GPU-1": 24000,
-    "RAM": 32000
+    "RAM": 32000,
   },
   "Services": [
     {
@@ -80,7 +81,7 @@ Below is an example `config.json`:
       "RestartOnConnectionFailure": true,
       "ResourceRequirements": {
         "VRAM-GPU-1": 2000,
-        "RAM": 30000
+        "RAM": 30000,
       }
     },
     {
@@ -97,7 +98,7 @@ Below is an example `config.json`:
       "RestartOnConnectionFailure": false,
       "ResourceRequirements": {
         "VRAM-GPU-1": 20000,
-        "RAM": 3000
+        "RAM": 3000,
       }
     },
     {
@@ -111,7 +112,7 @@ Below is an example `config.json`:
       "ConsiderStoppedOnProcessExit": true,
       "ServiceUrl": null,
       "ResourceRequirements": {
-        "VRAM-GPU-1": 17916
+        "VRAM-GPU-1": 17916,
       }
     },
     {
@@ -125,9 +126,9 @@ Below is an example `config.json`:
       "ShutDownAfterInactivitySeconds": 600,
       "ResourceRequirements": {
         "VRAM-GPU-1": 20000,
-        "RAM": 16000
+        "RAM": 16000,
       }
-    }
+    },
   ]
 }
 ```

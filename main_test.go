@@ -1291,7 +1291,7 @@ func TestAppScenarios(test *testing.T) {
 			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name, t)
 			configFilePath := createTempConfig(t, currentConfig)
 
-			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, waitChannel)
+			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, "", waitChannel)
 			if err != nil {
 				t.Fatalf("could not start application: %v", err)
 			}

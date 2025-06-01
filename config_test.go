@@ -623,3 +623,93 @@ func TestMultipleServicesWithInvalidTemplates(t *testing.T) {
 		t.Errorf("error should not mention service2 with valid template: %v", err)
 	}
 }
+func TestConfigJsonFileIsPickedUpByDefault(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("default-config-file-name-json", "", "test-configs/json", waitChannel)
+	if err != nil {
+		t.Fatalf("Could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+	}()
+	runReadPidCloseConnection(t, "localhost:2047")
+}
+func TestConfigJsoncFileIsPickedUpByDefault(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("default-config-file-name-jsonc", "", "test-configs/jsonc", waitChannel)
+	if err != nil {
+		t.Fatalf("Could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+	}()
+	runReadPidCloseConnection(t, "localhost:2048")
+}
+func TestConfigShouldExitIfNoConfigFileSpecifiedAndDefaultDoesNotExit(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("default-config-file-name-no-file", "", "test-configs/", waitChannel)
+	if err == nil {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+		t.Fatalf("Application started, error expected")
+	}
+	if !strings.Contains(err.Error(), "large-model-proxy exited prematurely with error") {
+		t.Fatalf("Expected error to contain 'large-model-proxy exited prematurely with error', got: %v", err)
+	}
+}
+func TestConfigShouldExitIfNonExistingFilePathIsPassed(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("config-should-exit-if-non-existing-file-path-is-passed", "test-configs/i-do-not-exist.jsonc", "test-configs/", waitChannel)
+	if err == nil {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+		t.Fatalf("Application started, error expected")
+	}
+	if !strings.Contains(err.Error(), "large-model-proxy exited prematurely with error") {
+		t.Fatalf("Expected error to contain 'large-model-proxy exited prematurely with error', got: %v", err)
+	}
+}
+func TestConfigShouldExitIfPassedConfigHasInvalidSyntax(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("config-should-exit-if-passed-config-has-invalid-syntax", "test-configs/invalid.jsonc", "test-configs/", waitChannel)
+	if err == nil {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+		t.Fatalf("Application started, error expected")
+	}
+	if !strings.Contains(err.Error(), "large-model-proxy exited prematurely with error") {
+		t.Fatalf("Expected error to contain 'large-model-proxy exited prematurely with error', got: %v", err)
+	}
+}
+func TestConfigShouldExitIfDefaultConfigHasInvalidSyntax(t *testing.T) {
+	t.Parallel()
+	waitChannel := make(chan error, 1)
+
+	cmd, err := startLargeModelProxy("config-should-exit-if-default-config-has-invalid-Syntax", "test-configs/invalid.jsonc", "test-configs/", waitChannel)
+	if err == nil {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("Failed to stop application: %v", err)
+		}
+		t.Fatalf("Application started, error expected")
+	}
+	if !strings.Contains(err.Error(), "large-model-proxy exited prematurely with error") {
+		t.Fatalf("Expected error to contain 'large-model-proxy exited prematurely with error', got: %v", err)
+	}
+}

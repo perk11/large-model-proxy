@@ -1,0 +1,15 @@
+/* This file is to test that config.jsonc is automatically used if no -config parameter is passed */
+{
+  "Services": [
+    {
+      "Name": "jsonc-test", //Look ma, a comment!
+      "ListenPort": "2048",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12048",
+      "Command": "../../test-server/test-server",
+      "Foo": "bar",
+      "LogFilePath": "../../test-logs/default-config-file-name-jsonc.log",
+      "Args": "-p 12048",
+    }
+  ]
+}

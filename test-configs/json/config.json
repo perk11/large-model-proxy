@@ -1,0 +1,13 @@
+{
+  "Services": [
+    {
+      "Name": "json-test",
+      "ListenPort": "2047",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12047",
+      "Command": "../../test-server/test-server",
+      "LogFilePath": "../../test-logs/default-config-file-name-json.log",
+      "Args": "-p 12047"
+    }
+  ]
+}

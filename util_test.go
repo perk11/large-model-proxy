@@ -305,9 +305,21 @@ func isProcessRunning(pid int) bool {
 	}
 	return false
 }
-func startLargeModelProxy(testCaseName string, configPath string, waitChannel chan error) (*exec.Cmd, error) {
-	cmd := exec.Command("./large-model-proxy", "-c", configPath)
-	testLogsFolder := "test-logs"
+func startLargeModelProxy(testCaseName string, configPath string, workDir string, waitChannel chan error) (*exec.Cmd, error) {
+	args := make([]string, 0)
+	if configPath != "" {
+		args = append(args, "-c", configPath)
+	}
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	binaryPath := fmt.Sprintf("%s/large-model-proxy", currentDir)
+	cmd := exec.Command(binaryPath, args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+	testLogsFolder := fmt.Sprintf("%s/test-logs", currentDir)
 	if _, err := os.Stat(testLogsFolder); os.IsNotExist(err) {
 		os.Mkdir(testLogsFolder, 0755)
 	}

@@ -224,6 +224,12 @@ Therefore, I am striving to have close to 100% automated test coverage.
 
 If you're adding a new feature, implementing automated tests for it is going to be required to merge it.
 
+### How to run tests
+
+Both `large-model-proxy` and `test-server/test-server` must be built before running tests.
+
+We recommend using `make test`, which will ensure these are built before proceeding to run the tests in verbose mode.
+
 ## Contacts
 
 I review all the issues submitted on Github, including feature suggestions.

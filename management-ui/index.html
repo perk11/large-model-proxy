@@ -175,7 +175,7 @@
           }
           if (!statusJSON.hasOwnProperty("services")) {
             displayError(
-              "Invalid response from /status endpoint: Missing services property",
+              'Invalid response from /status endpoint: Missing "services" property',
             );
             return;
           }
@@ -187,22 +187,71 @@
           const services = statusJSON.services.sort(getSortFunction(sortOrder));
           let items = "";
           const allServiceProperties = {
-            name: "Name",
-            listen_port: "Listen Port",
             is_running: "Running",
+            listen_port: "Listen Port",
             active_connections: "Proxied Connections",
             last_used: "Last Used",
           };
+          if (!statusJSON.hasOwnProperty("resources")) {
+            displayError(
+              'Invalid response from /status endpoint: Missing "resources" property',
+            );
+            return;
+          }
+          const resources = statusJSON.resources;
 
-          items += `<thead><tr">
-                    ${Object.entries(allServiceProperties)
-                      .map(
-                        ([key, label]) =>
-                          `<th class="${key}">${escapeHtml(label)}</th>`,
-                      )
-                      .join("")}`;
+          items += `<thead><tr>`;
+          items += `<th class="name">Name</th>`;
+          items += `${Object.entries(resources)
+            .map(
+              ([key, value]) => `<th class="resource">${escapeHtml(key)}</th>`,
+            )
+            .join("")}`;
+          items += `${Object.entries(allServiceProperties)
+            .map(
+              ([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`,
+            )
+            .join("")}`;
           items += `</tr></thead><tbody>`;
+          let numberOfBlankColumnsForResources =
+            Object.keys(allServiceProperties).length;
 
+          //resources used
+          items += `<tr class="resources used">
+    <td class="property-name">Resources used</td>
+`;
+          for (const resourceName in resources) {
+            const resource = resources[resourceName];
+            if (!resource.hasOwnProperty("total_in_use")) {
+              displayError(
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "total_in_use" property`,
+              );
+              return;
+            }
+            items += `<td class="resource">${resource.total_in_use}</td>`;
+          }
+          items += `<td
+            class="blank-column"
+            colspan="${numberOfBlankColumnsForResources}"
+          ></td></tr>`;
+
+          //resources total
+          items += `<tr class="resources used">
+    <td class="property-name">Resources available</td>
+`;
+          for (const resourceName in resources) {
+            const resource = resources[resourceName];
+            if (!resource.hasOwnProperty("total_available")) {
+              displayError(
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "total_available" property`,
+              );
+              return;
+            }
+            items += `<td class="resource">${resource.total_available}</td>`;
+          }
+          items += `<td class="blank-column" colspan="${numberOfBlankColumnsForResources}"></td></tr>`;
+
+          //services
           for (
             let serviceIndex = 0;
             serviceIndex < services.length;
@@ -216,7 +265,26 @@
               );
               return;
             }
-
+            let nameCellContent;
+            if (service.hasOwnProperty("service_url")) {
+              nameCellContent = `<a href="${escapeHtml(service.service_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(service.name)}</a>`;
+            } else {
+              nameCellContent = escapeHtml(service.name);
+            }
+            items += `<td class="property-name">${nameCellContent}</td>`;
+            for (const resourceName in resources) {
+              const resource = resources[resourceName];
+              if (!resource.hasOwnProperty("usage_by_service")) {
+                displayError(
+                  `Invalid response from /status endpoint: Resource ${resourceName} is missing "usage_by_service" property`,
+                );
+                return;
+              }
+              let usage = resource.usage_by_service.hasOwnProperty(service.name)
+                ? resource.usage_by_service[service.name]
+                : 0;
+              items += `<td class="resource">${usage}</td>`;
+            }
             for (let propertyName in allServiceProperties) {
               if (!service.hasOwnProperty(propertyName)) {
                 displayError(
@@ -229,14 +297,8 @@
               const propertyNameEscaped = escapeHtml(
                 String(service[propertyName]),
               );
-              if (propertyName === "name" && service.service_url) {
-                // Make service name a clickable link if service_url is available
-                cellContent = `<a href="${escapeHtml(service.service_url)}" target="_blank" rel="noopener noreferrer">${propertyNameEscaped}</a>`;
-              } else {
-                cellContent = propertyNameEscaped;
-              }
 
-              items += `<td class="property-${propertyName}">${cellContent}</td>`;
+              items += `<td class="property-${propertyName}">${propertyNameEscaped}</td>`;
             }
             items += "</tr>";
           }

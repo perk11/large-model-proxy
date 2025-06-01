@@ -137,6 +137,34 @@ func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// GetServiceUrlTemplate returns the appropriate compiled service URL template for this service.
+// It handles the logic of checking ServiceUrl state and falling back to defaultUrl.
+// Returns nil template if ServiceUrl is explicitly set to null or no template is available.
+func (sc *ServiceConfig) GetServiceUrlTemplate(defaultUrl *string) (*template.Template, error) {
+	var templateStr string
+
+	if sc.ServiceUrl != nil && sc.ServiceUrl.IsSet() {
+		if sc.ServiceUrl.IsNull() {
+			// ServiceUrl explicitly set to null - no URL desired
+			return nil, nil
+		}
+		// ServiceUrl set to a specific template
+		templateStr = sc.ServiceUrl.Value()
+	} else if defaultUrl != nil {
+		// ServiceUrl not specified - fall back to defaultUrl
+		templateStr = *defaultUrl
+	} else {
+		return nil, nil
+	}
+
+	tmpl, err := template.New("serviceUrl").Parse(templateStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return tmpl, nil
+}
+
 type OpenAiApi struct {
 	ListenPort string
 }
@@ -270,14 +298,10 @@ func validateConfig(cfg Config) error {
 	// Validate ServiceUrl templates if present and not null
 	for i, svc := range cfg.Services {
 		nameOrIndex := serviceNameOrIndex(svc.Name, i)
-		if svc.ServiceUrl != nil && svc.ServiceUrl.IsSet() && !svc.ServiceUrl.IsNull() {
-			urlTemplate := svc.ServiceUrl.Value()
-			if urlTemplate != "" {
-				if err := validateGoTemplate(urlTemplate); err != nil {
-					issues = append(issues,
-						fmt.Sprintf("service %s has invalid Go template in ServiceUrl: %v", nameOrIndex, err))
-				}
-			}
+		_, err := svc.GetServiceUrlTemplate(cfg.DefaultServiceUrl)
+		if err != nil {
+			issues = append(issues,
+				fmt.Sprintf("service %s has invalid Go template in ServiceUrl: %v", nameOrIndex, err))
 		}
 	}
 

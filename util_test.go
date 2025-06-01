@@ -492,21 +492,6 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 		t.Errorf("Service %s - expected running: %v, actual: %v", serviceName, expectedRunning, service.IsRunning)
 	}
 
-	// Check if service is in running services if it should be running
-	foundInRunning := false
-	for _, s := range resp.RunningServices {
-		if s.Name == serviceName {
-			foundInRunning = true
-			break
-		}
-	}
-
-	if expectedRunning && !foundInRunning {
-		t.Errorf("Service %s expected to be in RunningServices but not found", serviceName)
-	} else if !expectedRunning && foundInRunning {
-		t.Errorf("Service %s not expected to be in RunningServices but was found", serviceName)
-	}
-
 	// Check resource usage
 	for resource, expectedAmount := range expectedResources {
 		if !expectedRunning {

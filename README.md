@@ -196,10 +196,9 @@ Access the web dashboard at `http://localhost:{ManagementApi.ListenPort}/` for a
 
 Response fields:
 - `all_services`: A list of all services managed by the proxy.
-- `running_services`: A list of all services that are currently running.
 - `resources`: A map of all resources managed by the proxy and their usage.
 
-Each service in the `all_services` and `running_services` arrays includes the following fields:
+Each service in the `services` array includes the following fields:
 - `name`: Service name
 - `listen_port`: Port the service listens on
 - `is_running`: Whether the service is currently running

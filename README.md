@@ -153,7 +153,7 @@ Below is a breakdown of what this configuration does:
    
    These URLs appear in the management API responses and make service names clickable in the web dashboard for easy access to service interfaces.
 
-8. Qwen is not available directly, but is only available via OpenAI API.
+8. No ListenPort in Qwen configuration makes it only available via OpenAI API.
 9. Because ConsiderStoppedOnProcessExit set to true, if the process used by Qwen terminates, large-model-proxy will still continue to consider it running. This is useful if a process detaches from large-model-proxy.
 
 With this configuration, Qwen and Automatic1111 can run at the same time. Assuming they do, a request for Gemma will unload the one least recently used. If they are currently in use, a request to Gemma will have to wait for one of the other services to free up.

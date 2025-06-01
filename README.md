@@ -107,7 +107,8 @@ Below is an example `config.json`:
       "ProxyTargetPort": "18082",
       "Command": "/home/user/.conda/envs/vllm/bin/vllm",
       "LogFilePath": "/var/log/Qwen2.5-7B.log",
-      "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
+      "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082", 
+      "ConsiderStoppedOnProcessExit": true,
       "ServiceUrl": null,
       "ResourceRequirements": {
         "VRAM-GPU-1": 17916
@@ -152,7 +153,8 @@ Below is a breakdown of what this configuration does:
    
    These URLs appear in the management API responses and make service names clickable in the web dashboard for easy access to service interfaces.
 
-Note how Qwen is not available directly, but is only available via OpenAI API.
+8. Qwen is not available directly, but is only available via OpenAI API.
+9. Because ConsiderStoppedOnProcessExit set to true, if the process used by Qwen terminates, large-model-proxy will still continue to consider it running. This is useful if a process detaches from large-model-proxy.
 
 With this configuration, Qwen and Automatic1111 can run at the same time. Assuming they do, a request for Gemma will unload the one least recently used. If they are currently in use, a request to Gemma will have to wait for one of the other services to free up.
 `ResourcesAvailable` can include any resource metrics, CPU cores, multiple VRAM values for multiple GPUs, etc. These values are not checked against actual usage.

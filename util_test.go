@@ -258,6 +258,7 @@ func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
 	return pidInt
 }
 func runReadPidCloseConnection(test *testing.T, proxyAddress string) int {
+	test.Helper()
 	conn, err := net.Dial("tcp", proxyAddress)
 	if err != nil {
 		test.Error(err)

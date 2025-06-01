@@ -312,6 +312,63 @@ func TestNegativeShutDownAfterInactivitySeconds(t *testing.T) {
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"cannot unmarshal number -10 into Go struct field Config.ShutDownAfterInactivitySeconds of type uint"})
 }
+func TestDefaultConsiderStoppedOnProcessExitValueIsTrue(t *testing.T) {
+	t.Parallel()
+	config, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if *(config.Services[0].ConsiderStoppedOnProcessExit) != true {
+		t.Fatalf("expected ConsiderStoppedOnProcessExit to be true by default")
+	}
+}
+
+func TestFalseConsiderStoppedOnProcessExitValueIsParsed(t *testing.T) {
+	t.Parallel()
+	config, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ConsiderStoppedOnProcessExit": false
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if *(config.Services[0].ConsiderStoppedOnProcessExit) != false {
+		t.Fatalf("expected ConsiderStoppedOnProcessExit to be false")
+	}
+}
+func TestTrueConsiderStoppedOnProcessExitProcessValueIsParsed(t *testing.T) {
+	t.Parallel()
+	config, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "testService",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ConsiderStoppedOnProcessExit": true
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	if *(config.Services[0].ConsiderStoppedOnProcessExit) != true {
+		t.Fatalf("expected ConsiderStoppedOnProcessExit to be true")
+	}
+}
 
 func TestDefaultServiceUrlWorks(t *testing.T) {
 	t.Parallel()

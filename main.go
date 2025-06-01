@@ -29,6 +29,8 @@ type RunningService struct {
 	activeConnections int
 	lastUsed          *time.Time
 	idleTimer         *time.Timer
+	exitWaitGroup     *sync.WaitGroup
+	resourcesReleased *bool
 }
 
 type ResourceManager struct {
@@ -83,7 +85,11 @@ func (rm ResourceManager) incrementConnection(name string, count int) {
 	defer rm.serviceMutex.Unlock()
 	runningService, ok := rm.maybeGetRunningServiceNoLock(name)
 	if !ok {
-		log.Printf("[%s] Warning: Tried to increment connection numbers but couldn't get the running service", name)
+		if count > 0 {
+			// Do not print this when decrementing, since it can happen if a service exited before connection was closed
+			// which does not necessarily constitute a warning
+			log.Printf("[%s] Warning: Tried to increment the number of active connection but couldn't get the running service, did it stop", name)
+		}
 		return
 	}
 	runningService.activeConnections += count
@@ -96,6 +102,7 @@ func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) Runn
 		activeConnections: 0,
 		lastUsed:          &now,
 		manageMutex:       &sync.Mutex{},
+		resourcesReleased: new(bool),
 	}
 	rm.storeRunningService(serviceConfig.Name, rs)
 	return rs
@@ -435,6 +442,8 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	}
 
 	log.Printf("[%s] Opened service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
+	trackServiceLastUsed(serviceConfig)
+
 	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
 		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
 			log.Printf("[%s] Error writing bytes read from client to service: %v", serviceConfig.Name, err)
@@ -453,6 +462,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 			return
 		}
 	}
+
 	//forwardConnection will handle closing the connections at this point
 	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
 
@@ -540,10 +550,15 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
 	runningService.cmd = cmd
+
+	runningService.exitWaitGroup = new(sync.WaitGroup)
+	runningService.exitWaitGroup.Add(1)
+	go monitorProcess(serviceConfig.Name, cmd.Process, runningService.exitWaitGroup)
+
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 
 	performHealthCheck(serviceConfig)
-	log.Printf("[%s] Service started", serviceConfig.Name)
+	log.Printf("[%s] Service started with pid %d", serviceConfig.Name, cmd.Process.Pid)
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
@@ -751,7 +766,7 @@ func findFirstMissingResource(resourceRequirements map[string]int, requestingSer
 func trackServiceLastUsed(serviceConfig ServiceConfig) {
 	runningService, ok := resourceManager.maybeGetRunningService(serviceConfig.Name)
 	if !ok {
-		log.Printf("[%s] Warning, tried to track service usage, but couldn't find it in the list of running services, it was probably stopped", serviceConfig.Name)
+		log.Printf("[%s] Warning: Tried to track service usage, but couldn't find it in the list of running services, it was probably stopped", serviceConfig.Name)
 		return
 	}
 	now := time.Now()
@@ -891,7 +906,7 @@ func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName
 func stopService(service ServiceConfig) {
 	runningService, ok := resourceManager.maybeGetRunningService(service.Name)
 	if !ok {
-		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, probably multiple stops requested. Stop aborted.", service.Name)
+		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, multiple stops requested or service already died. Stop aborted.", service.Name)
 		return
 	}
 	if interrupted {
@@ -899,6 +914,7 @@ func stopService(service ServiceConfig) {
 		runningService.manageMutex.TryLock()
 	} else {
 		runningService.manageMutex.Lock()
+		defer runningService.manageMutex.Unlock()
 	}
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
@@ -926,7 +942,7 @@ func stopService(service ServiceConfig) {
 			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", service.Name, runningService.cmd.Process.Pid, err)
 		}
 
-		processExitedCleanly := waitForProcessToTerminate(runningService.cmd.Process)
+		processExitedCleanly := waitForProcessToTerminate(runningService.exitWaitGroup)
 
 		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", service.Name, runningService.cmd.Process.Pid)
@@ -939,26 +955,54 @@ func stopService(service ServiceConfig) {
 				}
 			}
 			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
-		} else {
-			log.Printf("[%s] Done stopping pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
-
-	releaseResources(service.ResourceRequirements)
-	if !interrupted {
-		runningService.manageMutex.Unlock()
+	cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
+}
+func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync.WaitGroup) {
+	exitProcessState, err := process.Wait()
+	exitMessage := fmt.Sprintf("[%s] Process with pid %d exited", serviceName, process.Pid)
+	if exitProcessState == nil {
+		exitMessage += " with unknown exit code"
+	} else {
+		exitMessage += fmt.Sprintf(" with exit code %d", exitProcessState.ExitCode())
 	}
+	if err != nil {
+		exitMessage += fmt.Sprintf(" and an error: %v", err)
+	}
+	log.Print(exitMessage)
+	exitWaitGroup.Done()
+	resourceManager.serviceMutex.Lock()
+	defer resourceManager.serviceMutex.Unlock()
+
+	runningService, ok := resourceManager.maybeGetRunningServiceNoLock(serviceName)
+	if !ok {
+		log.Printf("[%s] Process exited, but service was not found in the list of running services, this is probably a bug", serviceName)
+		return
+	}
+	resourceManager.storeRunningServiceNoLock(serviceName, runningService)
+
+	service := findServiceConfigByName(serviceName)
+	cleanUpStoppedServiceWhenServiceMutexIsLocked(service, runningService, *service.ConsiderStoppedOnProcessExit)
+}
+
+func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runningService RunningService, shouldReleaseResources bool) {
+	if !shouldReleaseResources || *runningService.resourcesReleased {
+		return
+	}
+	*runningService.resourcesReleased = true
+	if runningService.idleTimer != nil {
+		runningService.idleTimer.Stop()
+	}
+	releaseResources(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
 }
 
-func waitForProcessToTerminate(process *os.Process) bool {
+func waitForProcessToTerminate(exitWaitGroup *sync.WaitGroup) bool {
 	const ProcessCheckTimeout = 10 * time.Second
 	exitChannel := make(chan struct{})
 	go func() {
-		_, err := process.Wait()
-		if err != nil {
-			return
-		}
+		exitWaitGroup.Wait()
 		close(exitChannel)
 	}()
 

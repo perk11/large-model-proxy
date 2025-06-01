@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -603,7 +605,114 @@ func testKillCommand(test *testing.T, proxyAddress string) {
 		test.Errorf("Kill command output file content is not 'success', it is '%s'", string(content))
 	}
 }
+func testDyingProcesses(test *testing.T,
+	proxiedSelfDyingServiceAddress string,
+	directSelfDyingServiceAddress string,
+	proxiedNotDyingServiceAddress string,
+	directNotDyingServiceAddress string,
+	managementApiAddress string,
+) {
+	assertPortsAreClosed(test, []string{directSelfDyingServiceAddress})
+	pid := runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
+	conn, err := net.Dial("tcp", proxiedSelfDyingServiceAddress)
+	defer conn.Close()
+	if err != nil {
+		test.Errorf("Failed to open second connection to the self-dying service: %v", err)
+	}
+	buffer := make([]byte, 1024)
+	bytesRead, err := conn.Read(buffer)
+	if err != nil {
+		test.Fatalf("Error when trying to read PID: %v", err)
+	}
+	conn2, err := net.Dial("tcp", proxiedNotDyingServiceAddress)
+	defer conn2.Close()
 
+	//Not-dying service should not start yet, the self-dying service is still running
+	assertPortsAreClosed(test, []string{directNotDyingServiceAddress})
+	time.Sleep(1250 * time.Millisecond)
+	if isProcessRunning(pid) {
+		test.Errorf("test-server is still running when it was supposed to exit")
+	}
+
+	assertPortsAreClosed(test, []string{directSelfDyingServiceAddress})
+
+	bytesRead, err = conn.Read(buffer)
+	if err == nil || err != io.EOF {
+		test.Fatalf("Expected connection to the server to be closed, got %v. read %d bytes: %s", err, bytesRead, buffer)
+	}
+
+	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
+
+	pid2 := readPidFromOpenConnection(test, conn2)
+	if !isProcessRunning(pid2) {
+		test.Fatalf("second service is not running")
+	}
+	err = conn2.Close()
+	if err != nil {
+		test.Error(err)
+	}
+
+	conn3, err := net.Dial("tcp", proxiedNotDyingServiceAddress)
+	if err != nil {
+		test.Fatalf("Failed to open connection to proxied %s: %v", proxiedNotDyingServiceAddress, err)
+	}
+	defer conn3.Close()
+	pid3 := readPidFromOpenConnection(test, conn3)
+
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
+	err = syscall.Kill(pid2, syscall.SIGINT)
+	if err != nil {
+		test.Fatalf("Failed to kill second service: %v", err)
+	}
+
+	time.Sleep(250 * time.Millisecond)
+
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
+
+	if isProcessRunning(pid) {
+		test.Errorf("test-server is still running when it was supposed to exit")
+	}
+	if isProcessRunning(pid3) {
+		test.Errorf("test-server is still running when it was supposed to exit")
+	}
+
+	_, err = conn3.Read(buffer)
+	if err == nil || err != io.EOF {
+		test.Fatalf("Expected connection to the server to be closed, got %v", err)
+	}
+	if isProcessRunning(pid3) {
+		test.Errorf("test-server is still running when it was supposed to exit")
+	}
+
+	pid = runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
+
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
+
+	time.Sleep(1250 * time.Millisecond)
+	if isProcessRunning(pid) {
+		test.Errorf("test-server is still running when it was supposed to exit")
+	}
+
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
+
+	//verify that a service can restart after it died
+	runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
+}
 func TestAppScenarios(test *testing.T) {
 	test.Parallel()
 	tests := []struct {
@@ -1059,6 +1168,117 @@ func TestAppScenarios(test *testing.T) {
 				testKillCommand(t, "localhost:2034")
 			},
 		},
+		{
+			Name: "dying-processes",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]int{
+						"CPU": 1,
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2035",
+					},
+					Services: []ServiceConfig{
+						{
+							Name:            "self-dying-process",
+							ListenPort:      "2036",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12036",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12036 -exit-after-duration 1s --sleep-after-writing-pid-duration 3s",
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+						{
+							Name:            "not-dying-process",
+							ListenPort:      "2037",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12037",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12037 --sleep-after-writing-pid-duration 3s",
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2035",
+				"localhost:2036",
+				"localhost:12036",
+				"localhost:2037",
+				"localhost:12037",
+			},
+			TestFunc: func(t *testing.T) {
+				testDyingProcesses(t,
+					"localhost:2036",
+					"localhost:12036",
+					"localhost:2037",
+					"localhost:12037",
+					"localhost:2035",
+				)
+			},
+		},
+		{
+			Name: "unmonitored-process",
+			GetConfig: func(t *testing.T, testName string) Config {
+				monitorProcessStatus := false
+				return Config{
+					ResourcesAvailable: map[string]int{
+						"CPU": 1,
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2046",
+					},
+					Services: []ServiceConfig{
+						{
+							Name:                           "self-dying-unmonitored-process",
+							ListenPort:                     "2038",
+							ProxyTargetHost:                "localhost",
+							ProxyTargetPort:                "12038",
+							Command:                        "./test-server/test-server",
+							Args:                           "-p 12038 -exit-after-duration 1s",
+							ShutDownAfterInactivitySeconds: 3,
+							ConsiderStoppedOnProcessExit:   &monitorProcessStatus,
+							RestartOnConnectionFailure:     false,
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+						{
+							Name:                         "non-dying-process",
+							ListenPort:                   "2039",
+							ProxyTargetHost:              "localhost",
+							ProxyTargetPort:              "12039",
+							Command:                      "./test-server/test-server",
+							Args:                         "-p 12039",
+							ConsiderStoppedOnProcessExit: &monitorProcessStatus,
+							RestartOnConnectionFailure:   false,
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2038",
+				"localhost:12038",
+				"localhost:2039",
+				"localhost:12039",
+				"localhost:2046",
+			},
+			TestFunc: func(t *testing.T) {
+				testUnmonitoredProcess(t,
+					"localhost:2038",
+					"localhost:12038",
+					"localhost:2039",
+					"localhost:2046",
+				)
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -1093,5 +1313,75 @@ func TestAppScenarios(test *testing.T) {
 
 			testCase.TestFunc(t)
 		})
+	}
+}
+
+func testUnmonitoredProcess(
+	t *testing.T,
+	proxiedDyingUnmonitoredServiceAddress string,
+	directDyingUnmonitoredServiceAddress string,
+	proxiedNonDyingService string,
+	monitoringApiAddress string,
+) {
+	pid := runReadPidCloseConnection(t, proxiedDyingUnmonitoredServiceAddress)
+	time.Sleep(1250 * time.Millisecond)
+	if isProcessRunning(pid) {
+		t.Errorf("process %d is still running after 1.25s", pid)
+	}
+	assertPortsAreClosed(t, []string{directDyingUnmonitoredServiceAddress})
+
+	//large-model-proxy should still see the service as running since it's not monitoring it
+	statusResponse := getStatusFromManagementAPI(t, monitoringApiAddress)
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
+
+	//Let's make sure we can't read anything from the process - ensures large-model-proxy did not attempt to restart it
+	buffer := make([]byte, 32)
+	conn, err := net.Dial("tcp", proxiedDyingUnmonitoredServiceAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", proxiedDyingUnmonitoredServiceAddress, err)
+	}
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			t.Fatalf("failed to close connection: %v", err)
+		}
+	}(conn)
+
+	bytesRead, err := conn.Read(buffer)
+	if err == nil {
+		t.Errorf("expected connection to close, but it didn't")
+	}
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("unexpected error while reading from connection: %v", err)
+	}
+	if bytesRead != 0 {
+		t.Fatalf("expected to read 0 bytes, read: %d", bytesRead)
+	}
+
+	time.Sleep(3250 * time.Millisecond)
+	//Idle timeout should kick in now
+	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 0})
+
+	assertPortsAreClosed(t, []string{directDyingUnmonitoredServiceAddress})
+
+	//Now start again and try to connect to another service, make sure that shuts down the unmonitored one properly
+	pid = runReadPidCloseConnection(t, proxiedDyingUnmonitoredServiceAddress)
+	pid2 := runReadPidCloseConnection(t, proxiedNonDyingService)
+
+	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", true, map[string]int{"CPU": 1})
+	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
+	if isProcessRunning(pid) {
+		t.Fatalf("unmonitored process %d was supposed to shut down", pid)
+	}
+
+	if !isProcessRunning(pid2) {
+		t.Fatalf("non-dying service is supposed to be running with pid %d", pid)
 	}
 }

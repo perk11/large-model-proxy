@@ -100,6 +100,7 @@ type ServiceConfig struct {
 	HealthcheckIntervalMilliseconds uint
 	ShutDownAfterInactivitySeconds  uint
 	RestartOnConnectionFailure      bool
+	ConsiderStoppedOnProcessExit    *bool
 	OpenAiApi                       bool
 	OpenAiApiModels                 []string
 	ServiceUrl                      *ServiceUrlOption `json:"ServiceUrl,omitempty"`
@@ -164,7 +165,12 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 	if err != nil {
 		return config, err
 	}
-
+	for i, service := range config.Services {
+		if service.ConsiderStoppedOnProcessExit == nil {
+			config.Services[i].ConsiderStoppedOnProcessExit = new(bool)
+			*(config.Services[i].ConsiderStoppedOnProcessExit) = true
+		}
+	}
 	return config, nil
 }
 

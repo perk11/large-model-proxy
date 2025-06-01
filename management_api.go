@@ -31,8 +31,8 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 	// StatusResponse represents the complete status response
 	type StatusResponse struct {
-		AllServices []ServiceStatus          `json:"all_services"`
-		Resources   map[string]ResourceUsage `json:"resources"`
+		Services  []ServiceStatus          `json:"services"`
+		Resources map[string]ResourceUsage `json:"resources"`
 	}
 
 	if request.Method != "GET" {
@@ -47,8 +47,8 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	defer resourceManager.serviceMutex.Unlock()
 
 	response := StatusResponse{
-		AllServices: make([]ServiceStatus, 0, len(services)),
-		Resources:   make(map[string]ResourceUsage),
+		Services:  make([]ServiceStatus, 0, len(services)),
+		Resources: make(map[string]ResourceUsage),
 	}
 
 	// Initialize resource usage tracking
@@ -102,7 +102,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			}
 		}
 
-		response.AllServices = append(response.AllServices, status)
+		response.Services = append(response.Services, status)
 	}
 
 	// Encode and send response

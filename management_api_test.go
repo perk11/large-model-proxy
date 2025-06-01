@@ -12,8 +12,8 @@ import (
 
 // StatusResponse represents the complete status response from the management API
 type StatusResponse struct {
-	AllServices []ServiceStatus          `json:"all_services"`
-	Resources   map[string]ResourceUsage `json:"resources"`
+	Services  []ServiceStatus          `json:"services"`
+	Resources map[string]ResourceUsage `json:"resources"`
 }
 
 // ServiceStatus represents the current state of a service
@@ -198,10 +198,10 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	t.Log("Checking initial status - no services should be running")
 	resp := getStatusFromManagementAPI(t, managementApiAddress)
 
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
-	for _, service := range resp.AllServices {
+	for _, service := range resp.Services {
 		verifyServiceStatus(t, resp, service.Name, false, map[string]int{
 			"CPU": 0,
 			"GPU": 0,
@@ -230,8 +230,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"CPU": 2,
 		"GPU": 0,
 	})
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Activate Service 2 (GPU)
@@ -252,8 +252,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"CPU": 2,
 		"GPU": 1,
 	})
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Activate Service 3 (CPU+GPU)
@@ -275,8 +275,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"CPU": 4,
 		"GPU": 2,
 	})
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Wait for Service 1 to terminate due to inactivity timeout
@@ -291,8 +291,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"CPU": 2,
 		"GPU": 2,
 	})
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Wait for Service 2 to terminate due to inactivity timeout
@@ -307,8 +307,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"CPU": 2,
 		"GPU": 1,
 	})
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Wait for Service 3 to terminate due to inactivity timeout
@@ -324,8 +324,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		"GPU": 0,
 	})
 
-	if len(resp.AllServices) != 3 {
-		t.Errorf("Expected 3 services in the responses, got %d", len(resp.AllServices))
+	if len(resp.Services) != 3 {
+		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
 	// Confirm processes are actually terminated
@@ -412,7 +412,7 @@ func TestManagementAPIServiceUrls(t *testing.T) {
 	resp := getStatusFromManagementAPI(t, "localhost:2050")
 
 	// Verify service URLs are correctly rendered
-	for _, service := range resp.AllServices {
+	for _, service := range resp.Services {
 		switch service.Name {
 		case testName + "_service-with-default-url":
 			expectedUrl := "http://localhost:2051/default"

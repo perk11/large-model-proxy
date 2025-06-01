@@ -11,11 +11,13 @@
             margin: 0;
             padding: 1rem;
         }
+
         #settings {
             margin-bottom: 10px;
             padding: 10px;
             background-color: #cbcbcb;
         }
+
         #settings h2 {
             margin-top: 0;
         }
@@ -24,15 +26,19 @@
             margin: 0;
             padding: 0;
         }
-        .all-services tr.running  {
+
+        .all-services tr.running {
             background-color: #c8ffb9;
         }
-        .all-services tr.running:nth-child(even)  {
+
+        .all-services tr.running:nth-child(even) {
             background-color: #d2ffc4;
         }
+
         .all-services tr.stopped {
             background-color: #ffc6c6;
         }
+
         .all-services tr.stopped:nth-child(even) {
             background-color: #ffa5a5;
         }
@@ -62,18 +68,18 @@
         .all-services td {
             transition: background-color 0.2s ease-in-out;
         }
-        
+
         .all-services .property-name a {
             color: #2563eb;
             text-decoration: none;
             font-weight: 500;
         }
-        
+
         .all-services .property-name a:hover {
             text-decoration: underline;
             color: #1d4ed8;
         }
-        
+
         #content.loading {
             opacity: 0.6;
             font-size: 5rem;
@@ -104,7 +110,7 @@
                         return a.last_used < b.last_used;
                     };
                 case 'active_connections':
-                    return (a, b) =>  {
+                    return (a, b) => {
                         if (a.active_connections === b.active_connections) {
                             return a.name.toUpperCase() > b.name.toUpperCase()
                         }
@@ -178,7 +184,7 @@
                     'active_connections': "Proxied Connections",
                     'last_used': "Last Used",
                 };
-                
+
                 items += `<thead><tr">
                     ${Object.entries(allServiceProperties).map(([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`).join('')}`
                 items += `</tr></thead><tbody>`
@@ -196,7 +202,7 @@
                             displayError(`Invalid response from /status endpoint: A service in all_services is missing "${propertyName}" property`);
                             return;
                         }
-                        
+
                         let cellContent;
                         const propertyNameEscaped = escapeHtml(String(service[propertyName]));
                         if (propertyName === 'name' && service.service_url) {
@@ -205,7 +211,7 @@
                         } else {
                             cellContent = propertyNameEscaped;
                         }
-                        
+
                         items += `<td class="property-${propertyName}">${cellContent}</td>`
                     }
                     items += "</tr>";

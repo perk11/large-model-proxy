@@ -112,7 +112,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		if urlTemplate != "" && service.ListenPort != "" && !(service.ServiceUrl != nil && service.ServiceUrl.IsSet() && service.ServiceUrl.IsNull()) {
 			renderedUrl, err := renderServiceUrl(urlTemplate, service.ListenPort)
 			if err != nil {
-				log.Printf("Failed to render service URL template for service %s: %v", service.Name, err)
+				log.Printf("[Management API] Failed to render service URL template for service %s: %v", service.Name, err)
 			} else if renderedUrl != "" {
 				status.ServiceUrl = &renderedUrl
 			}
@@ -142,7 +142,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	// Encode and send response
 	if err := json.NewEncoder(responseWriter).Encode(response); err != nil {
 		http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
-		log.Printf("Failed to produce /status JSON response: %s\n", err.Error())
+		log.Printf("[Management API] Failed to produce /status JSON response: %s\n", err.Error())
 	}
 }
 
@@ -167,10 +167,10 @@ func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 		responseWriter.WriteHeader(http.StatusOK)
 		bytesWritten, err := responseWriter.Write(uiIndexContents)
 		if err != nil {
-			log.Printf("Failed to send UI index page: %s\n", err.Error())
+			log.Printf("[Management API] Failed to send UI index page: %s\n", err.Error())
 		}
 		if bytesWritten != len(uiIndexContents) {
-			log.Printf("Incomplete index page written: %s\n", err.Error())
+			log.Printf("[Management API] Incomplete index page written: %s\n", err.Error())
 		}
 	})
 	server := &http.Server{
@@ -180,6 +180,6 @@ func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 
 	log.Printf("[Management API] Listening on port %s", managementAPI.ListenPort)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("Could not start management API: %s\n", err.Error())
+		log.Fatalf("[Management API] Could not start management API: %s\n", err.Error())
 	}
 }

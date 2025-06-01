@@ -1,7 +1,9 @@
+**/*.go
+.github/workflows
 config.json
 logs
 test-logs
 package-build
 large-model-proxy
 test-server/test-server
-node_modules
+test-configs

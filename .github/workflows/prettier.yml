@@ -1,0 +1,38 @@
+name: Prettier – auto-fix on main
+on:
+  push:
+    branches:
+      - main        # run only for commits that have already landed in main
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Prettier
+        run: npx prettier --write .
+
+      - name: Commit & push
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: '.'
+          message: 'style: run prettier'
+          default_author: github_actions
+          push: true

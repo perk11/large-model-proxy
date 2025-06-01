@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"text/template"
 )
 
 // ServiceUrlOption represents an optional service URL that can distinguish between
@@ -177,6 +178,14 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 func validateConfig(cfg Config) error {
 	var issues []string
 
+	// Validate DefaultServiceUrl template if present
+	if cfg.DefaultServiceUrl != nil && *cfg.DefaultServiceUrl != "" {
+		if err := validateGoTemplate(*cfg.DefaultServiceUrl); err != nil {
+			issues = append(issues,
+				fmt.Sprintf("DefaultServiceUrl contains invalid Go template: %v", err))
+		}
+	}
+
 	nameSet := make(map[string]bool)
 	for i, svc := range cfg.Services {
 		if svc.Name == "" {
@@ -258,6 +267,20 @@ func validateConfig(cfg Config) error {
 		}
 	}
 
+	// Validate ServiceUrl templates if present and not null
+	for i, svc := range cfg.Services {
+		nameOrIndex := serviceNameOrIndex(svc.Name, i)
+		if svc.ServiceUrl != nil && svc.ServiceUrl.IsSet() && !svc.ServiceUrl.IsNull() {
+			urlTemplate := svc.ServiceUrl.Value()
+			if urlTemplate != "" {
+				if err := validateGoTemplate(urlTemplate); err != nil {
+					issues = append(issues,
+						fmt.Sprintf("service %s has invalid Go template in ServiceUrl: %v", nameOrIndex, err))
+				}
+			}
+		}
+	}
+
 	if cfg.OpenAiApi.ListenPort != "" {
 		portVal, err := strconv.Atoi(cfg.OpenAiApi.ListenPort)
 		if err != nil || portVal <= 0 || portVal > 65535 {
@@ -278,6 +301,12 @@ func validateConfig(cfg Config) error {
 		return errors.New(" - " + joinStrings(issues, "\n - "))
 	}
 	return nil
+}
+
+// validateGoTemplate validates that the given string is a valid Go template
+func validateGoTemplate(templateStr string) error {
+	_, err := template.New("validation").Parse(templateStr)
+	return err
 }
 
 // serviceNameOrIndex returns the service name if not empty, otherwise "at index i".

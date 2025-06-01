@@ -312,7 +312,7 @@ func TestNegativeShutDownAfterInactivitySeconds(t *testing.T) {
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"cannot unmarshal number -10 into Go struct field Config.ShutDownAfterInactivitySeconds of type uint"})
 }
-func TestDefaultMonitorProcessValueIsTrue(t *testing.T) {
+func TestDefaultConsiderStoppedOnProcessExitValueIsTrue(t *testing.T) {
 	t.Parallel()
 	config, err := loadConfigFromString(t, `{
 		"Services": [
@@ -331,7 +331,7 @@ func TestDefaultMonitorProcessValueIsTrue(t *testing.T) {
 	}
 }
 
-func TestFalseMonitorProcessValueIsParsed(t *testing.T) {
+func TestFalseConsiderStoppedOnProcessExitValueIsParsed(t *testing.T) {
 	t.Parallel()
 	config, err := loadConfigFromString(t, `{
 		"Services": [
@@ -350,7 +350,7 @@ func TestFalseMonitorProcessValueIsParsed(t *testing.T) {
 		t.Fatalf("expected ConsiderStoppedOnProcessExit to be false")
 	}
 }
-func TestTrueMonitorProcessValueIsParsed(t *testing.T) {
+func TestTrueConsiderStoppedOnProcessExitProcessValueIsParsed(t *testing.T) {
 	t.Parallel()
 	config, err := loadConfigFromString(t, `{
 		"Services": [

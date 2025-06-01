@@ -74,6 +74,7 @@ type OpenAiApiChatCompletionResponse struct {
 }
 
 func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Response) {
+	test.Helper()
 	var modelsResp OpenAiApiModels
 	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
 		test.Fatalf("Failed to decode /v1/models response: %v", err)
@@ -105,6 +106,7 @@ func assertModelsResponse(test *testing.T, expectedIDs []string, resp *http.Resp
 }
 
 func modelsRequestExpectingSuccess(test *testing.T, url string, client *http.Client) *http.Response {
+	test.Helper()
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		test.Fatalf("Failed to create request: %v", err)
@@ -134,6 +136,7 @@ func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []strin
 }
 
 func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) OpenAiApiChatCompletionResponse {
+	t.Helper()
 	resp := sendChatCompletionRequest(t, address, chatReq)
 	defer func() {
 		_ = resp.Body.Close()
@@ -152,6 +155,7 @@ func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, cha
 
 // sendChatCompletionRequest sends a POST to /v1/chat/completions with the given JSON body
 func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) *http.Response {
+	t.Helper()
 	reqBody, err := json.Marshal(chatReq)
 	if err != nil {
 		t.Fatalf("Failed to marshal JSON body: %v", err)
@@ -173,6 +177,7 @@ func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiCh
 }
 
 func sendCompletionRequestExpectingSuccess(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) OpenAiApiCompletionResponse {
+	test.Helper()
 	resp := sendCompletionRequest(test, address, completionReq, client)
 	defer func(Body io.ReadCloser) {
 		if cerr := Body.Close(); cerr != nil {
@@ -192,6 +197,7 @@ func sendCompletionRequestExpectingSuccess(test *testing.T, address string, comp
 }
 
 func sendCompletionRequest(test *testing.T, address string, completionReq OpenAiApiCompletionRequest, client *http.Client) *http.Response {
+	test.Helper()
 	reqBody, err := json.Marshal(completionReq)
 	if err != nil {
 		test.Fatalf("Failed to marshal JSON body: %v", err)
@@ -226,6 +232,7 @@ func indexOf(arr []string, target string) int {
 }
 
 func readPidFromOpenConnection(test *testing.T, conn net.Conn) int {
+	test.Helper()
 	buffer := make([]byte, 1024)
 	bytesRead, err := conn.Read(buffer)
 	if err != nil {
@@ -426,6 +433,7 @@ func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.
 
 // verifyTotalResourceUsage checks if the total resource usage matches the expected values
 func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
+	t.Helper()
 	for resource, expectedAmount := range expectedUsage {
 		resourceInfo, ok := resp.Resources[resource]
 		if !ok {
@@ -461,6 +469,7 @@ func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) Statu
 
 // verifyServiceStatus checks if a specific service has the expected running status and resource usage
 func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
+	t.Helper()
 	// Find service in allServices
 	var found bool
 	var service ServiceStatus

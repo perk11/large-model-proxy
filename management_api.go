@@ -6,30 +6,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"text/template"
 	"time"
 )
-
-// renderServiceUrl renders a service URL template with the given port
-func renderServiceUrl(urlTemplate, port string) (string, error) {
-	if urlTemplate == "" {
-		return "", nil
-	}
-
-	tmpl, err := template.New("serviceUrl").Parse(urlTemplate)
-	if err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	data := map[string]string{"PORT": port}
-	err = tmpl.Execute(&buf, data)
-	if err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
-}
 
 // handleStatus handles the /status endpoint request
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
@@ -93,27 +71,20 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		}
 
 		// Determine service URL template to use
-		var urlTemplate string
-		if service.ServiceUrl != nil && service.ServiceUrl.IsSet() {
-			if service.ServiceUrl.IsNull() {
-				// ServiceUrl explicitly set to null - no URL desired
-				urlTemplate = ""
-			} else {
-				// ServiceUrl set to a specific template
-				urlTemplate = service.ServiceUrl.Value()
-			}
-		} else if config.DefaultServiceUrl != nil {
-			// ServiceUrl not specified - fall back to DefaultServiceUrl
-			urlTemplate = *config.DefaultServiceUrl
+		urlTemplate, err := service.GetServiceUrlTemplate(config.DefaultServiceUrl)
+		if err != nil {
+			log.Printf("[Management API] Failed to get service URL template for service %s: %v", service.Name, err)
 		}
 
-		// Render service URL if template is available and not empty
-		// Only skip rendering if ServiceUrl was explicitly set to null
-		if urlTemplate != "" && service.ListenPort != "" && !(service.ServiceUrl != nil && service.ServiceUrl.IsSet() && service.ServiceUrl.IsNull()) {
-			renderedUrl, err := renderServiceUrl(urlTemplate, service.ListenPort)
+		// Render service URL if template is available
+		if urlTemplate != nil && service.ListenPort != "" {
+			var buf bytes.Buffer
+			data := map[string]string{"PORT": service.ListenPort}
+			err := urlTemplate.Execute(&buf, data)
 			if err != nil {
 				log.Printf("[Management API] Failed to render service URL template for service %s: %v", service.Name, err)
-			} else if renderedUrl != "" {
+			} else {
+				renderedUrl := buf.String()
 				status.ServiceUrl = &renderedUrl
 			}
 		}

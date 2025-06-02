@@ -10,6 +10,7 @@ RUN set -ex \
     fakeroot \
     dpkg-dev \
     git \
+    ca-certificates \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/*
 

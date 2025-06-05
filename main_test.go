@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"net"
 	"net/http"
@@ -720,6 +721,7 @@ func TestAppScenarios(test *testing.T) {
 		GetConfig                     func(t *testing.T, testName string) Config
 		AddressesToCheckAfterStopping []string
 		TestFunc                      func(t *testing.T)
+		SetupFunc                     func(t *testing.T)
 	}{
 		{
 			Name: "minimal",
@@ -1279,12 +1281,60 @@ func TestAppScenarios(test *testing.T) {
 				)
 			},
 		},
+		{
+			Name: "logs-output",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "service1",
+							ListenPort:      "2049",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12049",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12049 --plain-output",
+						},
+						{
+							Name:            "Service TWO2️⃣ Два",
+							ListenPort:      "2054",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12054",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12054 --plain-output --log-to-stdout",
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2049",
+				"localhost:12049",
+				"localhost:2054",
+				"localhost:12054",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/test_logs-output.log")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/test_logs-output.log: %v", err)
+				}
+			},
+			TestFunc: func(t *testing.T) {
+				testLogOutput(t,
+					"localhost:2049",
+					"localhost:2054",
+					"service1",
+					"Service TWO2️⃣ Два",
+				)
+			},
+		},
 	}
 
 	for _, testCase := range tests {
 		testCase := testCase // Capture range variable
 		test.Run(testCase.Name, func(t *testing.T) {
 			t.Parallel()
+			if testCase.SetupFunc != nil {
+				testCase.SetupFunc(t)
+			}
 			waitChannel := make(chan error, 1)
 
 			currentConfig := testCase.GetConfig(t, testCase.Name)
@@ -1384,4 +1434,31 @@ func testUnmonitoredProcess(
 	if !isProcessRunning(pid2) {
 		t.Fatalf("non-dying service is supposed to be running with pid %d", pid)
 	}
+}
+
+func testLogOutput(
+	t *testing.T,
+	serviceOneAddress string,
+	serviceTwoAddress string,
+	serviceOneName string,
+	serviceTwoName string,
+) {
+	const logFileName = "test-logs/test_logs-output.log"
+	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
+	pidTwo := runReadPidCloseConnection(t, serviceTwoAddress)
+	portOne := serviceOneAddress[strings.LastIndex(serviceOneAddress, ":")+1:]
+	portTwo := serviceOneAddress[strings.LastIndex(serviceTwoAddress, ":")+1:]
+	logFileContents, err := os.ReadFile(logFileName)
+	logFileContentsString := string(logFileContents)
+	if err != nil {
+		t.Fatalf("failed to read log file %s: %v", logFileName, err)
+	}
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceOneName, portOne))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceTwoName, portTwo))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceOneName))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceTwoName))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceOneName, pidOne))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceTwoName, pidTwo))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceOneName))
+	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceTwoName))
 }

@@ -81,6 +81,7 @@ func (s *ServiceUrlOption) IsEmpty() bool {
 type Config struct {
 	ShutDownAfterInactivitySeconds                                uint
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
+	OutputServiceLogs                                             *bool
 	DefaultServiceUrl                                             *string         `json:"DefaultServiceUrl"`
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`

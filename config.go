@@ -199,6 +199,11 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 	if err != nil {
 		return config, err
 	}
+
+	if config.OutputServiceLogs == nil {
+		config.OutputServiceLogs = new(bool)
+		*(config.OutputServiceLogs) = true
+	}
 	for i, service := range config.Services {
 		if service.ConsiderStoppedOnProcessExit == nil {
 			config.Services[i].ConsiderStoppedOnProcessExit = new(bool)

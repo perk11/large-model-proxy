@@ -810,6 +810,33 @@ func releaseResourcesWhenServiceMutexIsLocked(used map[string]int) {
 	}
 }
 
+type serviceLoggingWriter struct {
+	prefix string
+	logger *log.Logger
+	buf    []byte // holds an incomplete line between Write calls
+}
+
+func (w *serviceLoggingWriter) Write(b []byte) (int, error) {
+	// append new bytes to anything left over from the previous call
+	data := append(w.buf, b...)
+
+	for {
+		i := bytes.IndexByte(data, '\n')
+		if i == -1 {
+			// no complete line yet – remember what we have and return
+			w.buf = data
+			return len(b), nil
+		}
+
+		// strip the trailing '\r' (Windows) and log the line
+		line := strings.TrimRight(string(data[:i]), "\r")
+		w.logger.Print(w.prefix + line)
+
+		// advance past the newline and continue scanning
+		data = data[i+1:]
+	}
+}
+
 func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 	if serviceConfig.LogFilePath == "" {
 		serviceConfig.LogFilePath = "logs/" + serviceConfig.Name + ".log"
@@ -848,8 +875,20 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 		log.Printf("[%s] Error opening log file: %v", serviceConfig.Name, err)
 		return nil
 	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+
+	if *config.OutputServiceLogs {
+		cmd.Stdout = io.MultiWriter(logFile, &serviceLoggingWriter{
+			prefix: fmt.Sprintf("[%s/stdout] ", serviceConfig.Name),
+			logger: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds),
+		})
+		cmd.Stderr = io.MultiWriter(logFile, &serviceLoggingWriter{
+			prefix: fmt.Sprintf("[%s/stderr] ", serviceConfig.Name),
+			logger: log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds),
+		})
+	} else {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("[%s] Error starting command: %v", serviceConfig.Name, err)

@@ -1302,6 +1302,21 @@ func TestAppScenarios(test *testing.T) {
 							Command:         "./test-server/test-server",
 							Args:            "-p 12054 --plain-output --log-to-stdout",
 						},
+						{
+							Name:            "{Service 3}",
+							ListenPort:      "2057",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12057", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+						},
+						{
+							Name:            "[Service 4]",
+							ListenPort:      "2058",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12058", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+							Args:            "-stderr",
+						},
 					},
 				}
 			},
@@ -1310,6 +1325,8 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:12049",
 				"localhost:2054",
 				"localhost:12054",
+				"localhost:2057",
+				"localhost:2058",
 			},
 			SetupFunc: func(t *testing.T) {
 				err := os.Remove("test-logs/test_logs-output.log")
@@ -1321,10 +1338,14 @@ func TestAppScenarios(test *testing.T) {
 				testLogOutput(t,
 					"localhost:2049",
 					"localhost:2054",
+					"localhost:2057",
+					"localhost:2058",
 					12049,
 					12054,
 					"logs-output_service1",
 					"logs-output_Service TWO2️⃣ Два",
+					"logs-output_{Service 3}",
+					"logs-output_[Service 4]",
 					true,
 				)
 			},
@@ -1351,6 +1372,21 @@ func TestAppScenarios(test *testing.T) {
 							Command:         "./test-server/test-server",
 							Args:            "-p 12056 --plain-output --log-to-stdout",
 						},
+						{
+							Name:            "{Service 3}",
+							ListenPort:      "2059",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12059", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+						},
+						{
+							Name:            "[Service 4]",
+							ListenPort:      "2060",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12060", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+							Args:            "-stderr",
+						},
 					},
 				}
 			},
@@ -1359,6 +1395,8 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:12055",
 				"localhost:2056",
 				"localhost:12056",
+				"localhost:2059",
+				"localhost:2060",
 			},
 			SetupFunc: func(t *testing.T) {
 				err := os.Remove("test-logs/test_logs-no-output.log")
@@ -1370,10 +1408,14 @@ func TestAppScenarios(test *testing.T) {
 				testLogOutput(t,
 					"localhost:2055",
 					"localhost:2056",
+					"localhost:2059",
+					"localhost:2060",
 					12055,
 					12056,
 					"logs-no-output_service1",
 					"logs-no-output_Service TWO2️⃣ Два",
+					"logs-no-output_{Service 3}",
+					"logs-no-output_[Service 4]",
 					false,
 				)
 			},
@@ -1492,15 +1534,31 @@ func testLogOutput(
 	t *testing.T,
 	serviceOneAddress string,
 	serviceTwoAddress string,
+	serviceThreeAddress string,
+	serviceFourAddress string,
 	directPortOne int,
 	directPortTwo int,
 	serviceOneName string,
 	serviceTwoName string,
+	serviceThreeName string,
+	serviceFourName string,
 	shouldLog bool,
 ) {
 	const logFileName = "test-logs/test_logs-output.log"
 	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
 	pidTwo := runReadPidCloseConnection(t, serviceTwoAddress)
+	connThree, err := net.Dial("tcp", serviceThreeAddress)
+	if err != nil {
+		t.Error(err)
+	}
+	defer func(connThree net.Conn) { _ = connThree.Close() }(connThree)
+	connFour, err := net.Dial("tcp", serviceFourAddress)
+	if err != nil {
+		t.Error(err)
+	}
+	defer func(connFour net.Conn) { _ = connFour.Close() }(connFour)
+
+	time.Sleep(2 * time.Second)
 	logFileContents, err := os.ReadFile(logFileName)
 	logFileContentsString := string(logFileContents)
 	if err != nil {
@@ -1520,4 +1578,26 @@ func testLogOutput(
 	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Responding with pid %d", serviceTwoName, pidTwo))
 	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Closing connection", serviceOneName))
 	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Closing connection", serviceTwoName))
+
+	const expectedLogMessage = "I am a test\nThis ends with a return\nWindows style\nNext after CRLF\nsplit write one plus two\nalpha\nbeta\ngamma\nNull byte \x00 inside\nEmoji 😀 test\ndangling line without newline"
+	expectedLines := strings.Split(expectedLogMessage, "\n")
+	for channel, serviceName := range map[string]string{"stdout": serviceThreeName, "stderr": serviceFourName} {
+		linesFound := 0
+		prefix := fmt.Sprintf("[%s/%s] ", serviceName, channel)
+		if !shouldLog {
+			assert.NotContains(t, logFileContentsString, prefix)
+		} else {
+			for _, line := range strings.Split(logFileContentsString, "\n") {
+				prefixIndex := strings.Index(line, prefix)
+				if prefixIndex == -1 {
+					continue
+				}
+				linesFound++
+				expectedLine := expectedLines[linesFound-1]
+				line = line[prefixIndex+len(prefix):]
+				assert.Equal(t, expectedLine, line, "line %d of log file %s should match", linesFound, logFileName)
+			}
+			assert.Equal(t, len(expectedLines), linesFound, "number lines in log file %s", logFileName)
+		}
+	}
 }

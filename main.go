@@ -823,12 +823,15 @@ func (w *serviceLoggingWriter) Write(b []byte) (int, error) {
 	for {
 		i := bytes.IndexByte(data, '\n')
 		if i == -1 {
-			// no complete line yet – remember what we have and return
-			w.buf = data
-			return len(b), nil
+			i = bytes.IndexByte(data, '\r')
+			if i == -1 {
+				// no complete line yet – remember what we have and return
+				w.buf = data
+				return len(b), nil
+			}
 		}
 
-		// strip the trailing '\r' (Windows) and log the line
+		// strip the trailing '\r' and log the line
 		line := strings.TrimRight(string(data[:i]), "\r")
 		w.logger.Print(w.prefix + line)
 

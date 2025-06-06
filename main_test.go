@@ -1323,6 +1323,54 @@ func TestAppScenarios(test *testing.T) {
 					"localhost:2054",
 					"service1",
 					"Service TWO2️⃣ Два",
+					true,
+				)
+			},
+		},
+		{
+			Name: "logs-no-output",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					OutputServiceLogs: new(bool),
+					Services: []ServiceConfig{
+						{
+							Name:            "service1",
+							ListenPort:      "2055",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12055",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12055 --plain-output",
+						},
+						{
+							Name:            "Service TWO2️⃣ Два",
+							ListenPort:      "2056",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12056",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12056 --plain-output --log-to-stdout",
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2055",
+				"localhost:12055",
+				"localhost:2056",
+				"localhost:12056",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/test_logs-no-output.log")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/test_logs-no-output.log: %v", err)
+				}
+			},
+			TestFunc: func(t *testing.T) {
+				testLogOutput(t,
+					"localhost:2055",
+					"localhost:2056",
+					"service1",
+					"Service TWO2️⃣ Два",
+					false,
 				)
 			},
 		},
@@ -1442,6 +1490,7 @@ func testLogOutput(
 	serviceTwoAddress string,
 	serviceOneName string,
 	serviceTwoName string,
+	shouldLog bool,
 ) {
 	const logFileName = "test-logs/test_logs-output.log"
 	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
@@ -1453,12 +1502,18 @@ func testLogOutput(
 	if err != nil {
 		t.Fatalf("failed to read log file %s: %v", logFileName, err)
 	}
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceOneName, portOne))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceTwoName, portTwo))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceOneName))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceTwoName))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceOneName, pidOne))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceTwoName, pidTwo))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceOneName))
-	assert.Contains(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceTwoName))
+	var assertFunc func(t assert.TestingT, s, contains interface{}, msgAndArgs ...interface{}) bool
+	if shouldLog {
+		assertFunc = assert.Contains
+	} else {
+		assertFunc = assert.NotContains
+	}
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceOneName, portOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceTwoName, portTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceTwoName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceOneName, pidOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceTwoName, pidTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceTwoName))
 }

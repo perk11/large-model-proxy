@@ -1321,8 +1321,10 @@ func TestAppScenarios(test *testing.T) {
 				testLogOutput(t,
 					"localhost:2049",
 					"localhost:2054",
-					"service1",
-					"Service TWO2️⃣ Два",
+					12049,
+					12054,
+					"logs-output_service1",
+					"logs-output_Service TWO2️⃣ Два",
 					true,
 				)
 			},
@@ -1368,8 +1370,10 @@ func TestAppScenarios(test *testing.T) {
 				testLogOutput(t,
 					"localhost:2055",
 					"localhost:2056",
-					"service1",
-					"Service TWO2️⃣ Два",
+					12055,
+					12056,
+					"logs-no-output_service1",
+					"logs-no-output_Service TWO2️⃣ Два",
 					false,
 				)
 			},
@@ -1488,6 +1492,8 @@ func testLogOutput(
 	t *testing.T,
 	serviceOneAddress string,
 	serviceTwoAddress string,
+	directPortOne int,
+	directPortTwo int,
 	serviceOneName string,
 	serviceTwoName string,
 	shouldLog bool,
@@ -1495,8 +1501,6 @@ func testLogOutput(
 	const logFileName = "test-logs/test_logs-output.log"
 	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
 	pidTwo := runReadPidCloseConnection(t, serviceTwoAddress)
-	portOne := serviceOneAddress[strings.LastIndex(serviceOneAddress, ":")+1:]
-	portTwo := serviceOneAddress[strings.LastIndex(serviceTwoAddress, ":")+1:]
 	logFileContents, err := os.ReadFile(logFileName)
 	logFileContentsString := string(logFileContents)
 	if err != nil {
@@ -1508,12 +1512,12 @@ func testLogOutput(
 	} else {
 		assertFunc = assert.NotContains
 	}
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceOneName, portOne))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Listening on port %s", serviceTwoName, portTwo))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceOneName))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Connection received on main port.", serviceTwoName))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceOneName, pidOne))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Responding with pid %d", serviceTwoName, pidTwo))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceOneName))
-	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s] Closing connection", serviceTwoName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Listening on port %d", serviceOneName, directPortOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Listening on port %d", serviceTwoName, directPortTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Connection received on main port.", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Connection received on main port.", serviceTwoName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Responding with pid %d", serviceOneName, pidOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Responding with pid %d", serviceTwoName, pidTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Closing connection", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Closing connection", serviceTwoName))
 }

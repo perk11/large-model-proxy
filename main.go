@@ -967,7 +967,11 @@ func stopService(service ServiceConfig) {
 			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
-	cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
+	if !interrupted {
+		resourceManager.serviceMutex.Lock()
+		cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
+		resourceManager.serviceMutex.Unlock()
+	}
 }
 func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync.WaitGroup) {
 	exitProcessState, err := process.Wait()

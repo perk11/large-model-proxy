@@ -978,7 +978,7 @@ func stopService(service ServiceConfig) {
 }
 func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync.WaitGroup) {
 	exitProcessState, err := process.Wait()
-	exitMessage := fmt.Sprintf("[%s] Process with pid %d exited", serviceName, process.Pid)
+	exitMessage := fmt.Sprintf("[%s] Process with pid %d terminated", serviceName, process.Pid)
 	if exitProcessState == nil {
 		exitMessage += " with unknown exit code"
 	} else {

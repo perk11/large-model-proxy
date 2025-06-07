@@ -81,6 +81,7 @@ func (s *ServiceUrlOption) IsEmpty() bool {
 type Config struct {
 	ShutDownAfterInactivitySeconds                                uint
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
+	OutputServiceLogs                                             *bool
 	DefaultServiceUrl                                             *string         `json:"DefaultServiceUrl"`
 	Services                                                      []ServiceConfig `json:"Services"`
 	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
@@ -197,6 +198,11 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 	err = validateConfig(config)
 	if err != nil {
 		return config, err
+	}
+
+	if config.OutputServiceLogs == nil {
+		config.OutputServiceLogs = new(bool)
+		*(config.OutputServiceLogs) = true
 	}
 	for i, service := range config.Services {
 		if service.ConsiderStoppedOnProcessExit == nil {

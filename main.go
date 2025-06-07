@@ -843,28 +843,27 @@ func (w *serviceLoggingWriter) Write(b []byte) (int, error) {
 	// append new bytes to anything left over from the previous call
 	data := append(w.buf, b...)
 	for {
-
 		returnIndex := bytes.IndexByte(data, '\r')
 		newLineIndex := bytes.IndexByte(data, '\n')
-		var trimIndex int
+		var cutOffIndex int
 		if returnIndex != -1 && newLineIndex != -1 && newLineIndex-returnIndex == 1 {
 			//CRLF
-			trimIndex = newLineIndex
+			cutOffIndex = newLineIndex
 		} else {
-			trimIndex = findLowerIndexThatIsNotMinusOne(newLineIndex, returnIndex)
+			cutOffIndex = findLowerIndexThatIsNotMinusOne(newLineIndex, returnIndex)
 		}
 
-		if trimIndex == -1 {
+		if cutOffIndex == -1 {
 			// no complete line yet – remember what we have and return
 			w.buf = data
 			return len(b), nil
 		}
 		// strip the trailing '\r' and log the line
-		line := strings.TrimRight(string(data[:trimIndex]), "\r\n")
+		line := strings.TrimRight(string(data[:cutOffIndex]), "\r\n")
 		w.logger.Print(w.prefix + line)
 
 		// advance past the newline and continue scanning
-		data = data[trimIndex+1:]
+		data = data[cutOffIndex+1:]
 	}
 }
 

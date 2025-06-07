@@ -820,7 +820,7 @@ type serviceLoggingWriter struct {
 	buf    []byte // holds an incomplete line between Write calls
 }
 
-func (w *serviceLoggingWriter) Flush() {
+func (w *serviceLoggingWriter) FinalFlush() {
 	if w == nil || len(w.buf) == 0 {
 		return
 	}
@@ -926,20 +926,6 @@ func runServiceCommand(serviceConfig ServiceConfig) (
 		cmd.Stdout, cmd.Stderr = logFile, logFile
 	}
 
-	if *config.OutputServiceLogs {
-		cmd.Stdout = io.MultiWriter(logFile, &serviceLoggingWriter{
-			prefix: fmt.Sprintf("[%s/stdout] ", serviceConfig.Name),
-			logger: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds),
-		})
-		cmd.Stderr = io.MultiWriter(logFile, &serviceLoggingWriter{
-			prefix: fmt.Sprintf("[%s/stderr] ", serviceConfig.Name),
-			logger: log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds),
-		})
-	} else {
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
-	}
-
 	if err := cmd.Start(); err != nil {
 		log.Printf("[%s] Error starting command: %v", serviceConfig.Name, err)
 		return nil, nil, nil
@@ -1021,6 +1007,7 @@ func stopService(service ServiceConfig) {
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
+	var processExitedCleanly = false
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		if service.KillCommand != nil {
 			log.Printf("[%s] Sending custom kill command: %s", service.Name, *service.KillCommand)
@@ -1044,7 +1031,7 @@ func stopService(service ServiceConfig) {
 			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", service.Name, runningService.cmd.Process.Pid, err)
 		}
 
-		processExitedCleanly := waitForProcessToTerminate(runningService.exitWaitGroup)
+		processExitedCleanly = waitForProcessToTerminate(runningService.exitWaitGroup)
 
 		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", service.Name, runningService.cmd.Process.Pid)
@@ -1058,7 +1045,7 @@ func stopService(service ServiceConfig) {
 			}
 		}
 	}
-	if !interrupted {
+	if !interrupted && !*runningService.resourcesReleased {
 		resourceManager.serviceMutex.Lock()
 		cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
 		resourceManager.serviceMutex.Unlock()
@@ -1066,7 +1053,7 @@ func stopService(service ServiceConfig) {
 }
 func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync.WaitGroup) {
 	exitProcessState, err := process.Wait()
-	exitMessage := fmt.Sprintf("[%s] Process with pid %d terminated", serviceName, process.Pid)
+	exitMessage := fmt.Sprintf("[%s] Process with pid %d exited", serviceName, process.Pid)
 	if exitProcessState == nil {
 		exitMessage += " with unknown exit code"
 	} else {
@@ -1075,9 +1062,9 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 	if err != nil {
 		exitMessage += fmt.Sprintf(" and an error: %v", err)
 	}
-	log.Print(exitMessage)
-	exitWaitGroup.Done()
+	defer log.Print(exitMessage)
 	resourceManager.serviceMutex.Lock()
+	exitWaitGroup.Done()
 	defer resourceManager.serviceMutex.Unlock()
 
 	runningService, ok := resourceManager.maybeGetRunningServiceNoLock(serviceName)
@@ -1085,7 +1072,6 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 		log.Printf("[%s] Process exited, but service was not found in the list of running services, this is probably a bug", serviceName)
 		return
 	}
-	resourceManager.storeRunningServiceNoLock(serviceName, runningService)
 
 	service := findServiceConfigByName(serviceName)
 	cleanUpStoppedServiceWhenServiceMutexIsLocked(service, runningService, *service.ConsiderStoppedOnProcessExit)
@@ -1099,8 +1085,8 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
-	runningService.stdoutWriter.Flush()
-	runningService.stderrWriter.Flush()
+	runningService.stdoutWriter.FinalFlush()
+	runningService.stderrWriter.FinalFlush()
 	releaseResourcesWhenServiceMutexIsLocked(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
 }

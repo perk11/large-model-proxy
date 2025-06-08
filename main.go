@@ -962,7 +962,7 @@ func stopService(service ServiceConfig) {
 			err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGKILL)
 			if err != nil {
 				log.Printf("[%s] Failed to kill service: %v", service.Name, err)
-				if runningService.cmd.ProcessState == nil {
+				if runningService.cmd.ProcessState == nil && !errors.Is(err, syscall.ESRCH) { //ESRCH means process not found
 					log.Printf("[%s] Manual action required due to error when killing process", service.Name)
 					return
 				}

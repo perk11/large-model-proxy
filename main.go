@@ -967,7 +967,6 @@ func stopService(service ServiceConfig) {
 					return
 				}
 			}
-			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
 	if !interrupted {

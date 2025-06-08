@@ -17,7 +17,6 @@ var appStarted = false
 var mainPortConnections = 0
 
 func main() {
-	log.Printf("test")
 	port := flag.String("p", "", "Main port to listen on")
 	healthCheckApiPort := flag.String("healthcheck-port", "", "Healthcheck API port to listen on. If not specified, healthcheck API is disabled")
 	durationToSleepBeforeListening := flag.Duration("sleep-before-listening", 0, "How much time to sleep before listening starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")

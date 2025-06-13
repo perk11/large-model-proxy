@@ -555,7 +555,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 
 	var cmd = runServiceCommand(serviceConfig)
 	if cmd == nil {
-		releaseResources(serviceConfig.ResourceRequirements)
+		releaseResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 		delete(resourceManager.runningServices, serviceConfig.Name)
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
@@ -701,14 +701,17 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	startTime := time.Now()
 	var iteration = 0
 	for time.Since(startTime) < maxWaitTime {
-		missingResource = findFirstMissingResource(resourceRequirements, requestingService, iteration%60 == 0)
+		resourceManager.serviceMutex.Lock()
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, iteration%60 == 0)
 		iteration++
 		if missingResource == nil {
 			for resource, amount := range resourceRequirements {
 				resourceManager.resourcesInUse[resource] += amount
 			}
+			resourceManager.serviceMutex.Unlock()
 			return true
 		}
+		resourceManager.serviceMutex.Unlock()
 		earliestLastUsedService := findEarliestLastUsedServiceUsingResource(requestingService, *missingResource)
 		if earliestLastUsedService != "" {
 			log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)
@@ -754,7 +757,7 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 	return earliestLastUsedService
 }
 
-func findFirstMissingResource(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
+func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
 	for resource, amount := range resourceRequirements {
 		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource] {
 			if outputError {
@@ -801,7 +804,7 @@ func canBeStopped(serviceName string) bool {
 	return runningService.activeConnections == 0
 }
 
-func releaseResources(used map[string]int) {
+func releaseResourcesWhenServiceMutexIsLocked(used map[string]int) {
 	for resource, amount := range used {
 		resourceManager.resourcesInUse[resource] -= amount
 	}
@@ -1008,7 +1011,7 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
-	releaseResources(service.ResourceRequirements)
+	releaseResourcesWhenServiceMutexIsLocked(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
 }
 

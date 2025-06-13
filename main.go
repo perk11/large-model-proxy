@@ -31,6 +31,8 @@ type RunningService struct {
 	idleTimer         *time.Timer
 	exitWaitGroup     *sync.WaitGroup
 	resourcesReleased *bool
+	stdoutWriter      *serviceLoggingWriter
+	stderrWriter      *serviceLoggingWriter
 }
 
 type ResourceManager struct {
@@ -553,13 +555,15 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)
 	}
 
-	var cmd = runServiceCommand(serviceConfig)
+	cmd, outW, errW := runServiceCommand(serviceConfig)
 	if cmd == nil {
 		releaseResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 		delete(resourceManager.runningServices, serviceConfig.Name)
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
 	runningService.cmd = cmd
+	runningService.stdoutWriter = outW
+	runningService.stderrWriter = errW
 
 	runningService.exitWaitGroup = new(sync.WaitGroup)
 	runningService.exitWaitGroup.Add(1)
@@ -810,7 +814,64 @@ func releaseResourcesWhenServiceMutexIsLocked(used map[string]int) {
 	}
 }
 
-func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
+type serviceLoggingWriter struct {
+	prefix string
+	logger *log.Logger
+	buf    []byte // holds an incomplete line between Write calls
+}
+
+func (w *serviceLoggingWriter) FinalFlush() {
+	if w == nil || len(w.buf) == 0 {
+		return
+	}
+	w.logger.Print(w.prefix + string(w.buf))
+	w.buf = nil
+}
+func findLowerIndexThatIsNotMinusOne(indexOne int, indexTwo int) int {
+	if indexOne == -1 {
+		return indexTwo
+	}
+	if indexTwo == -1 {
+		return indexOne
+	}
+	if indexOne > indexTwo {
+		return indexTwo
+	}
+	return indexOne
+}
+func (w *serviceLoggingWriter) Write(b []byte) (int, error) {
+	// append new bytes to anything left over from the previous call
+	data := append(w.buf, b...)
+	for {
+		returnIndex := bytes.IndexByte(data, '\r')
+		newLineIndex := bytes.IndexByte(data, '\n')
+		var cutOffIndex int
+		if returnIndex != -1 && newLineIndex != -1 && newLineIndex-returnIndex == 1 {
+			//CRLF
+			cutOffIndex = newLineIndex
+		} else {
+			cutOffIndex = findLowerIndexThatIsNotMinusOne(newLineIndex, returnIndex)
+		}
+
+		if cutOffIndex == -1 {
+			// no complete line yet – remember what we have and return
+			w.buf = data
+			return len(b), nil
+		}
+		// strip the trailing '\r' and log the line
+		line := strings.TrimRight(string(data[:cutOffIndex]), "\r\n")
+		w.logger.Print(w.prefix + line)
+
+		// advance past the newline and continue scanning
+		data = data[cutOffIndex+1:]
+	}
+}
+
+func runServiceCommand(serviceConfig ServiceConfig) (
+	*exec.Cmd,
+	*serviceLoggingWriter,
+	*serviceLoggingWriter,
+) {
 	if serviceConfig.LogFilePath == "" {
 		serviceConfig.LogFilePath = "logs/" + serviceConfig.Name + ".log"
 	}
@@ -818,7 +879,7 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 	err := os.MkdirAll(logDir, os.ModePerm)
 	if err != nil {
 		log.Printf("[%s] Failed to create log directory %s: %v", serviceConfig.Name, logDir, err)
-		return nil
+		return nil, nil, nil
 	}
 	log.Printf("[%s] Starting \"%s %s\", log file: %s, workdir: %s",
 		serviceConfig.Name,
@@ -831,7 +892,7 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 	args, err := shlex.Split(serviceConfig.Args)
 	if err != nil {
 		log.Printf("[%s] Failed to parse service arguments %s: %v", serviceConfig.Name, serviceConfig.Args, err)
-		return nil
+		return nil, nil, nil
 	}
 
 	cmd := exec.Command(serviceConfig.Command, args...)
@@ -846,16 +907,30 @@ func runServiceCommand(serviceConfig ServiceConfig) *exec.Cmd {
 	logFile, err := os.OpenFile(serviceConfig.LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Printf("[%s] Error opening log file: %v", serviceConfig.Name, err)
-		return nil
+		return nil, nil, nil
 	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	var stdoutSLW, stderrSLW *serviceLoggingWriter
+
+	if *config.OutputServiceLogs {
+		stdoutSLW = &serviceLoggingWriter{
+			prefix: fmt.Sprintf("[%s/stdout] ", serviceConfig.Name),
+			logger: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds),
+		}
+		stderrSLW = &serviceLoggingWriter{
+			prefix: fmt.Sprintf("[%s/stderr] ", serviceConfig.Name),
+			logger: log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds),
+		}
+		cmd.Stdout = io.MultiWriter(logFile, stdoutSLW)
+		cmd.Stderr = io.MultiWriter(logFile, stderrSLW)
+	} else {
+		cmd.Stdout, cmd.Stderr = logFile, logFile
+	}
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("[%s] Error starting command: %v", serviceConfig.Name, err)
-		return nil
+		return nil, nil, nil
 	}
-	return cmd
+	return cmd, stdoutSLW, stderrSLW
 }
 
 func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {
@@ -932,6 +1007,7 @@ func stopService(service ServiceConfig) {
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
+	var processExitedCleanly = false
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		if service.KillCommand != nil {
 			log.Printf("[%s] Sending custom kill command: %s", service.Name, *service.KillCommand)
@@ -955,22 +1031,21 @@ func stopService(service ServiceConfig) {
 			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", service.Name, runningService.cmd.Process.Pid, err)
 		}
 
-		processExitedCleanly := waitForProcessToTerminate(runningService.exitWaitGroup)
+		processExitedCleanly = waitForProcessToTerminate(runningService.exitWaitGroup)
 
 		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", service.Name, runningService.cmd.Process.Pid)
 			err := syscall.Kill(-runningService.cmd.Process.Pid, syscall.SIGKILL)
 			if err != nil {
 				log.Printf("[%s] Failed to kill service: %v", service.Name, err)
-				if runningService.cmd.ProcessState == nil {
+				if runningService.cmd.ProcessState == nil && !errors.Is(err, syscall.ESRCH) { //ESRCH means process not found
 					log.Printf("[%s] Manual action required due to error when killing process", service.Name)
 					return
 				}
 			}
-			log.Printf("[%s] Done killing pid %d", service.Name, runningService.cmd.Process.Pid)
 		}
 	}
-	if !interrupted {
+	if !interrupted && !*runningService.resourcesReleased {
 		resourceManager.serviceMutex.Lock()
 		cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
 		resourceManager.serviceMutex.Unlock()
@@ -987,9 +1062,9 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 	if err != nil {
 		exitMessage += fmt.Sprintf(" and an error: %v", err)
 	}
-	log.Print(exitMessage)
-	exitWaitGroup.Done()
+	defer log.Print(exitMessage)
 	resourceManager.serviceMutex.Lock()
+	exitWaitGroup.Done()
 	defer resourceManager.serviceMutex.Unlock()
 
 	runningService, ok := resourceManager.maybeGetRunningServiceNoLock(serviceName)
@@ -997,7 +1072,6 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 		log.Printf("[%s] Process exited, but service was not found in the list of running services, this is probably a bug", serviceName)
 		return
 	}
-	resourceManager.storeRunningServiceNoLock(serviceName, runningService)
 
 	service := findServiceConfigByName(serviceName)
 	cleanUpStoppedServiceWhenServiceMutexIsLocked(service, runningService, *service.ConsiderStoppedOnProcessExit)
@@ -1011,6 +1085,8 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
+	runningService.stdoutWriter.FinalFlush()
+	runningService.stderrWriter.FinalFlush()
 	releaseResourcesWhenServiceMutexIsLocked(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
 }

@@ -27,8 +27,16 @@ func main() {
 	exitAfterDuration := flag.Duration("exit-after-duration", time.Duration(1<<63-1), "How much time to exit after the program start, such as \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
 	procPort := flag.String("procinfo-port", "", "Port to expose process information")
+	plainOutput := flag.Bool("plain-output", false, "Do not add timestamps to log output")
+	logToStdout := flag.Bool("log-to-stdout", false, "Send logs to stdout instead of stderr")
 	flag.Parse()
 
+	if *plainOutput {
+		log.SetFlags(0)
+	}
+	if *logToStdout {
+		log.SetOutput(os.Stdout)
+	}
 	if *port != "" {
 		go listenOnMainPort(
 			port,

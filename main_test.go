@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"net"
 	"net/http"
@@ -720,6 +721,7 @@ func TestAppScenarios(test *testing.T) {
 		GetConfig                     func(t *testing.T, testName string) Config
 		AddressesToCheckAfterStopping []string
 		TestFunc                      func(t *testing.T)
+		SetupFunc                     func(t *testing.T)
 	}{
 		{
 			Name: "minimal",
@@ -1279,12 +1281,154 @@ func TestAppScenarios(test *testing.T) {
 				)
 			},
 		},
+		{
+			Name: "logs-output",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					Services: []ServiceConfig{
+						{
+							Name:            "service1",
+							ListenPort:      "2049",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12049",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12049 --plain-output",
+						},
+						{
+							Name:            "Service TWO2️⃣ Два",
+							ListenPort:      "2054",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12054",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12054 --plain-output --log-to-stdout",
+						},
+						{
+							Name:            "{Service 3}",
+							ListenPort:      "2057",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12057", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+						},
+						{
+							Name:            "[Service 4]",
+							ListenPort:      "2058",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12058", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+							Args:            "-stderr",
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2049",
+				"localhost:12049",
+				"localhost:2054",
+				"localhost:12054",
+				"localhost:2057",
+				"localhost:2058",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/test_logs-output.log")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/test_logs-output.log: %v", err)
+				}
+			},
+			TestFunc: func(t *testing.T) {
+				testLogOutput(t,
+					"localhost:2049",
+					"localhost:2054",
+					"localhost:2057",
+					"localhost:2058",
+					12049,
+					12054,
+					"logs-output_service1",
+					"logs-output_Service TWO2️⃣ Два",
+					"logs-output_{Service 3}",
+					"logs-output_[Service 4]",
+					true,
+				)
+			},
+		},
+		{
+			Name: "logs-no-output",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					OutputServiceLogs: new(bool),
+					Services: []ServiceConfig{
+						{
+							Name:            "service1",
+							ListenPort:      "2055",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12055",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12055 --plain-output",
+						},
+						{
+							Name:            "Service TWO2️⃣ Два",
+							ListenPort:      "2056",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12056",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12056 --plain-output --log-to-stdout",
+						},
+						{
+							Name:            "{Service 3}",
+							ListenPort:      "2059",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12059", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+						},
+						{
+							Name:            "[Service 4]",
+							ListenPort:      "2060",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12060", //nothing is actually listening there
+							Command:         "./test-server/output-test.sh",
+							Args:            "-stderr",
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2055",
+				"localhost:12055",
+				"localhost:2056",
+				"localhost:12056",
+				"localhost:2059",
+				"localhost:2060",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/test_logs-no-output.log")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/test_logs-no-output.log: %v", err)
+				}
+			},
+			TestFunc: func(t *testing.T) {
+				testLogOutput(t,
+					"localhost:2055",
+					"localhost:2056",
+					"localhost:2059",
+					"localhost:2060",
+					12055,
+					12056,
+					"logs-no-output_service1",
+					"logs-no-output_Service TWO2️⃣ Два",
+					"logs-no-output_{Service 3}",
+					"logs-no-output_[Service 4]",
+					false,
+				)
+			},
+		},
 	}
 
 	for _, testCase := range tests {
 		testCase := testCase // Capture range variable
 		test.Run(testCase.Name, func(t *testing.T) {
 			t.Parallel()
+			if testCase.SetupFunc != nil {
+				testCase.SetupFunc(t)
+			}
 			waitChannel := make(chan error, 1)
 
 			currentConfig := testCase.GetConfig(t, testCase.Name)
@@ -1383,5 +1527,77 @@ func testUnmonitoredProcess(
 
 	if !isProcessRunning(pid2) {
 		t.Fatalf("non-dying service is supposed to be running with pid %d", pid)
+	}
+}
+
+func testLogOutput(
+	t *testing.T,
+	serviceOneAddress string,
+	serviceTwoAddress string,
+	serviceThreeAddress string,
+	serviceFourAddress string,
+	directPortOne int,
+	directPortTwo int,
+	serviceOneName string,
+	serviceTwoName string,
+	serviceThreeName string,
+	serviceFourName string,
+	shouldLog bool,
+) {
+	const logFileName = "test-logs/test_logs-output.log"
+	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
+	pidTwo := runReadPidCloseConnection(t, serviceTwoAddress)
+	connThree, err := net.Dial("tcp", serviceThreeAddress)
+	if err != nil {
+		t.Error(err)
+	}
+	defer func(connThree net.Conn) { _ = connThree.Close() }(connThree)
+	connFour, err := net.Dial("tcp", serviceFourAddress)
+	if err != nil {
+		t.Error(err)
+	}
+	defer func(connFour net.Conn) { _ = connFour.Close() }(connFour)
+
+	time.Sleep(2 * time.Second)
+	logFileContents, err := os.ReadFile(logFileName)
+	logFileContentsString := string(logFileContents)
+	if err != nil {
+		t.Fatalf("failed to read log file %s: %v", logFileName, err)
+	}
+	var assertFunc func(t assert.TestingT, s, contains interface{}, msgAndArgs ...interface{}) bool
+	if shouldLog {
+		assertFunc = assert.Contains
+	} else {
+		assertFunc = assert.NotContains
+	}
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Listening on port %d", serviceOneName, directPortOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Listening on port %d", serviceTwoName, directPortTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Connection received on main port.", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Connection received on main port.", serviceTwoName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Responding with pid %d", serviceOneName, pidOne))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Responding with pid %d", serviceTwoName, pidTwo))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stderr] Closing connection", serviceOneName))
+	assertFunc(t, logFileContentsString, fmt.Sprintf("[%s/stdout] Closing connection", serviceTwoName))
+
+	const expectedLogMessage = "I am a test\nThis ends with a return\nWindows style\nNext after CRLF\nsplit write one plus two\nalpha\nbeta\ngamma\nNull byte \x00 inside\nEmoji 😀 test\ndangling line without newline"
+	expectedLines := strings.Split(expectedLogMessage, "\n")
+	for channel, serviceName := range map[string]string{"stdout": serviceThreeName, "stderr": serviceFourName} {
+		linesFound := 0
+		prefix := fmt.Sprintf("[%s/%s] ", serviceName, channel)
+		if !shouldLog {
+			assert.NotContains(t, logFileContentsString, prefix)
+		} else {
+			for _, line := range strings.Split(logFileContentsString, "\n") {
+				prefixIndex := strings.Index(line, prefix)
+				if prefixIndex == -1 {
+					continue
+				}
+				linesFound++
+				expectedLine := expectedLines[linesFound-1]
+				line = line[prefixIndex+len(prefix):]
+				assert.Equal(t, expectedLine, line, "line %d of log file %s should match", linesFound, logFileName)
+			}
+			assert.Equal(t, len(expectedLines), linesFound, "number lines in log file %s", logFileName)
+		}
 	}
 }

@@ -454,7 +454,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	}
 
 	log.Printf("[%s] Opened service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
-	trackServiceLastUsed(serviceConfig)
+	trackServiceLastUsed(serviceConfig, true)
 
 	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
 		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
@@ -478,7 +478,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	//forwardConnection will handle closing the connections at this point
 	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
 
-	trackServiceLastUsed(serviceConfig)
+	trackServiceLastUsed(serviceConfig, false)
 }
 
 func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
@@ -525,7 +525,7 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 			//As the service might stop after the mutex is unlocked, we need to run the search for it again
 			return startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 		}
-		trackServiceLastUsed(serviceConfig)
+		trackServiceLastUsed(serviceConfig, true)
 		runningService.manageMutex.Unlock()
 		serviceConnection = connectToService(serviceConfig)
 	}
@@ -780,10 +780,12 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 	return nil
 }
 
-func trackServiceLastUsed(serviceConfig ServiceConfig) {
+func trackServiceLastUsed(serviceConfig ServiceConfig, runningServiceMustExist bool) {
 	runningService, ok := resourceManager.maybeGetRunningService(serviceConfig.Name)
 	if !ok {
-		log.Printf("[%s] Warning: Tried to track service usage, but couldn't find it in the list of running services, it was probably stopped", serviceConfig.Name)
+		if runningServiceMustExist {
+			log.Printf("[%s] Warning: Tried to track service usage, but couldn't find it in the list of running services, it was probably stopped", serviceConfig.Name)
+		}
 		return
 	}
 	now := time.Now()
@@ -1062,10 +1064,21 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 	if err != nil {
 		exitMessage += fmt.Sprintf(" and an error: %v", err)
 	}
-	defer log.Print(exitMessage)
-	resourceManager.serviceMutex.Lock()
-	exitWaitGroup.Done()
-	defer resourceManager.serviceMutex.Unlock()
+	defer func() {
+		log.Print(exitMessage)
+		exitWaitGroup.Done()
+	}()
+	if interrupted {
+		if resourceManager.serviceMutex.TryLock() {
+			defer resourceManager.serviceMutex.Unlock()
+		} else {
+			log.Printf("[%s] Not cleaning up resources due to large-model-proxy being interrupted", serviceName)
+			return
+		}
+	} else {
+		resourceManager.serviceMutex.Lock()
+		defer resourceManager.serviceMutex.Unlock()
+	}
 
 	runningService, ok := resourceManager.maybeGetRunningServiceNoLock(serviceName)
 	if !ok {

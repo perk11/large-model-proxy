@@ -1009,7 +1009,6 @@ func stopService(service ServiceConfig) {
 	if runningService.idleTimer != nil {
 		runningService.idleTimer.Stop()
 	}
-	var processExitedCleanly = false
 	if runningService.cmd != nil && runningService.cmd.Process != nil {
 		if service.KillCommand != nil {
 			log.Printf("[%s] Sending custom kill command: %s", service.Name, *service.KillCommand)
@@ -1033,7 +1032,7 @@ func stopService(service ServiceConfig) {
 			log.Printf("[%s] Failed to send SIGTERM to -%d: %v", service.Name, runningService.cmd.Process.Pid, err)
 		}
 
-		processExitedCleanly = waitForProcessToTerminate(runningService.exitWaitGroup)
+		processExitedCleanly := waitForProcessToTerminate(runningService.exitWaitGroup)
 
 		if !processExitedCleanly {
 			log.Printf("[%s] Timed out waiting, sending SIGKILL to service process group -%d", service.Name, runningService.cmd.Process.Pid)

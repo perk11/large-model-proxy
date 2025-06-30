@@ -3,21 +3,28 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
 
-// isTerminal checks if the given file descriptor is attached to a terminal.
+// isTerminal reports if the given file descriptor is attached to a terminal.
+// • On Linux it calls ioctl(TCGETS).
+// • On all other OSes it always returns false since colors are only implemented for Linux
 func isTerminal(fd uintptr) bool {
+	if runtime.GOOS != "linux" {
+		return false // avoid platform-specific hassles
+	}
+
+	const ioctlReadTermios = 0x5401 // TCGETS on Linux
+
 	var termios syscall.Termios
 	_, _, err := syscall.Syscall6(
 		syscall.SYS_IOCTL,
 		fd,
-		uintptr(syscall.TCGETS),
+		uintptr(ioctlReadTermios),
 		uintptr(unsafe.Pointer(&termios)),
-		0,
-		0,
-		0,
+		0, 0, 0,
 	)
 	return err == 0
 }

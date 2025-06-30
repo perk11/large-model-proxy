@@ -1,0 +1,74 @@
+name: Run tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-linux:
+    name: Build & test (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.18'
+
+      - name: Build
+        run: make executable
+
+      - name: Create logs directory
+        run: mkdir logs
+
+      - name: Build test-server
+        run: make build-test-server
+
+      - name: Run Tests
+        run: make test
+
+      - name: Archive logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs-linux
+          path: |
+            test-logs
+
+  build-macos:
+    name: Build & test (macOS)
+    needs: build-linux
+    if: ${{ needs.build-linux.result == 'success' }}
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.18'
+
+      - name: Build
+        run: make executable
+
+      - name: Create logs directory
+        run: mkdir logs
+
+      - name: Build test-server
+        run: make build-test-server
+
+      - name: Run Tests
+        run: make test
+
+      - name: Archive logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs-macos
+          path: |
+            test-logs

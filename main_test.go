@@ -1160,7 +1160,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetPort: "12034",
 							Command:         "./test-server/test-server",
 							Args:            "-p 12034",
-							KillCommand:     ptrToString("echo -n 'success' > /tmp/test-server-kill-command-output"),
+							KillCommand:     ptrToString("printf 'success' > /tmp/test-server-kill-command-output"),
 						},
 					},
 				}

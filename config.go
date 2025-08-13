@@ -90,24 +90,25 @@ type Config struct {
 }
 
 type ServiceConfig struct {
-	Name                            string
-	ListenPort                      string
-	ProxyTargetHost                 string
-	ProxyTargetPort                 string
-	Command                         string
-	Args                            string
-	KillCommand                     *string
-	LogFilePath                     string
-	Workdir                         string
-	HealthcheckCommand              string
-	HealthcheckIntervalMilliseconds uint
-	ShutDownAfterInactivitySeconds  uint
-	RestartOnConnectionFailure      bool
-	ConsiderStoppedOnProcessExit    *bool
-	OpenAiApi                       bool
-	OpenAiApiModels                 []string
-	ServiceUrl                      *ServiceUrlOption `json:"ServiceUrl,omitempty"`
-	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
+	Name                                 string
+	ListenPort                           string
+	ProxyTargetHost                      string
+	ProxyTargetPort                      string
+	Command                              string
+	Args                                 string
+	KillCommand                          *string
+	LogFilePath                          string
+	Workdir                              string
+	HealthcheckCommand                   string
+	StartupConnectionTimeoutMilliseconds *uint
+	HealthcheckIntervalMilliseconds      uint
+	ShutDownAfterInactivitySeconds       uint
+	RestartOnConnectionFailure           bool
+	ConsiderStoppedOnProcessExit         *bool
+	OpenAiApi                            bool
+	OpenAiApiModels                      []string
+	ServiceUrl                           *ServiceUrlOption `json:"ServiceUrl,omitempty"`
+	ResourceRequirements                 map[string]int    `json:"ResourceRequirements"`
 }
 
 // UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl properly

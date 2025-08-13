@@ -576,7 +576,13 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
-	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, 120*time.Second)
+	var startupConnectionTimeout time.Duration
+	if serviceConfig.StartupConnectionTimeoutMilliseconds == nil {
+		startupConnectionTimeout = 120 * time.Second
+	} else {
+		startupConnectionTimeout = time.Duration(*serviceConfig.StartupConnectionTimeoutMilliseconds) * time.Millisecond
+	}
+	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, startupConnectionTimeout)
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}

@@ -548,10 +548,10 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	runningService := resourceManager.createRunningService(serviceConfig)
 
 	runningService.manageMutex.Lock()
-	defer runningService.manageMutex.Unlock()
 
 	if !reserveResources(serviceConfig.ResourceRequirements, serviceConfig.Name) {
 		delete(resourceManager.runningServices, serviceConfig.Name)
+		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)
 	}
 
@@ -559,6 +559,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	if cmd == nil {
 		releaseResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 		delete(resourceManager.runningServices, serviceConfig.Name)
+		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
 	runningService.cmd = cmd
@@ -570,19 +571,34 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	go monitorProcess(serviceConfig.Name, cmd.Process, runningService.exitWaitGroup)
 
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
-
-	performHealthCheck(serviceConfig)
-	log.Printf("[%s] Service started with pid %d", serviceConfig.Name, cmd.Process.Pid)
-	if interrupted {
-		return nil, fmt.Errorf("interrupt signal was received")
-	}
 	var startupConnectionTimeout time.Duration
 	if serviceConfig.StartupConnectionTimeoutMilliseconds == nil {
 		startupConnectionTimeout = 120 * time.Second
 	} else {
 		startupConnectionTimeout = time.Duration(*serviceConfig.StartupConnectionTimeoutMilliseconds) * time.Millisecond
 	}
-	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, startupConnectionTimeout)
+	giveUpTime := time.Now().Add(startupConnectionTimeout)
+	err := performHealthCheck(serviceConfig, startupConnectionTimeout)
+	if err != nil {
+		log.Printf("[%s] Stopping service due to healthcheck error: %v", serviceConfig.Name, err)
+		runningService.manageMutex.Unlock()
+		stopService(serviceConfig)
+		return nil, fmt.Errorf("healthcheck failed: %w", err)
+	}
+	log.Printf("[%s] Service started with pid %d", serviceConfig.Name, cmd.Process.Pid)
+	if interrupted {
+		return nil, fmt.Errorf("interrupt signal was received")
+	}
+
+	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, time.Until(giveUpTime))
+	if serviceConnection == nil {
+		log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+		runningService.manageMutex.Unlock()
+		stopService(serviceConfig)
+		return nil, fmt.Errorf("failed to connect to service")
+	}
+
+	defer runningService.manageMutex.Unlock()
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
@@ -609,32 +625,73 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 	return serviceConnection, nil
 }
-
-func performHealthCheck(serviceConfig ServiceConfig) {
+func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) error {
 	if serviceConfig.HealthcheckCommand == "" {
-		return
+		return nil
 	}
 
 	log.Printf("[%s] Running healthcheck command \"%s\"", serviceConfig.Name, serviceConfig.HealthcheckCommand)
+
+	totalTimeoutDeadlineTime := time.Now().Add(timeout)
+	sleepDuration := time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond
+
 	for {
 		if interrupted {
-			return
+			return errors.New("interrupt signal was received")
 		}
-		cmd := exec.Command("sh", "-c", serviceConfig.HealthcheckCommand)
-		err := cmd.Run()
 
-		if err == nil {
+		remainingUntilDeadlineDuration := time.Until(totalTimeoutDeadlineTime)
+		if remainingUntilDeadlineDuration <= 0 {
+			return fmt.Errorf("healthcheck timed out after %s", timeout)
+		}
+
+		cmd := exec.Command("sh", "-c", serviceConfig.HealthcheckCommand)
+		if err := cmd.Start(); err != nil {
+			log.Printf("[%s] Failed to start healthcheck command \"%s\": %v", serviceConfig.Name, serviceConfig.HealthcheckCommand, err)
+			return fmt.Errorf("failed to start healthcheck command \"%s\": %w", serviceConfig.HealthcheckCommand, err)
+		}
+
+		waitResultChan := make(chan error, 1)
+		go func() { waitResultChan <- cmd.Wait() }()
+
+		var waitErr error
+		select {
+		case waitErr = <-waitResultChan:
+			// finished within the remaining time
+		case <-time.After(remainingUntilDeadlineDuration):
+			_ = cmd.Process.Kill()
+			<-waitResultChan
+			return fmt.Errorf("starting healthcheck command timed out after %s", remainingUntilDeadlineDuration)
+		}
+
+		if waitErr == nil {
 			log.Printf("[%s] Healthcheck \"%s\" returned exit code 0, healthcheck completed", serviceConfig.Name, serviceConfig.HealthcheckCommand)
-			break
-		} else {
-			log.Printf(
-				"[%s] Healthcheck \"%s\" returned exit code %d, trying again in %dms",
-				serviceConfig.Name,
-				serviceConfig.HealthcheckCommand,
-				cmd.ProcessState.ExitCode(),
+			return nil
+		}
+
+		exitCode := -1
+		if exitError, ok := waitErr.(*exec.ExitError); ok {
+			exitCode = exitError.ExitCode()
+		}
+
+		log.Printf(
+			"[%s] Healthcheck \"%s\" returned exit code %d, trying again in %dms",
+			serviceConfig.Name,
+			serviceConfig.HealthcheckCommand,
+			exitCode,
+			serviceConfig.HealthcheckIntervalMilliseconds,
+		)
+
+		remainingUntilDeadlineDuration = time.Until(totalTimeoutDeadlineTime)
+		if sleepDuration > remainingUntilDeadlineDuration {
+			return fmt.Errorf(
+				"healthcheck timed out, not starting another healthcheck command due to less time than %dms left out of %s",
 				serviceConfig.HealthcheckIntervalMilliseconds,
+				timeout,
 			)
-			time.Sleep(time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond)
+		}
+		if sleepDuration > 0 {
+			time.Sleep(sleepDuration)
 		}
 	}
 }

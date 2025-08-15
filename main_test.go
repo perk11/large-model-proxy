@@ -1478,7 +1478,7 @@ func TestAppScenarios(test *testing.T) {
 		}, {
 			Name: "startup-timeout-cleanup",
 			GetConfig: func(t *testing.T, testName string) Config {
-				timeoutMs := uint(5000)
+				timeoutMs := uint(3000)
 				return Config{
 					ResourcesAvailable: map[string]int{"CPU": 2},
 					ManagementApi:      ManagementApi{ListenPort: "2063"},
@@ -1500,7 +1500,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetHost:            "localhost",
 							ProxyTargetPort:            "12062",
 							Command:                    "./test-server/test-server",
-							Args:                       "-p 12062 -sleep-before-listening 10s",
+							Args:                       "-p 12062 -sleep-before-listening 10s -healthcheck-port 2066",
 							StartupTimeoutMilliseconds: &timeoutMs,
 							ResourceRequirements:       map[string]int{"CPU": 1},
 						},
@@ -1513,6 +1513,7 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:2062",
 				"localhost:12062",
 				"localhost:2063",
+				"localhost:2066",
 			},
 			TestFunc: func(t *testing.T) {
 				testStartupTimeoutCleansResourcesAndClosesClientConnections(
@@ -1521,6 +1522,7 @@ func TestAppScenarios(test *testing.T) {
 					"localhost:2061",
 					"localhost:2062",
 					"localhost:12062",
+					"localhost:2066",
 					"localhost:2063",
 				)
 			},
@@ -1713,6 +1715,7 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	fastServiceAddress string,
 	slowFailServiceAddress string,
 	slowFailDirectAddress string,
+	slowFailHealthcheckAddress string,
 	managementApiAddress string,
 ) {
 	assertPortsAreClosed(t, []string{slowFailDirectAddress})
@@ -1743,10 +1746,7 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Fatalf("failed to connect to slow-fail service at %s: %v", slowFailServiceAddress, err)
 	}
 	defer func() { _ = slowConn.Close() }()
-	assertPortsAreClosed(t, []string{slowFailDirectAddress})
-
-	_ = slowConn.SetReadDeadline(time.Now().Add(8 * time.Second))
-	assertPortsAreClosed(t, []string{slowFailDirectAddress})
+	assertPortsAreClosed(t, []string{slowFailDirectAddress, slowFailHealthcheckAddress})
 
 	buf := make([]byte, 64)
 	n, readErr := slowConn.Read(buf)
@@ -1759,4 +1759,15 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	verifyServiceStatus(t, status, testName+"_fast-start", false, map[string]int{"CPU": 0})
 	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 0})
+	assertPortsAreClosed(t, []string{slowFailDirectAddress, slowFailHealthcheckAddress})
+	go func() {
+		slowConn, _ := net.Dial("tcp", slowFailServiceAddress)
+		_ = slowConn.Close()
+	}()
+	time.Sleep(500 * time.Millisecond)
+	err = checkPortClosed(slowFailHealthcheckAddress)
+	if err == nil {
+		t.Errorf("expected slow-fail service to be starting with healtcheck working")
+	}
+	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
 }

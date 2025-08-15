@@ -633,7 +633,12 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 	log.Printf("[%s] Running healthcheck command \"%s\"", serviceConfig.Name, serviceConfig.HealthcheckCommand)
 
 	totalTimeoutDeadlineTime := time.Now().Add(timeout)
-	sleepDuration := time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond
+	var sleepDuration time.Duration
+	if serviceConfig.HealthcheckIntervalMilliseconds == 0 {
+		sleepDuration = 100 * time.Millisecond
+	} else {
+		sleepDuration = time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond
+	}
 
 	for {
 		if interrupted {
@@ -675,18 +680,18 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 		}
 
 		log.Printf(
-			"[%s] Healthcheck \"%s\" returned exit code %d, trying again in %dms",
+			"[%s] Healthcheck \"%s\" returned exit code %d, trying again in %s",
 			serviceConfig.Name,
 			serviceConfig.HealthcheckCommand,
 			exitCode,
-			serviceConfig.HealthcheckIntervalMilliseconds,
+			sleepDuration,
 		)
 
 		remainingUntilDeadlineDuration = time.Until(totalTimeoutDeadlineTime)
 		if sleepDuration > remainingUntilDeadlineDuration {
 			return fmt.Errorf(
 				"healthcheck timed out, not starting another healthcheck command due to less time than %dms left out of %s",
-				serviceConfig.HealthcheckIntervalMilliseconds,
+				sleepDuration,
 				timeout,
 			)
 		}

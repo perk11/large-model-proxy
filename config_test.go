@@ -713,7 +713,7 @@ func TestConfigShouldExitIfDefaultConfigHasInvalidSyntax(t *testing.T) {
 		t.Fatalf("Expected error to contain 'large-model-proxy exited prematurely with error', got: %v", err)
 	}
 }
-func TestNegativeStartupConnectionTimeoutMilliseconds(t *testing.T) {
+func TestNegativeStartupTimeoutMilliseconds(t *testing.T) {
 	t.Parallel()
 	_, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": { "RAM": 10000 },
@@ -722,7 +722,7 @@ func TestNegativeStartupConnectionTimeoutMilliseconds(t *testing.T) {
 				"Name": "svc",
 				"ListenPort": "8080",
 				"Command": "/bin/echo",
-				"StartupConnectionTimeoutMilliseconds": -5
+				"StartupTimeoutMilliseconds": -5
 			}
 		]
 	}`)
@@ -731,7 +731,7 @@ func TestNegativeStartupConnectionTimeoutMilliseconds(t *testing.T) {
 	})
 }
 
-func TestStartupConnectionTimeoutMillisecondsValueIsParsed(t *testing.T) {
+func TestStartupTimeoutMillisecondsValueIsParsed(t *testing.T) {
 	t.Parallel()
 	cfg, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": { "RAM": 10000 },
@@ -740,14 +740,14 @@ func TestStartupConnectionTimeoutMillisecondsValueIsParsed(t *testing.T) {
 				"Name": "svc",
 				"ListenPort": "8080",
 				"Command": "/bin/echo",
-				"StartupConnectionTimeoutMilliseconds": 1500
+				"StartupTimeoutMilliseconds": 1500
 			}
 		]
 	}`)
 	if err != nil {
 		t.Fatalf("did not expect an error but got: %v", err)
 	}
-	if *cfg.Services[0].StartupConnectionTimeoutMilliseconds != 1500 {
-		t.Fatalf("expected StartupConnectionTimeoutMilliseconds to be 1500, got %d", cfg.Services[0].StartupConnectionTimeoutMilliseconds)
+	if *cfg.Services[0].StartupTimeoutMilliseconds != 1500 {
+		t.Fatalf("expected StartupTimeoutMilliseconds to be 1500, got %d", cfg.Services[0].StartupTimeoutMilliseconds)
 	}
 }

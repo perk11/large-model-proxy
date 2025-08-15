@@ -28,6 +28,26 @@ func testImplConnectOnly(test *testing.T, proxyAddress string) {
 	time.Sleep(1 * time.Second)
 }
 
+func testImplConnectWithTimeoutAssertFailure(test *testing.T, proxyAddress string, managementApiAddress string, timeout time.Duration, serviceName string, resourceName string) {
+	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
+
+	expectedFinishTime := time.Now().Add(timeout).Add(3 * time.Second)
+	con, _ := net.DialTimeout("tcp", proxyAddress, timeout)
+	defer func() {
+		_ = con.Close()
+	}()
+	sleepTime := expectedFinishTime.Sub(time.Now())
+	if sleepTime > 0 {
+		time.Sleep(sleepTime)
+	}
+
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
+}
+
 func testImplConnectTwo2ServersSimultaneouslyAssertBothAreRunning(test *testing.T, proxyOneAddress string, proxyTwoAddress string) {
 	pidOne := runReadPidCloseConnection(test, proxyOneAddress)
 	clientTwoConnectTime := time.Now()
@@ -883,6 +903,42 @@ func TestAppScenarios(test *testing.T) {
 			},
 		},
 		{
+			Name: "healthcheck-stuck-timeout",
+			GetConfig: func(t *testing.T, testName string) Config {
+				timeoutMs := uint(2000)
+				return Config{
+					ResourcesAvailable: map[string]int{"CPU": 1},
+					ManagementApi: ManagementApi{
+						ListenPort: "2065",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:                           "2064",
+							ProxyTargetHost:                      "localhost",
+							ProxyTargetPort:                      "12064",
+							Command:                              "./test-server/test-server",
+							Args:                                 "-p 12064 -startup-duration 24h",
+							HealthcheckCommand:                   "false",
+							HealthcheckIntervalMilliseconds:      200,
+							StartupConnectionTimeoutMilliseconds: &timeoutMs,
+							ResourceRequirements:                 map[string]int{"CPU": 1},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{"localhost:12064", "localhost:2065", "localhost:2064"},
+			TestFunc: func(t *testing.T) {
+				testImplConnectWithTimeoutAssertFailure(
+					t,
+					"localhost:2064",
+					"localhost:2065",
+					time.Duration(2000)*time.Millisecond,
+					"healthcheck-stuck-timeout_service0",
+					"CPU",
+				)
+			},
+		},
+		{
 			Name: "service-stuck-no-healthcheck",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
@@ -1419,6 +1475,55 @@ func TestAppScenarios(test *testing.T) {
 					false,
 				)
 			},
+		}, {
+			Name: "startup-timeout-cleanup",
+			GetConfig: func(t *testing.T, testName string) Config {
+				timeoutMs := uint(5000)
+				return Config{
+					ResourcesAvailable: map[string]int{"CPU": 2},
+					ManagementApi:      ManagementApi{ListenPort: "2063"},
+					Services: []ServiceConfig{
+						{
+							Name:                                 "fast-start",
+							ListenPort:                           "2061",
+							ProxyTargetHost:                      "localhost",
+							ProxyTargetPort:                      "12061",
+							Command:                              "./test-server/test-server",
+							Args:                                 "-p 12061 --sleep-after-writing-pid-duration 10s",
+							ShutDownAfterInactivitySeconds:       1,
+							StartupConnectionTimeoutMilliseconds: &timeoutMs,
+							ResourceRequirements:                 map[string]int{"CPU": 1},
+						},
+						{
+							Name:                                 "slow-start-fail",
+							ListenPort:                           "2062",
+							ProxyTargetHost:                      "localhost",
+							ProxyTargetPort:                      "12062",
+							Command:                              "./test-server/test-server",
+							Args:                                 "-p 12062 -sleep-before-listening 10s",
+							StartupConnectionTimeoutMilliseconds: &timeoutMs,
+							ResourceRequirements:                 map[string]int{"CPU": 1},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2061",
+				"localhost:12061",
+				"localhost:2062",
+				"localhost:12062",
+				"localhost:2063",
+			},
+			TestFunc: func(t *testing.T) {
+				testStartupTimeoutCleansResourcesAndClosesClientConnections(
+					t,
+					"startup-timeout-cleanup",
+					"localhost:2061",
+					"localhost:2062",
+					"localhost:12062",
+					"localhost:2063",
+				)
+			},
 		},
 	}
 
@@ -1600,4 +1705,58 @@ func testLogOutput(
 			assert.Equal(t, len(expectedLines), linesFound, "number lines in log file %s", logFileName)
 		}
 	}
+}
+
+func testStartupTimeoutCleansResourcesAndClosesClientConnections(
+	t *testing.T,
+	testName string,
+	fastServiceAddress string,
+	slowFailServiceAddress string,
+	slowFailDirectAddress string,
+	managementApiAddress string,
+) {
+	assertPortsAreClosed(t, []string{slowFailDirectAddress})
+
+	fastConn, err := net.Dial("tcp", fastServiceAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to fast service at %s: %v", fastServiceAddress, err)
+	}
+	defer func() { _ = fastConn.Close() }()
+
+	fastPid := readPidFromOpenConnection(t, fastConn)
+	if fastPid == 0 {
+		return
+	}
+	if !isProcessRunning(fastPid) {
+		t.Fatalf("fast-start service process %d is not running after reading PID", fastPid)
+	}
+	status := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, status, testName+"_fast-start", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 1})
+	err = fastConn.Close()
+	if err != nil {
+		t.Fatalf("failed to close connection to fast-start service at %s: %v", slowFailServiceAddress, err)
+	}
+	slowConn, err := net.Dial("tcp", slowFailServiceAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to slow-fail service at %s: %v", slowFailServiceAddress, err)
+	}
+	defer func() { _ = slowConn.Close() }()
+	assertPortsAreClosed(t, []string{slowFailDirectAddress})
+
+	_ = slowConn.SetReadDeadline(time.Now().Add(8 * time.Second))
+	assertPortsAreClosed(t, []string{slowFailDirectAddress})
+
+	buf := make([]byte, 64)
+	n, readErr := slowConn.Read(buf)
+	if readErr == nil || !errors.Is(readErr, io.EOF) {
+		t.Errorf("expected slow-fail client connection to be closed with EOF after startup timeout; got err=%v, bytesRead=%d, data=%q",
+			readErr, n, string(buf[:n]))
+	}
+
+	status = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, status, testName+"_fast-start", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 0})
 }

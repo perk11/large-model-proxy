@@ -448,7 +448,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 			clientConnection,
 			serviceConfig,
 			"client",
-			"failed to start service",
+			"failed to start service or connect to it",
 		)
 		return
 	}

@@ -573,7 +573,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 	var startupConnectionTimeout time.Duration
 	if serviceConfig.StartupTimeoutMilliseconds == nil {
-		startupConnectionTimeout = 120 * time.Second
+		startupConnectionTimeout = 10 * time.Minute
 	} else {
 		startupConnectionTimeout = time.Duration(*serviceConfig.StartupTimeoutMilliseconds) * time.Millisecond
 	}

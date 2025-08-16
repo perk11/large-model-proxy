@@ -148,7 +148,7 @@ Below is a breakdown of what this configuration does:
 4. The Stable Diffusion web UI is expected to use up to 3GB of VRAM and 30GB of RAM, while Gemma27B will use up to 20GB of VRAM and 3GB of RAM, Qwen2.5-7B-Instruct up to 18GB of VRAM and no RAM (for example's sake), and ComfyUI up to 20GB of VRAM and 16GB of RAM.
 5. Automatic1111, Gemma2, and ComfyUI logs will be in the `logs/` directory of the current dir, while Qwen logs will be in `/var/log/Qwen2.5-7B.log`.
 6. When ComfyUI is no longer in use, its container will be killed using the `docker kill comfyui` command. Other services will be terminated normally.
-7. `StartupTimeoutMilliseconds` in starting ComfyUI makes large-model-proxy wait up to 60 seconds before giving up and considering the ComfyUI startup failed (as opposed to the default value of 2 minutes).
+7. `StartupTimeoutMilliseconds` in starting ComfyUI makes large-model-proxy wait up to 60 seconds before giving up and considering the ComfyUI startup failed (as opposed to the default value of 10 minutes).
 8. Service URLs are configured as follows:
 
    - **Automatic1111**: Uses the default URL template (`DefaultServiceUrl`) which resolves to `http://localhost:7860/`

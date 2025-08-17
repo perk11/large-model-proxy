@@ -734,6 +734,27 @@ func testDyingProcesses(test *testing.T,
 	//verify that a service can restart after it died
 	runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
 }
+func testFailingToStartServiceIsCleaningUpResources(
+	test *testing.T,
+	proxyAddress string,
+	managementApiAddress string,
+	processName string,
+	resourceName string,
+) {
+	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
+
+	con, _ := net.DialTimeout("tcp", proxyAddress, time.Duration(3)*time.Second)
+	defer func() {
+		_ = con.Close()
+	}()
+
+	time.Sleep(2 * time.Second) // Give lmp time to clean up
+	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
+	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
+}
 func TestAppScenarios(test *testing.T) {
 	test.Parallel()
 	tests := []struct {
@@ -1276,6 +1297,78 @@ func TestAppScenarios(test *testing.T) {
 					"localhost:2037",
 					"localhost:12037",
 					"localhost:2035",
+				)
+			},
+		},
+		{
+			Name: "failed-to-start-process-exit-immediately",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]int{
+						"CPU": 1,
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2067",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:      "2068",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12068",
+							Command:         "exit",
+							Args:            "1",
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2067",
+			},
+			TestFunc: func(t *testing.T) {
+				testFailingToStartServiceIsCleaningUpResources(t,
+					"localhost:2068",
+					"localhost:2067",
+					"failed-to-start-process-exit-immediately_service0",
+					"CPU",
+				)
+			},
+		},
+		{
+			Name: "failed-to-start-process-exit-after-sleep",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]int{
+						"CPU": 1,
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2069",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:      "2070",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12070",
+							Command:         "sleep",
+							Args:            "1",
+							ResourceRequirements: map[string]int{
+								"CPU": 1,
+							},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2069",
+			},
+			TestFunc: func(t *testing.T) {
+				testFailingToStartServiceIsCleaningUpResources(t,
+					"localhost:2070",
+					"localhost:2069",
+					"failed-to-start-process-exit-after-sleep_service0",
+					"CPU",
 				)
 			},
 		},

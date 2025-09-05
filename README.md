@@ -150,7 +150,6 @@ Below is a breakdown of what this configuration does:
 6. When ComfyUI is no longer in use, its container will be killed using the `docker kill comfyui` command. Other services will be terminated normally.
 7. `StartupTimeoutMilliseconds` in starting ComfyUI makes large-model-proxy wait up to 60 seconds before giving up and considering the ComfyUI startup failed (as opposed to the default value of 10 minutes).
 8. Service URLs are configured as follows:
-
    - **Automatic1111**: Uses the default URL template (`DefaultServiceUrl`) which resolves to `http://localhost:7860/`
    - **Gemma27B**: Uses a custom static URL `http://gemma-proxy-server/` (no port templating)
    - **Qwen2.5-7B-Instruct**: Explicitly set to `null`, so no URL will be generated even though a default is available

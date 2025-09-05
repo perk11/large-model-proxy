@@ -1,7 +1,6 @@
 Package: large-model-proxy
 Version: $VERSION
 Architecture: amd64
-Depends: libc6 (>= 2.34)
 Maintainer: Konstantin Pereiaslov <perk11@perk11.info>
 Description: large-model-proxy is designed to make it easy to run multiple resource-heavy Large Models (LM)
  on the same machine with limited amount of VRAM/other resources. It listens on a dedicated port for each proxied LM,

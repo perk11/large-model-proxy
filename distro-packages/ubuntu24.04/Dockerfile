@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HOST_UID
@@ -14,6 +14,8 @@ RUN set -ex \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/*
 
-RUN useradd build -u $HOST_UID \
-    && mkdir -p /home/build \
-    && chown build:build /home/build
+# Use standard user 1000 to satisfy deb checks
+USER 1000:1000
+
+# Create host dir with correct permissions
+WORKDIR /host

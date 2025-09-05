@@ -1,7 +1,6 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG HOST_UID
 
 RUN set -ex \
     && apt-get update \

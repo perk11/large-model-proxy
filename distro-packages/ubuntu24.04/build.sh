@@ -15,4 +15,5 @@ cp large-model-proxy $BUILD_DIR/$TARGET_DIRECTORY/
 cp -r distro-packages/ubuntu24.04/DEBIAN $BUILD_DIR/
 
 sed -i "s/\$VERSION/$VERSION/g" $BUILD_DIR/DEBIAN/control
+sed -i "s/Architecture: amd64/Architecture: $ARCH/g" $BUILD_DIR/DEBIAN/control
 dpkg-deb --build --root-owner-group $BUILD_DIR

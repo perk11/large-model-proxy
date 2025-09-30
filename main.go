@@ -753,17 +753,15 @@ func tryConnectingUntilTimeoutOrProcessExit(
 	}()
 
 	for time.Now().Before(deadline) {
-		if interrupted {
-			return nil, true
-		}
-
 		select {
 		case <-processExitedChannel:
 			log.Printf("[%s] Process terminated while trying to connect to %s:%s", serviceName, serviceHost, servicePort)
 			return nil, true
 		default:
 		}
-
+		if interrupted {
+			return nil, false
+		}
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), 1*time.Second)
 		if err == nil {
 			return conn, false

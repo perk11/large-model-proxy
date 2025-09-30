@@ -759,7 +759,7 @@ func tryConnectingUntilTimeoutOrProcessExit(
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while waiting to connect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
+			log.Printf("[%s] Process terminated while trying to connect to %s:%s", serviceName, serviceHost, servicePort)
 			return nil, true
 		default:
 		}
@@ -771,7 +771,7 @@ func tryConnectingUntilTimeoutOrProcessExit(
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while trying to connect to %s:%s", serviceName, serviceHost, servicePort)
+			log.Printf("[%s] Process terminated while trying to connect to %s:%s", serviceName, serviceHost, servicePort)
 			return nil, true
 		case <-time.After(sleepDuration):
 		}

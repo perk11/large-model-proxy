@@ -448,7 +448,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 			clientConnection,
 			serviceConfig,
 			"client",
-			"failed to start service or connect to it",
+			"failed to start a service and/or connect to it",
 		)
 		return
 	}
@@ -590,7 +590,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 
-	var serviceConnection = tryConnectingUntilTimeoutOrProcessExit(
+	var serviceConnection, processExited = tryConnectingUntilTimeoutOrProcessExit(
 		serviceConfig.ProxyTargetHost,
 		serviceConfig.ProxyTargetPort,
 		serviceConfig.Name,
@@ -598,9 +598,14 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		runningService.exitWaitGroup,
 	)
 	if serviceConnection == nil {
-		log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+		if !processExited {
+			log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+		}
 		runningService.manageMutex.Unlock()
-		stopService(serviceConfig)
+		if !processExited {
+			stopService(serviceConfig)
+		}
+
 		return nil, fmt.Errorf("failed to connect to service")
 	}
 
@@ -729,7 +734,13 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 	}
 	return serviceConn
 }
-func tryConnectingUntilTimeoutOrProcessExit(serviceHost string, servicePort string, serviceName string, timeout time.Duration, processExitWaitGroup *sync.WaitGroup) net.Conn {
+func tryConnectingUntilTimeoutOrProcessExit(
+	serviceHost string,
+	servicePort string,
+	serviceName string,
+	timeout time.Duration,
+	processExitWaitGroup *sync.WaitGroup,
+) (net.Conn, bool) {
 	deadline := time.Now().Add(timeout)
 
 	sleepDuration := 1 * time.Microsecond
@@ -743,25 +754,25 @@ func tryConnectingUntilTimeoutOrProcessExit(serviceHost string, servicePort stri
 
 	for time.Now().Before(deadline) {
 		if interrupted {
-			return nil
+			return nil, true
 		}
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while waiting to connect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
-			return nil
+			log.Printf("[%s] Process exited while trying to establish connection to %s:%s", serviceName, serviceHost, servicePort)
+			return nil, true
 		default:
 		}
 
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), 1*time.Second)
 		if err == nil {
-			return conn
+			return conn, false
 		}
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while waiting to reconnect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
-			return nil
+			log.Printf("[%s] Process exited while trying to establish connection to %s:%s", serviceName, serviceHost, servicePort)
+			return nil, true
 		case <-time.After(sleepDuration):
 		}
 
@@ -774,7 +785,7 @@ func tryConnectingUntilTimeoutOrProcessExit(serviceHost string, servicePort stri
 
 	log.Printf("[%s] Error: failed to connect to %s:%s: All connection attempts failed after trying for %s",
 		serviceName, serviceHost, servicePort, timeout)
-	return nil
+	return nil, false
 }
 
 func reserveResources(resourceRequirements map[string]int, requestingService string) bool {

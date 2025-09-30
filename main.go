@@ -448,7 +448,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 			clientConnection,
 			serviceConfig,
 			"client",
-			"failed to start a service and/or connect to it",
+			"failed to establish a connection to the service",
 		)
 		return
 	}
@@ -598,14 +598,14 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		runningService.exitWaitGroup,
 	)
 	if serviceConnection == nil {
-		if !processExited {
-			log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+		if processExited {
+			runningService.manageMutex.Unlock()
+			return nil, fmt.Errorf("process terminated before a connection to the service could be established")
 		}
+		//This log has to happen before the mutex unlock to maintain a logical order of logs
+		log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
 		runningService.manageMutex.Unlock()
-		if !processExited {
-			stopService(serviceConfig)
-		}
-
+		stopService(serviceConfig)
 		return nil, fmt.Errorf("failed to connect to service")
 	}
 
@@ -759,7 +759,7 @@ func tryConnectingUntilTimeoutOrProcessExit(
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while trying to establish connection to %s:%s", serviceName, serviceHost, servicePort)
+			log.Printf("[%s] Process exited while waiting to connect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
 			return nil, true
 		default:
 		}
@@ -771,7 +771,7 @@ func tryConnectingUntilTimeoutOrProcessExit(
 
 		select {
 		case <-processExitedChannel:
-			log.Printf("[%s] Process exited while trying to establish connection to %s:%s", serviceName, serviceHost, servicePort)
+			log.Printf("[%s] Process exited while trying to connect to %s:%s", serviceName, serviceHost, servicePort)
 			return nil, true
 		case <-time.After(sleepDuration):
 		}

@@ -750,7 +750,6 @@ func testFailingToStartServiceIsCleaningUpResources(
 		_ = con.Close()
 	}()
 	assertRemoteClosedWithin(test, con, 2*time.Second)
-	time.Sleep(2 * time.Second) // Give lmp time to clean up
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
 	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})

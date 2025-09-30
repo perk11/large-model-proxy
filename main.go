@@ -794,7 +794,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	for resource, amount := range resourceRequirements {
 		resourceList = append(resourceList, fmt.Sprintf("%s: %d", resource, amount))
 	}
-	log.Printf("[%s] Reserving %s", requestingService, strings.Join(resourceList, ", "))
+	log.Printf("[%s] Attempting to reserve %s", requestingService, strings.Join(resourceList, ", "))
 
 	var missingResource *string = nil
 	var maxWaitTime time.Duration

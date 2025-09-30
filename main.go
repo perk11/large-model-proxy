@@ -805,9 +805,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	}
 	startTime := time.Now()
 	var iteration = 0
+	const logOutputIterationFrequency = 60
 	for time.Since(startTime) < maxWaitTime {
 		resourceManager.serviceMutex.Lock()
-		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, iteration%60 == 0)
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, iteration%logOutputIterationFrequency == 0)
 		iteration++
 		if missingResource == nil {
 			for resource, amount := range resourceRequirements {
@@ -823,7 +824,13 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			stopService(*findServiceConfigByName(earliestLastUsedService))
 			continue
 		}
-		log.Printf("[%s] Failed to find a service to stop, checking again in 1 second", requestingService)
+
+		if iteration == 1 {
+			log.Printf("[%s] Failed to find a service to stop; will check every 1s.", requestingService)
+		} else if iteration%logOutputIterationFrequency == 0 {
+			log.Printf("[%s] Failed to find a service to stop; continuing to check every 1s.", requestingService)
+		}
+
 		time.Sleep(1 * time.Second)
 	}
 

@@ -984,19 +984,14 @@ func runServiceCommand(serviceConfig ServiceConfig) (
 		log.Printf("[%s] Failed to create log directory %s: %v", serviceConfig.Name, logDir, err)
 		return nil, nil, nil
 	}
-	log.Printf("[%s] Starting \"%s %s\", log file: %s, workdir: %s",
-		serviceConfig.Name,
-		serviceConfig.Command,
-		serviceConfig.Args,
-		serviceConfig.LogFilePath,
-		serviceConfig.Workdir,
-	)
 
 	args, err := shlex.Split(serviceConfig.Args)
 	if err != nil {
 		log.Printf("[%s] Failed to parse service arguments %s: %v", serviceConfig.Name, serviceConfig.Args, err)
 		return nil, nil, nil
 	}
+	logFormatString, logArguments := produceStartCommandLogString(serviceConfig)
+	log.Printf(logFormatString, logArguments...)
 
 	cmd := exec.Command(serviceConfig.Command, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -1034,6 +1029,29 @@ func runServiceCommand(serviceConfig ServiceConfig) (
 		return nil, nil, nil
 	}
 	return cmd, stdoutSLW, stderrSLW
+}
+
+func produceStartCommandLogString(serviceConfig ServiceConfig) (string, []any) {
+	logFormatString := "[%s] Starting \"%s"
+	logArguments := []any{
+		serviceConfig.Name,
+		serviceConfig.Command,
+	}
+	if serviceConfig.Args != "" {
+		logFormatString += " %s"
+		logArguments = append(logArguments, serviceConfig.Args)
+	}
+	logFormatString += "\""
+	if serviceConfig.LogFilePath != "" {
+		logFormatString += ", log file: %s"
+		logArguments = append(logArguments, serviceConfig.LogFilePath)
+	}
+
+	if serviceConfig.Workdir != "" {
+		logFormatString += ", workdir: %s"
+		logArguments = append(logArguments, serviceConfig.Workdir)
+	}
+	return logFormatString, logArguments
 }
 
 func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {

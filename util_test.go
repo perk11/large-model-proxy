@@ -530,3 +530,37 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 		}
 	}
 }
+
+func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Duration) {
+	t.Helper()
+
+	absoluteDeadline := time.Now().Add(within)
+	singleByteBuffer := make([]byte, 1)
+
+	for time.Now().Before(absoluteDeadline) {
+		_ = connection.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		bytesRead, readErr := connection.Read(singleByteBuffer)
+
+		if readErr == nil {
+			if bytesRead > 0 {
+				continue
+			}
+			continue
+		}
+
+		if netErr, ok := readErr.(net.Error); ok && netErr.Timeout() {
+			continue
+		}
+
+		if errors.Is(readErr, io.EOF) || isConnectionReset(readErr) {
+			return
+		}
+
+		t.Fatalf("unexpected read error while waiting for remote close: %v", readErr)
+	}
+
+	t.Fatalf("connection to %s is still open after %s", connection.RemoteAddr(), within)
+}
+func isConnectionReset(err error) bool {
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
+}

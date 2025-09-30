@@ -590,7 +590,13 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 
-	var serviceConnection = connectWithWaiting(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, serviceConfig.Name, time.Until(giveUpTime))
+	var serviceConnection = tryConnectingUntilTimeoutOrProcessExit(
+		serviceConfig.ProxyTargetHost,
+		serviceConfig.ProxyTargetPort,
+		serviceConfig.Name,
+		time.Until(giveUpTime),
+		runningService.exitWaitGroup,
+	)
 	if serviceConnection == nil {
 		log.Printf("[%s] Failed to connect to %s:%s, stopping the service", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
 		runningService.manageMutex.Unlock()
@@ -723,15 +729,28 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 	}
 	return serviceConn
 }
-func connectWithWaiting(serviceHost string, servicePort string, serviceName string, timeout time.Duration) net.Conn {
+func tryConnectingUntilTimeoutOrProcessExit(serviceHost string, servicePort string, serviceName string, timeout time.Duration, processExitWaitGroup *sync.WaitGroup) net.Conn {
 	deadline := time.Now().Add(timeout)
 
 	sleepDuration := 1 * time.Microsecond
 	maxSleep := 100 * time.Millisecond
 
+	processExitedChannel := make(chan struct{})
+	go func() {
+		processExitWaitGroup.Wait()
+		close(processExitedChannel)
+	}()
+
 	for time.Now().Before(deadline) {
 		if interrupted {
 			return nil
+		}
+
+		select {
+		case <-processExitedChannel:
+			log.Printf("[%s] Process exited while waiting to connect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
+			return nil
+		default:
 		}
 
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), 1*time.Second)
@@ -739,7 +758,12 @@ func connectWithWaiting(serviceHost string, servicePort string, serviceName stri
 			return conn
 		}
 
-		time.Sleep(sleepDuration)
+		select {
+		case <-processExitedChannel:
+			log.Printf("[%s] Process exited while waiting to reconnect to %s:%s, aborting early", serviceName, serviceHost, servicePort)
+			return nil
+		case <-time.After(sleepDuration):
+		}
 
 		// Exponentially increase up to the maximum.
 		sleepDuration *= 2

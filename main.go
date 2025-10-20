@@ -278,7 +278,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		log.Printf("[LLM Request API] %s request to unsupported URL: %s", request.Method, request.RequestURI)
 		http.Error(
 			responseWriter,
-			fmt.Sprintf("%s %s is not supoprted by large-model-proxy", request.Method, request.RequestURI),
+			fmt.Sprintf("%s %s is not supported by large-model-proxy", request.Method, request.RequestURI),
 			http.StatusNotFound,
 		)
 		resetConnectionBuffer(request)

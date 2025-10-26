@@ -97,6 +97,66 @@ func TestMultipleServicesSamePort(t *testing.T) {
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"multiple services listening on port 8080", "service1", "service2"})
 }
+func TestServiceAndOpenAiAPiSamePort(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000,
+		},
+	    "OpenAiApi": {
+	        "ListenPort": "8080",
+	    },
+		"Services": [
+			{
+				"Name": "service1",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+			},
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"multiple services listening on port 8080", "Open AI API", "service1"})
+}
+func TestServiceAndManagementAPiSamePort(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000,
+		},
+	    "ManagementApi": {
+	        "ListenPort": "8080",
+	    },
+		"Services": [
+			{
+				"Name": "service1",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+			},
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"multiple services listening on port 8080", "service1", "Management API"})
+}
+func TestServiceOpenAiApiAndManagementApiSamePort(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000,
+		},
+	    "ManagementApi": {
+	        "ListenPort": "8080",
+	    },
+	    "OpenAiAPi": {
+	        "ListenPort": "8080",
+	    },
+		"Services": [
+			{
+				"Name": "service1",
+				"ListenPort": "7071",
+				"Command": "/bin/echo",
+			},
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"multiple services listening on port 8080", "Open AI API", "Management API"})
+}
 
 func TestResourceNotInResourcesAvailable(t *testing.T) {
 	t.Parallel()

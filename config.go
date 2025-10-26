@@ -247,6 +247,12 @@ func validateConfig(cfg Config) error {
 			portSet[svc.ListenPort] = append(portSet[svc.ListenPort], svc.Name)
 		}
 	}
+	if cfg.OpenAiApi.ListenPort != "" {
+		portSet[cfg.OpenAiApi.ListenPort] = append(portSet[cfg.OpenAiApi.ListenPort], "Open AI API")
+	}
+	if cfg.ManagementApi.ListenPort != "" {
+		portSet[cfg.ManagementApi.ListenPort] = append(portSet[cfg.ManagementApi.ListenPort], "Management API")
+	}
 	for p, svcs := range portSet {
 		if len(svcs) > 1 {
 			issues = append(issues,

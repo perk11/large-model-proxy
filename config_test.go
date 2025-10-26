@@ -136,7 +136,7 @@ func TestHealthcheckIntervalNoCommand(t *testing.T) {
 	checkExpectedErrorMessages(t, err, []string{"has HealthcheckIntervalMilliseconds set but no HealthcheckCommand"})
 }
 
-func TestOpenAiApiNoListenPort(t *testing.T) {
+func TestNoOpenAiApiNoListenPort(t *testing.T) {
 	t.Parallel()
 	_, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": {
@@ -151,6 +151,30 @@ func TestOpenAiApiNoListenPort(t *testing.T) {
 		]
 	}`)
 	checkExpectedErrorMessages(t, err, []string{"does not specify ListenPort", "serviceOpenAI"})
+}
+
+func TestOpenAiApiNoListenPortMultipleServices(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {
+			"RAM": 10000,
+		},
+		"Services": [
+			{
+				"Name": "serviceOpenAI",
+				"OpenAiApi": true,
+				"Command": "/bin/echo",
+			},
+			{
+				"Name": "serviceOpenAI-2",
+				"OpenAiApi": true,
+				"Command": "/bin/echo",
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
 }
 
 func TestEmptyServiceName(t *testing.T) {

@@ -243,7 +243,9 @@ func validateConfig(cfg Config) error {
 
 	portSet := make(map[string][]string) // port -> list of service names
 	for _, svc := range cfg.Services {
-		portSet[svc.ListenPort] = append(portSet[svc.ListenPort], svc.Name)
+		if svc.ListenPort != "" {
+			portSet[svc.ListenPort] = append(portSet[svc.ListenPort], svc.Name)
+		}
 	}
 	for p, svcs := range portSet {
 		if len(svcs) > 1 {

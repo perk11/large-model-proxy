@@ -127,6 +127,7 @@ func modelsRequestExpectingSuccess(test *testing.T, url string, client *http.Cli
 }
 
 func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []string) {
+	test.Helper()
 	for _, address := range servicesToCheckForClosedPorts {
 		err := checkPortClosed(address)
 		if err != nil {

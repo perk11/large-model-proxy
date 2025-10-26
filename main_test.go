@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"syscall"
@@ -380,73 +381,73 @@ func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 }
 
 func getModelByIDRequestExpectingSuccess(test *testing.T, baseAddress string, modelID string, httpClient *http.Client) {
-	url := fmt.Sprintf("%s/v1/models/%s", strings.TrimRight(baseAddress, "/"), modelID)
+	requestedEndpointUrl := fmt.Sprintf("%s/v1/models/%s", strings.TrimRight(baseAddress, "/"), url.QueryEscape(modelID))
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, requestedEndpointUrl, nil)
 	if err != nil {
-		test.Fatalf("Failed to create GET %s: %v", url, err)
+		test.Fatalf("Failed to create GET %s: %v", requestedEndpointUrl, err)
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		test.Fatalf("GET %s failed: %v", url, err)
+		test.Errorf("GET %s failed: %v", requestedEndpointUrl, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		test.Fatalf("GET %s: expected 200, got %d", url, resp.StatusCode)
+		test.Errorf("GET %s: expected 200, got %d", requestedEndpointUrl, resp.StatusCode)
 	}
 	if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
-		test.Fatalf("GET %s: expected application/json, got %q", url, contentType)
+		test.Errorf("GET %s: expected application/json, got %q", requestedEndpointUrl, contentType)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		test.Fatalf("GET %s: failed to read body: %v", url, err)
+		test.Errorf("GET %s: failed to read body: %v", requestedEndpointUrl, err)
 	}
 
 	var decoded map[string]any
 	if err := json.Unmarshal(bodyBytes, &decoded); err != nil {
-		test.Fatalf("GET %s: failed to unmarshal JSON: %v\nBody: %s", url, err, string(bodyBytes))
+		test.Errorf("GET %s: failed to unmarshal JSON: %v\nBody: %s", requestedEndpointUrl, err, string(bodyBytes))
 	}
 
 	rawID, ok := decoded["id"]
 	if !ok {
-		test.Errorf("GET %s: JSON missing 'id' field", url)
+		test.Errorf("GET %s: JSON missing 'id' field", requestedEndpointUrl)
 	}
 	idString, ok := rawID.(string)
 	if !ok {
-		test.Errorf("GET %s: 'id' is not a string: %#v", url, rawID)
+		test.Errorf("GET %s: 'id' is not a string: %#v", requestedEndpointUrl, rawID)
 	}
 	if idString != modelID {
-		test.Errorf("GET %s: id mismatch, expected %q, got %q", url, modelID, idString)
+		test.Errorf("GET %s: id mismatch, expected %q, got %q", requestedEndpointUrl, modelID, idString)
 	}
 
 	if rawObject, ok := decoded["object"]; ok {
 		if objectString, ok := rawObject.(string); !ok || objectString != "model" {
-			test.Errorf("GET %s: unexpected 'object' value: %#v", url, rawObject)
+			test.Errorf("GET %s: unexpected 'object' value: %#v", requestedEndpointUrl, rawObject)
 		}
 	}
 	if rawOwnedBy, ok := decoded["owned_by"]; ok {
 		if objectString, ok := rawOwnedBy.(string); !ok || objectString != "large-model-proxy" {
-			test.Errorf("GET %s: unexpected 'owned_by' value: %#v", url, rawOwnedBy)
+			test.Errorf("GET %s: unexpected 'owned_by' value: %#v", requestedEndpointUrl, rawOwnedBy)
 		}
 	}
 
 	_, hasCreated := decoded["created"]
 	if !hasCreated {
-		test.Errorf("GET %s: JSON missing 'created' field", url)
+		test.Errorf("GET %s: JSON missing 'created' field", requestedEndpointUrl)
 	} else {
 		var strict struct {
 			Created int64 `json:"created"`
 		}
 		if err := json.Unmarshal(bodyBytes, &strict); err != nil {
-			test.Errorf("GET %s: 'created' must be integer Unix seconds: %v\nBody: %s", url, err, string(bodyBytes))
+			test.Errorf("GET %s: 'created' must be integer Unix seconds: %v\nBody: %s", requestedEndpointUrl, err, string(bodyBytes))
 		} else {
 			createdTime := time.Unix(strict.Created, 0)
 			now := time.Now()
 			if createdTime.After(now.Add(25 * time.Hour)) {
-				test.Errorf("GET %s: 'created' %s is more than 25h in the future (now=%s)", url, createdTime.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
+				test.Errorf("GET %s: 'created' %s is more than 25h in the future (now=%s)", requestedEndpointUrl, createdTime.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
 			}
 		}
 	}
@@ -1293,8 +1294,7 @@ func TestAppScenarios(test *testing.T) {
 			Name: "openai-api-models-by-id",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					OpenAiApi:                      OpenAiApi{ListenPort: "2071"},
-					ShutDownAfterInactivitySeconds: 3,
+					OpenAiApi: OpenAiApi{ListenPort: "2071"},
 					Services: []ServiceConfig{
 						{
 							Name:            "openai-api-1",
@@ -1312,7 +1312,7 @@ func TestAppScenarios(test *testing.T) {
 							Command:         "./test-server/test-server",
 							Args:            "-p 12073",
 							OpenAiApi:       true,
-							OpenAiApiModels: []string{"fizz", "buzz"},
+							OpenAiApiModels: []string{"fizz", "buzz", "$-_.+!*'(),проверка"},
 						},
 						{
 							Name:            "non-llm-1",
@@ -1322,6 +1322,15 @@ func TestAppScenarios(test *testing.T) {
 							Command:         "./test-server/test-server",
 							Args:            "-p 12074",
 							OpenAiApi:       false,
+						},
+						{
+							Name:            "$-_.+!*'(),проверка-2/",
+							ListenPort:      "2075",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12075",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12075",
+							OpenAiApi:       true,
 						},
 					},
 				}
@@ -1340,10 +1349,13 @@ func TestAppScenarios(test *testing.T) {
 					"openai-api-models-by-id_openai-api-1",
 					"fizz",
 					"buzz",
+					"$-_.+!*'(),проверка",
+					"openai-api-models-by-id_$-_.+!*'(),проверка-2/",
 				}
 				missingModelIDs := []string{
 					"totally-non-existent-model",
 					"non-llm-1",
+					"$-_.+!*'(),проверка-2",
 				}
 				testOpenAiApiModelsByID(t, "http://localhost:2071", expectedModelIDs, missingModelIDs)
 			},

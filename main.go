@@ -187,12 +187,12 @@ func findServiceConfigByName(serviceName string) *ServiceConfig {
 	panic(fmt.Sprintf("Failed to find service config for service %s", serviceName))
 }
 
-func createOpenAiApiModel(name string) OpenAiApiModel {
+func createOpenAiApiModel(name string, createdTime int64) OpenAiApiModel {
 	return OpenAiApiModel{
 		ID:      name,
 		Object:  "model",
 		OwnedBy: "large-model-proxy",
-		Created: time.Now().Unix(),
+		Created: createdTime,
 	}
 }
 
@@ -235,6 +235,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	mux := http.NewServeMux()
 	modelToServiceMap := make(map[string]ServiceConfig)
 	models := make([]OpenAiApiModel, 0)
+	startTime := time.Now().Unix()
 	for _, service := range services {
 		if !service.OpenAiApi {
 			continue
@@ -242,11 +243,11 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		// If the service doesn't define specific model names, assume the service name is the model
 		if service.OpenAiApiModels == nil || len(service.OpenAiApiModels) == 0 {
 			modelToServiceMap[service.Name] = service
-			models = append(models, createOpenAiApiModel(service.Name))
+			models = append(models, createOpenAiApiModel(service.Name, startTime))
 		} else {
 			for _, model := range service.OpenAiApiModels {
 				modelToServiceMap[model] = service
-				models = append(models, createOpenAiApiModel(model))
+				models = append(models, createOpenAiApiModel(model, startTime))
 			}
 		}
 	}

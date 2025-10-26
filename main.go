@@ -272,7 +272,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		}
 		if !modelFound {
 			http.Error(responseWriter, "{error: \"Requested model not found\"}", http.StatusNotFound)
-			log.Printf("Model \"%s\" not found\n", requestedModelName)
+			log.Printf("[OpenAI API Server] Model \"%s\" not found\n", requestedModelName)
 		}
 		resetConnectionBuffer(request)
 	})
@@ -281,7 +281,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		err := json.NewEncoder(responseWriter).Encode(modelsResponse)
 		if err != nil {
 			http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
-			log.Printf("Failed to produce /v1/models JSON response: %s\n", err.Error())
+			log.Printf("[OpenAI API Server] Failed to produce /v1/models JSON response: %s\n", err.Error())
 		}
 		resetConnectionBuffer(request)
 	})
@@ -297,7 +297,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	})
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		//404
-		log.Printf("[LLM Request API] %s request to unsupported URL: %s", request.Method, request.RequestURI)
+		log.Printf("[OpenAI API Server] Request to unsupported URL: %s %s", request.Method, request.RequestURI)
 		http.Error(
 			responseWriter,
 			fmt.Sprintf("%s %s is not supoprted by large-model-proxy", request.Method, request.RequestURI),
@@ -323,13 +323,13 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 
 	ln, err := net.Listen("tcp", server.Addr)
 	if err != nil {
-		log.Fatalf("[LLM API Server] Could not listen on %s: %v", server.Addr, err)
+		log.Fatalf("[OpenAI API Server] Could not listen on %s: %v", server.Addr, err)
 	}
 	wrappedLn := &rawCaptureListener{Listener: ln}
 
-	log.Printf("[LLM API Server] Listening on port %s", OpenAiApi.ListenPort)
+	log.Printf("[OpenAI API Server] Listening on port %s", OpenAiApi.ListenPort)
 	if err := server.Serve(wrappedLn); err != nil {
-		log.Fatalf("Could not start LLM API server: %s\n", err.Error())
+		log.Fatalf("Could not start OpenAI API Server: %s\n", err.Error())
 	}
 }
 
@@ -352,13 +352,13 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 	defer func(originalBody io.ReadCloser) {
 		err := originalBody.Close()
 		if err != nil {
-			log.Printf("[LLM API Server] Error closing request body: %s\n", err.Error())
+			log.Printf("[OpenAI API Server] Error closing request body: %s\n", err.Error())
 		}
 	}(originalBody)
 	//TODO: parse request directly
 	bodyBytes, err := io.ReadAll(originalBody)
 	if err != nil {
-		log.Printf("[LLM API Server] Error reading request body: %v\n", err)
+		log.Printf("[OpenAI API Server] Error reading request body: %v\n", err)
 		http.Error(responseWriter, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
 		return false
 	}
@@ -371,21 +371,21 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 
 	service, ok := (*modelToServiceMap)[model]
 	if !ok {
-		log.Printf("[LLM API Server] Unknown model requested: %v\n", model)
+		log.Printf("[OpenAI API Server] Unknown model requested: %v\n", model)
 		http.Error(responseWriter, fmt.Sprintf("Unknown model: %v", model), http.StatusBadRequest)
 		return false
 	}
-	log.Printf("[LLM API Server] Sending %s request through to %s\n", request.URL, service.Name)
+	log.Printf("[OpenAI API Server] Sending %s request through to %s\n", request.URL, service.Name)
 	originalWriter := responseWriter
 	hijacker, ok := originalWriter.(http.Hijacker)
 	if !ok {
-		log.Printf("[LLM API Server] Error: Failed to forward connection: web server does not support hijacking. This could only happen if LLM API Server is running in HTTP/2 mode. Please use HTTP/1.1\n")
+		log.Printf("[OpenAI API Server] Error: Failed to forward connection: web server does not support hijacking. This could only happen if OpenAI API Server is running in HTTP/2 mode. Please use HTTP/1.1\n")
 		http.Error(responseWriter, "Request forwarding is not possible, please use HTTP 1.1", http.StatusInternalServerError)
 		return false
 	}
 	clientConnection, bufrw, err := hijacker.Hijack()
 	if err != nil {
-		log.Printf("[LLM API Server] Failed to forward connection: %v", err)
+		log.Printf("[OpenAI API Server] Failed to forward connection: %v", err)
 		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
 		return false
 	}
@@ -399,7 +399,7 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 	if bufrw.Reader.Buffered() > 0 {
 		bufBytes := make([]byte, bufrw.Reader.Buffered())
 		if _, err := bufrw.Read(bufBytes); err != nil {
-			log.Printf("[LLM API Server] Error reading buffered data: : %v", err)
+			log.Printf("[OpenAI API Server] Error reading buffered data: : %v", err)
 		}
 		bodyBytes = append(bodyBytes, bufBytes...)
 	}
@@ -411,7 +411,7 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 func extractModelFromRequest(url string, bodyBytes []byte) (string, bool) {
 	var completionRequest ModelContainingRequest
 	if err := json.Unmarshal(bodyBytes, &completionRequest); err != nil {
-		log.Printf("[LLM API Server] Error decoding %s request: %v\n%s", url, err, bodyBytes)
+		log.Printf("[OpenAI API Server] Error decoding %s request: %v\n%s", url, err, bodyBytes)
 		return "", false
 	}
 	return completionRequest.Model, true

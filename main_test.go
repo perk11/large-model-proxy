@@ -379,6 +379,117 @@ func testCompletionStreamingExpectingSuccess(t *testing.T, model string) {
 	)
 }
 
+func getModelByIDRequestExpectingSuccess(test *testing.T, baseAddress string, modelID string, httpClient *http.Client) {
+	url := fmt.Sprintf("%s/v1/models/%s", strings.TrimRight(baseAddress, "/"), modelID)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		test.Fatalf("Failed to create GET %s: %v", url, err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		test.Fatalf("GET %s failed: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		test.Fatalf("GET %s: expected 200, got %d", url, resp.StatusCode)
+	}
+	if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+		test.Fatalf("GET %s: expected application/json, got %q", url, contentType)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		test.Fatalf("GET %s: failed to read body: %v", url, err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(bodyBytes, &decoded); err != nil {
+		test.Fatalf("GET %s: failed to unmarshal JSON: %v\nBody: %s", url, err, string(bodyBytes))
+	}
+
+	rawID, ok := decoded["id"]
+	if !ok {
+		test.Errorf("GET %s: JSON missing 'id' field", url)
+	}
+	idString, ok := rawID.(string)
+	if !ok {
+		test.Errorf("GET %s: 'id' is not a string: %#v", url, rawID)
+	}
+	if idString != modelID {
+		test.Errorf("GET %s: id mismatch, expected %q, got %q", url, modelID, idString)
+	}
+
+	if rawObject, ok := decoded["object"]; ok {
+		if objectString, ok := rawObject.(string); !ok || objectString != "model" {
+			test.Errorf("GET %s: unexpected 'object' value: %#v", url, rawObject)
+		}
+	}
+	if rawOwnedBy, ok := decoded["owned_by"]; ok {
+		if objectString, ok := rawOwnedBy.(string); !ok || objectString != "large-model-proxy" {
+			test.Errorf("GET %s: unexpected 'owned_by' value: %#v", url, rawOwnedBy)
+		}
+	}
+
+	_, hasCreated := decoded["created"]
+	if !hasCreated {
+		test.Errorf("GET %s: JSON missing 'created' field", url)
+	} else {
+		var strict struct {
+			Created int64 `json:"created"`
+		}
+		if err := json.Unmarshal(bodyBytes, &strict); err != nil {
+			test.Errorf("GET %s: 'created' must be integer Unix seconds: %v\nBody: %s", url, err, string(bodyBytes))
+		} else {
+			createdTime := time.Unix(strict.Created, 0)
+			now := time.Now()
+			if createdTime.After(now.Add(25 * time.Hour)) {
+				test.Errorf("GET %s: 'created' %s is more than 25h in the future (now=%s)", url, createdTime.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
+			}
+		}
+	}
+}
+
+// getModelByIDRequestExpectingNotFound performs GET /v1/models/{modelID} and asserts a 404.
+func getModelByIDRequestExpectingNotFound(test *testing.T, baseAddress string, modelID string, httpClient *http.Client) {
+	url := fmt.Sprintf("%s/v1/models/%s", strings.TrimRight(baseAddress, "/"), modelID)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		test.Fatalf("Failed to create GET %s: %v", url, err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		test.Fatalf("GET %s failed: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		bodyPreview, _ := io.ReadAll(resp.Body)
+		test.Fatalf("GET %s: expected 404 for missing model, got %d. Body: %s", url, resp.StatusCode, string(bodyPreview))
+	}
+}
+
+func testOpenAiApiModelsByID(
+	test *testing.T,
+	openAiApiAddress string,
+	expectedModelIDs []string,
+	missingModelIDs []string,
+) {
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+
+	for _, modelID := range expectedModelIDs {
+		getModelByIDRequestExpectingSuccess(test, openAiApiAddress, modelID, httpClient)
+	}
+
+	for _, missingModelID := range missingModelIDs {
+		getModelByIDRequestExpectingNotFound(test, openAiApiAddress, missingModelID, httpClient)
+	}
+}
+
 func testCompletionRequest(test *testing.T, address string, model string, client *http.Client) {
 	testPrompt := "This is a test prompt\nЭто проверочный промт\n这是一个测试提示"
 
@@ -1178,6 +1289,66 @@ func TestAppScenarios(test *testing.T) {
 				testOpenAiApiReusingConnection(t)
 			},
 		},
+		{
+			Name: "openai-api-models-by-id",
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					OpenAiApi:                      OpenAiApi{ListenPort: "2071"},
+					ShutDownAfterInactivitySeconds: 3,
+					Services: []ServiceConfig{
+						{
+							Name:            "openai-api-1",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12072",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12072",
+							OpenAiApi:       true,
+						},
+						{
+							Name:            "openai-api-2",
+							ListenPort:      "2073",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "120723",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12073",
+							OpenAiApi:       true,
+							OpenAiApiModels: []string{"fizz", "buzz"},
+						},
+						{
+							Name:            "non-llm-1",
+							ListenPort:      "2074",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12074",
+							Command:         "./test-server/test-server",
+							Args:            "-p 12074",
+							OpenAiApi:       false,
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2071",
+				"localhost:2072",
+				"localhost:2073",
+				"localhost:2074",
+				"localhost:12072",
+				"localhost:12073",
+				"localhost:12074",
+			},
+			TestFunc: func(t *testing.T) {
+				expectedModelIDs := []string{
+					"openai-api-models-by-id_openai-api-1",
+					"fizz",
+					"buzz",
+				}
+				missingModelIDs := []string{
+					"totally-non-existent-model",
+					"non-llm-1",
+				}
+				testOpenAiApiModelsByID(t, "http://localhost:2071", expectedModelIDs, missingModelIDs)
+			},
+		},
+
 		{
 			Name: "args-with-whitespace",
 			GetConfig: func(t *testing.T, testName string) Config {

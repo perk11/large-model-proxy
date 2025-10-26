@@ -256,6 +256,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		Data:   models,
 	}
 	mux.HandleFunc("GET /v1/models/{model}", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrl(request)
 		responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 		requestedModelName := request.PathValue("model")
 		modelFound := false
@@ -277,6 +278,7 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		resetConnectionBuffer(request)
 	})
 	mux.HandleFunc("/v1/models", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrl(request)
 		responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 		err := json.NewEncoder(responseWriter).Encode(modelsResponse)
 		if err != nil {
@@ -286,11 +288,13 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		resetConnectionBuffer(request)
 	})
 	mux.HandleFunc("/v1/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrl(request)
 		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
 			resetConnectionBuffer(request)
 		}
 	})
 	mux.HandleFunc("/v1/chat/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrl(request)
 		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
 			resetConnectionBuffer(request)
 		}
@@ -331,6 +335,9 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	if err := server.Serve(wrappedLn); err != nil {
 		log.Fatalf("Could not start OpenAI API Server: %s\n", err.Error())
 	}
+}
+func printRequestUrl(request *http.Request) {
+	log.Printf("[OpenAI API Server] %s %s", request.Method, request.URL)
 }
 
 // resetConnectionBuffer clears the buffer so that if another request is received through the same connection, it starts from scratch

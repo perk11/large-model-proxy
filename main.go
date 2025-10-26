@@ -272,7 +272,14 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 			}
 		}
 		if !modelFound {
-			http.Error(responseWriter, "{error: \"Requested model not found\"}", http.StatusNotFound)
+			responseWriter.WriteHeader(http.StatusNotFound)
+			if err := json.NewEncoder(responseWriter).Encode(
+				map[string]string{
+					"error": fmt.Sprintf("Requested model \"%s\" not found", requestedModelName),
+				}); err != nil {
+				http.Error(responseWriter, "{error: \"Failed to produce not-found JSON\"}", http.StatusInternalServerError)
+				log.Printf("Failed to produce not-found JSON for /v1/models/%s: %v\n", requestedModelName, err)
+			}
 			log.Printf("[OpenAI API Server] Model \"%s\" not found\n", requestedModelName)
 		}
 		resetConnectionBuffer(request)

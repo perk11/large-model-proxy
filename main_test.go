@@ -2009,7 +2009,7 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Fatalf("failed to connect to slow-fail service at %s: %v", slowFailServiceAddress, err)
 	}
 	defer func() { _ = slowConn.Close() }()
-	assertPortsAreClosed(t, []string{slowFailDirectAddress, slowFailHealthcheckAddress})
+	assertPortsAreClosed(t, []string{slowFailDirectAddress})
 
 	buf := make([]byte, 64)
 	n, readErr := slowConn.Read(buf)

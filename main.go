@@ -254,6 +254,27 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 		Object: "models",
 		Data:   models,
 	}
+	mux.HandleFunc("GET /v1/models/{model}", func(responseWriter http.ResponseWriter, request *http.Request) {
+		responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
+		requestedModelName := request.PathValue("model")
+		modelFound := false
+		for _, model := range modelsResponse.Data {
+			if model.ID == requestedModelName {
+				modelFound = true
+				err := json.NewEncoder(responseWriter).Encode(model)
+				if err != nil {
+					http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
+					log.Printf("Failed to produce /v1/model/{model} JSON response: %s\n", err.Error())
+				}
+				break
+			}
+		}
+		if !modelFound {
+			http.Error(responseWriter, "{error: \"Requested model not found\"}", http.StatusNotFound)
+			log.Printf("Model \"%s\" not found\n", requestedModelName)
+		}
+		resetConnectionBuffer(request)
+	})
 	mux.HandleFunc("/v1/models", func(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 		err := json.NewEncoder(responseWriter).Encode(modelsResponse)

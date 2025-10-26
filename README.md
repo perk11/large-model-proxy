@@ -178,6 +178,7 @@ Currently, the following OpenAI API endpoints are supported:
 - `/v1/completions`
 - `/v1/chat/completions`
 - `/v1/models` (This one makes it work with, e.g., Open WebUI seamlessly).
+- `/v1/models/{model}`
 - More to come
 
 ## Management API

@@ -194,11 +194,6 @@ func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 		}
 		sc.ServiceUrl = su
 	}
-	//
-	// If int "ResourcesAvailable" is present and the new field wasn't set, use it.
-	//if len(aux.ResourcesAvailable) > 0 && len(sc.ResourceRequirements) == 0 {
-	//	sc.ResourceRequirements = aux.ResourcesAvailable
-	//}
 
 	return nil
 }

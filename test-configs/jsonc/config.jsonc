@@ -7,7 +7,6 @@
       "ProxyTargetHost": "localhost",
       "ProxyTargetPort": "12048",
       "Command": "../../test-server/test-server",
-      "Foo": "bar",
       "LogFilePath": "../../test-logs/default-config-file-name-jsonc.log",
       "Args": "-p 12048",
     }

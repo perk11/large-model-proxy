@@ -122,7 +122,9 @@ func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(sc),
 	}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&aux); err != nil {
 		return err
 	}
 
@@ -191,9 +193,15 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 	}
 
 	jsonConfigBytes := jsonc.ToJSON(configBytes)
-	err = json.Unmarshal(jsonConfigBytes, &config)
-	if err != nil {
+
+	decoder := json.NewDecoder(bytes.NewReader(jsonConfigBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
 		return config, err
+	}
+	//due to streaming nature of the decoder we need to validate that there is no extra data after the end of the first JSON object
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return config, errors.New("extra data after the first JSON object")
 	}
 
 	err = validateConfig(config)

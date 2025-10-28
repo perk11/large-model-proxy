@@ -835,3 +835,68 @@ func TestStartupTimeoutMillisecondsValueIsParsed(t *testing.T) {
 		t.Fatalf("expected StartupTimeoutMilliseconds to be 1500, got %d", cfg.Services[0].StartupTimeoutMilliseconds)
 	}
 }
+
+func TestUnknownFieldName(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": 10000 },
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"StartupTimeoutMilliseconds": 5
+			}
+		],
+		"Fizz": "Buzz"
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"unknown field \"Fizz\"",
+	})
+}
+func TestJsonWithExtraData(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": 10000 },
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"StartupTimeoutMilliseconds": 5
+			}
+		]
+	}
+	{
+	"ResourcesAvailable": { "RAM": 10000 },
+			"Services": [
+				{
+					"Name": "svc",
+					"ListenPort": "8080",
+					"Command": "/bin/echo",
+					"StartupTimeoutMilliseconds": 5
+				}
+			]
+	}
+`)
+	checkExpectedErrorMessages(t, err, []string{
+		"extra data after the first JSON object",
+	})
+}
+func TestJsonWithInvalidDataAfterObject(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": 10000 },
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"StartupTimeoutMilliseconds": 5
+			}
+		]
+	}ExtraData`)
+	checkExpectedErrorMessages(t, err, []string{
+		"extra data after the first JSON object",
+	})
+}

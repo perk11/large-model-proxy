@@ -187,13 +187,16 @@ func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	// Handle ServiceUrl field
 	if aux.ServiceUrl != nil {
-		su := &ServiceUrlOption{}
-		if err := su.UnmarshalJSON(aux.ServiceUrl); err != nil {
+		// Field is present in JSON
+		serviceUrl := &ServiceUrlOption{}
+		if err := serviceUrl.UnmarshalJSON(aux.ServiceUrl); err != nil {
 			return err
 		}
-		sc.ServiceUrl = su
+		sc.ServiceUrl = serviceUrl
 	}
+	// If aux.ServiceUrl is nil, the field was not present, so sc.ServiceUrl remains nil
 
 	return nil
 }

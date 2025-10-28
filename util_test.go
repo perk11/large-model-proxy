@@ -462,6 +462,23 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 	}
 }
 
+// verifyTotalResourcesAvailable checks if the total resource availability matches the expected values
+func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAvailable map[string]int) {
+	t.Helper()
+	for resource, expectedAmount := range expectedAvailable {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+
+		if resourceInfo.TotalAvailable != expectedAmount {
+			t.Errorf("Expected total %s available: %d, actual: %d",
+				resource, expectedAmount, resourceInfo.TotalAvailable)
+		}
+	}
+}
+
 func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
 	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func testImplConnectOnly(test *testing.T, proxyAddress string) {
@@ -1360,7 +1361,6 @@ func TestAppScenarios(test *testing.T) {
 				testOpenAiApiModelsByID(t, "http://localhost:2071", expectedModelIDs, missingModelIDs)
 			},
 		},
-
 		{
 			Name: "args-with-whitespace",
 			GetConfig: func(t *testing.T, testName string) Config {
@@ -1802,6 +1802,47 @@ func TestAppScenarios(test *testing.T) {
 				)
 			},
 		},
+		{
+			Name: "resource-check-command",
+			TestFunc: func(t *testing.T) {
+				testResourceCheckCommand(t, "localhost:2077", "localhost:2076", "TestResource", "resource-check-command_service0")
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							//this command increments a number in the file by one every time it runs
+							CheckCommand:              "read -r original_integer < resource-check-command.counter.txt.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee resource-check-command.counter.txt",
+							CheckIntervalMilliseconds: 1000,
+						},
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2076",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:           "2077",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12077",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12077",
+							ResourceRequirements: map[string]int{"TestResource": 3},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2076",
+				"localhost:2077",
+				"localhost:12077",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/resource-check-command.counter.txt")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/resource-check-command.counter.txt: %v", err)
+				}
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -2045,4 +2086,39 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Errorf("expected slow-fail service to be starting with healtcheck working")
 	}
 	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
+}
+
+func testResourceCheckCommand(t *testing.T, serviceAddress string, managementApiAddress string, resourceName string, serviceName string) {
+
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	conn, err := net.Dial("tcp", serviceAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceAddress, err)
+	}
+	defer func() { _ = conn.Close() }()
+	time.Sleep(1000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
+
+	time.Sleep(1000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
+
+	time.Sleep(1000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
+
+	//since the check whether the resource is available is currently once per second,
+	//wait for 1 more second to avoid race conditions
+	time.Sleep(1000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 3})
+
+	pid := readPidFromOpenConnection(t, conn)
+	assert.True(t, isProcessRunning(pid))
 }

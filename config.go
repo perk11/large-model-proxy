@@ -161,15 +161,16 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	err = dec.Decode(&dto)
-	if err == nil {
+
+	if err == nil && !(dto.Amount == 0 && dto.CheckCommand == "") {
 		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand}
 		return nil
 	}
 
-	return errors.New("ResourceAvailable must be an integer or an object with fields: amount, checkCommand")
+	return errors.New("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourceAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}}")
 }
 
-// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and and ResourcesAvailable properly
+// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and ResourcesAvailable properly
 func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 	type Alias ServiceConfig
 	aux := &struct {

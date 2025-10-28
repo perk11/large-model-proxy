@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 
@@ -922,6 +921,46 @@ func TestJsonWithInvalidDataAfterObject(t *testing.T) {
 	checkExpectedErrorMessages(t, err, []string{
 		"extra data after the first JSON object",
 	})
+}
+
+func TestJsonWithExtraDataInResourcesAvailable(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": {"Amount": 10, "Foo": "Bar"} },
+}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"each entry in ResourcesAvailable must be an integer or an object with at least one of the fields",
+	})
+}
+
+func TestJsonWithNonIntAmount(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": {"Amount": "Bar",} },
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"each entry in ResourcesAvailable must be an integer or an object with at least one of the fields",
+	})
+}
+
+func TestJsonWithNoAmountOrCommand(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": {} },
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"each entry in ResourcesAvailable must be an integer or an object with at least one of the fields",
+	})
+}
+
+func TestJsonWithCheckCommand(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "RAM": {"CheckCommand": "Bar",} },
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
 }
 
 func TestLogLevelDefaultIsNormal(t *testing.T) {

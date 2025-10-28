@@ -1812,8 +1812,8 @@ func TestAppScenarios(test *testing.T) {
 					ResourcesAvailable: map[string]ResourceAvailable{
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
-							CheckCommand:              "read -r original_integer < resource-check-command.counter.txt.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee resource-check-command.counter.txt",
-							CheckIntervalMilliseconds: 1000,
+							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+							CheckIntervalMilliseconds: 2000,
 						},
 					},
 					ManagementApi: ManagementApi{
@@ -2088,33 +2088,31 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
 }
 
+// TODO: move to monitor_resources_test.go
 func testResourceCheckCommand(t *testing.T, serviceAddress string, managementApiAddress string, resourceName string, serviceName string) {
-
+	time.Sleep(200 * time.Millisecond) //give lmp time to run the check command for the first time
 	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 0})
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})
 	verifyServiceStatus(t, statusResponse, serviceName, false, map[string]int{resourceName: 0})
 	conn, err := net.Dial("tcp", serviceAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceAddress, err)
 	}
 	defer func() { _ = conn.Close() }()
-	time.Sleep(1000 * time.Millisecond)
-	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})
-	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
-
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(2000 * time.Millisecond)
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2})
+	//todo: add healthcheck checks since API is already considering the resources as used
 	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(2000 * time.Millisecond)
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
 
 	//since the check whether the resource is available is currently once per second,
-	//wait for 1 more second to avoid race conditions
-	time.Sleep(1000 * time.Millisecond)
+	//wait for 1 more iteration to avoid race conditions
+	time.Sleep(2000 * time.Millisecond)
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 4})
 	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 3})

@@ -36,9 +36,10 @@ type RunningService struct {
 }
 
 type ResourceManager struct {
-	serviceMutex    *sync.Mutex
-	resourcesInUse  map[string]int
-	runningServices map[string]RunningService
+	serviceMutex       *sync.Mutex
+	resourcesInUse     map[string]int
+	resourcesAvailable map[string]int
+	runningServices    map[string]RunningService
 }
 type OpenAiApiModels struct {
 	Object string           `json:"object"`
@@ -149,11 +150,21 @@ func main() {
 	}
 
 	resourceManager = ResourceManager{
-		resourcesInUse:  make(map[string]int),
-		runningServices: make(map[string]RunningService),
-		serviceMutex:    &sync.Mutex{},
+		resourcesInUse:     make(map[string]int),
+		resourcesAvailable: make(map[string]int),
+		runningServices:    make(map[string]RunningService),
+		serviceMutex:       &sync.Mutex{},
 	}
 
+	for name, resource := range config.ResourcesAvailable {
+		resourceManager.resourcesAvailable[name] = resource.Amount
+		go monitorResourceAvailability(
+			name,
+			resource.CheckCommand,
+			time.Duration(resource.CheckIntervalMilliseconds)*time.Millisecond,
+			&resourceManager,
+		)
+	}
 	for _, service := range config.Services {
 		if service.ListenPort != "" {
 			go startProxy(service)
@@ -907,13 +918,13 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 
 func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
 	for resource, amount := range resourceRequirements {
-		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource].Amount {
+		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
 			if outputError {
 				log.Printf(
 					"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",
 					requestingService,
 					resource,
-					config.ResourcesAvailable[resource].Amount,
+					resourceManager.resourcesAvailable[resource],
 					resourceManager.resourcesInUse[resource],
 					amount,
 				)

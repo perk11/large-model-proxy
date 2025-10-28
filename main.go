@@ -907,13 +907,13 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 
 func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
 	for resource, amount := range resourceRequirements {
-		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource] {
+		if resourceManager.resourcesInUse[resource]+amount > config.ResourcesAvailable[resource].Amount {
 			if outputError {
 				log.Printf(
 					"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",
 					requestingService,
 					resource,
-					config.ResourcesAvailable[resource],
+					config.ResourcesAvailable[resource].Amount,
 					resourceManager.resourcesInUse[resource],
 					amount,
 				)

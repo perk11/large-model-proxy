@@ -899,7 +899,7 @@ func TestAppScenarios(test *testing.T) {
 			Name: "no-resource-requirements",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{"VRAM": 20},
+					ResourcesAvailable: map[string]ResourceAvailable{"VRAM": {Amount: 20}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2032",
@@ -1039,7 +1039,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				timeoutMs := uint(2000)
 				return Config{
-					ResourcesAvailable: map[string]int{"CPU": 1},
+					ResourcesAvailable: map[string]ResourceAvailable{"CPU": {Amount: 1}},
 					ManagementApi: ManagementApi{
 						ListenPort: "2065",
 					},
@@ -1116,7 +1116,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
-					ResourcesAvailable:             map[string]int{"RAM": 1},
+					ResourcesAvailable:             map[string]ResourceAvailable{"RAM": {Amount: 1}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2008",
@@ -1146,7 +1146,7 @@ func TestAppScenarios(test *testing.T) {
 			Name: "client-close-full",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{"VRAM": 1},
+					ResourcesAvailable: map[string]ResourceAvailable{"VRAM": {Amount: 1}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2030",
@@ -1433,8 +1433,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "dying-processes",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2035",
@@ -1486,8 +1486,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "failed-to-start-process-exit-immediately",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2067",
@@ -1522,8 +1522,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "failed-to-start-process-exit-after-sleep",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2069",
@@ -1559,8 +1559,8 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				monitorProcessStatus := false
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2046",
@@ -1755,7 +1755,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				timeoutMs := uint(3000)
 				return Config{
-					ResourcesAvailable: map[string]int{"CPU": 2},
+					ResourcesAvailable: map[string]ResourceAvailable{"CPU": {Amount: 2}},
 					ManagementApi:      ManagementApi{ListenPort: "2063"},
 					Services: []ServiceConfig{
 						{

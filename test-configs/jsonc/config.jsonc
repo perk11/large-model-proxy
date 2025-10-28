@@ -1,5 +1,11 @@
 /* This file is to test that config.jsonc is automatically used if no -config parameter is passed */
 {
+  "ResourcesAvailable": {
+  "Test":   {
+    "Amount":         123,
+  },
+    "Test2": 456,
+},
   "Services": [
     {
       "Name": "jsonc-test", //Look ma, a comment!

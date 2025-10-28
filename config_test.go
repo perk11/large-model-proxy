@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 
@@ -27,10 +28,11 @@ func loadConfigFromString(t *testing.T, jsonStr string) (Config, error) {
 
 func TestValidConfigMinimal(t *testing.T) {
 	t.Parallel()
-	_, err := loadConfigFromString(t, `{
+	config, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": {
 			"RAM": 10000, //Random access memory!
 			"VRAM-GPU-1": 20000, /* Wow, VRAM! */
+            "VRAM-GPU-2": {"Amount": 1000, "CheckCommand": "Look, I am an object!"},
 		},
         /* A multi-line comment
            to make sure JSONc works
@@ -47,13 +49,32 @@ func TestValidConfigMinimal(t *testing.T) {
 			{
 				"Name": "serviceB",
 				"ListenPort": "8081",
-				"Command": "/bin/echo"
+				"Command": "/echo/bin"
 			}
 		]
 	}`)
 	if err != nil {
 		t.Fatalf("did not expect an error but got: %v", err)
 	}
+	assert.Contains(t, config.ResourcesAvailable, "RAM")
+	assert.Contains(t, config.ResourcesAvailable, "VRAM-GPU-1")
+	assert.Contains(t, config.ResourcesAvailable, "VRAM-GPU-2")
+	assert.Len(t, config.ResourcesAvailable, 3)
+	assert.Equal(t, 10000, config.ResourcesAvailable["RAM"].Amount)
+	assert.Equal(t, "", config.ResourcesAvailable["RAM"].CheckCommand)
+	assert.Equal(t, 20000, config.ResourcesAvailable["VRAM-GPU-1"].Amount)
+	assert.Equal(t, "", config.ResourcesAvailable["VRAM-GPU-1"].CheckCommand)
+	assert.Equal(t, 1000, config.ResourcesAvailable["VRAM-GPU-2"].Amount)
+	assert.Equal(t, "Look, I am an object!", config.ResourcesAvailable["VRAM-GPU-2"].CheckCommand)
+	assert.Equal(t, "7070", config.OpenAiApi.ListenPort)
+	assert.Equal(t, "", config.ManagementApi.ListenPort)
+	assert.Len(t, config.Services, 2)
+	assert.Equal(t, "serviceA", config.Services[0].Name)
+	assert.Equal(t, "8080", config.Services[0].ListenPort)
+	assert.Equal(t, "/bin/echo", config.Services[0].Command)
+	assert.Equal(t, "serviceB", config.Services[1].Name)
+	assert.Equal(t, "8081", config.Services[1].ListenPort)
+	assert.Equal(t, "/echo/bin", config.Services[1].Command)
 }
 
 func TestDuplicateServiceNames(t *testing.T) {

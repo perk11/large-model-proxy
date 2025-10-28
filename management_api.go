@@ -54,7 +54,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	// Initialize resource usage tracking
 	for resource := range config.ResourcesAvailable {
 		response.Resources[resource] = ResourceUsage{
-			TotalAvailable: config.ResourcesAvailable[resource],
+			TotalAvailable: config.ResourcesAvailable[resource].Amount,
 			TotalInUse:     resourceManager.resourcesInUse[resource],
 			UsageByService: make(map[string]int),
 		}

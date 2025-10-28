@@ -105,9 +105,9 @@ type Config struct {
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
 	OutputServiceLogs                                             *bool
 	LogLevel                                                      LogLevel        `json:"LogLevel,omitempty"`
-	DefaultServiceUrl                                             *string         `json:"DefaultServiceUrl"`
-	Services                                                      []ServiceConfig `json:"Services"`
-	ResourcesAvailable                                            map[string]int  `json:"ResourcesAvailable"`
+	DefaultServiceUrl                                             *string                      `json:"DefaultServiceUrl"`
+	Services                                                      []ServiceConfig              `json:"Services"`
+	ResourcesAvailable                                            map[string]ResourceAvailable `json:"ResourcesAvailable"`
 	OpenAiApi                                                     OpenAiApi
 	ManagementApi                                                 ManagementApi
 }
@@ -133,13 +133,48 @@ type ServiceConfig struct {
 	ServiceUrl                      *ServiceUrlOption `json:"ServiceUrl,omitempty"`
 	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
 }
+type ResourceAvailable struct {
+	Amount       int
+	CheckCommand string
+}
 
-// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl properly
+// Accepts either a JSON number or an object with {Amount, CheckCommand}.
+func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("null")) {
+		*r = ResourceAvailable{}
+		return nil
+	}
+
+	var asInt int
+	err := json.Unmarshal(trimmed, &asInt)
+	if err == nil {
+		*r = ResourceAvailable{Amount: asInt}
+		return nil
+	}
+
+	var dto struct {
+		Amount       int    `json:"Amount"`
+		CheckCommand string `json:"CheckCommand"`
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	err = dec.Decode(&dto)
+	if err == nil {
+		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand}
+		return nil
+	}
+
+	return errors.New("ResourceAvailable must be an integer or an object with fields: amount, checkCommand")
+}
+
+// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and and ResourcesAvailable properly
 func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
-	// Create a type alias to avoid infinite recursion
 	type Alias ServiceConfig
 	aux := &struct {
-		ServiceUrl json.RawMessage `json:"ServiceUrl"`
+		ServiceUrl         json.RawMessage              `json:"ServiceUrl"`
+		ResourcesAvailable map[string]ResourceAvailable `json:"ResourcesAvailable"`
 		*Alias
 	}{
 		Alias: (*Alias)(sc),
@@ -151,16 +186,18 @@ func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Handle ServiceUrl field
 	if aux.ServiceUrl != nil {
-		// Field is present in JSON
-		serviceUrl := &ServiceUrlOption{}
-		if err := serviceUrl.UnmarshalJSON(aux.ServiceUrl); err != nil {
+		su := &ServiceUrlOption{}
+		if err := su.UnmarshalJSON(aux.ServiceUrl); err != nil {
 			return err
 		}
-		sc.ServiceUrl = serviceUrl
+		sc.ServiceUrl = su
 	}
-	// If aux.ServiceUrl is nil, the field was not present, so sc.ServiceUrl remains nil
+	//
+	// If int "ResourcesAvailable" is present and the new field wasn't set, use it.
+	//if len(aux.ResourcesAvailable) > 0 && len(sc.ResourceRequirements) == 0 {
+	//	sc.ResourceRequirements = aux.ResourcesAvailable
+	//}
 
 	return nil
 }

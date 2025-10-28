@@ -42,8 +42,8 @@ func TestManagementUI(t *testing.T) {
 
 	cfg := Config{
 		ShutDownAfterInactivitySeconds: 4,
-		ResourcesAvailable: map[string]int{
-			"CPU": 4,
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 4},
 		},
 		ManagementApi: ManagementApi{
 			ListenPort: "2044",
@@ -119,9 +119,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	cfg := Config{
 		ShutDownAfterInactivitySeconds: 4,
-		ResourcesAvailable: map[string]int{
-			"CPU": 4,
-			"GPU": 2,
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 4},
+			"GPU": {Amount: 2},
 		},
 		ManagementApi: ManagementApi{
 			ListenPort: "2040",

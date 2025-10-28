@@ -134,8 +134,9 @@ type ServiceConfig struct {
 	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
 }
 type ResourceAvailable struct {
-	Amount       int
-	CheckCommand string
+	Amount                    int
+	CheckCommand              string
+	CheckIntervalMilliseconds uint
 }
 
 // Accepts either a JSON number or an object with {Amount, CheckCommand}.
@@ -154,8 +155,9 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	}
 
 	var dto struct {
-		Amount       int    `json:"Amount"`
-		CheckCommand string `json:"CheckCommand"`
+		Amount                    int    `json:"Amount"`
+		CheckCommand              string `json:"CheckCommand"`
+		CheckIntervalMilliseconds uint   `json:"CheckIntervalMilliseconds"`
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
@@ -163,11 +165,17 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	err = dec.Decode(&dto)
 
 	if err == nil && !(dto.Amount == 0 && dto.CheckCommand == "") {
-		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand}
+		if dto.CheckIntervalMilliseconds == 0 {
+			dto.CheckIntervalMilliseconds = 1000
+		}
+		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand, CheckIntervalMilliseconds: dto.CheckIntervalMilliseconds}
 		return nil
 	}
 
-	return errors.New("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourceAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}}")
+	if err == nil {
+		err = errors.New("missing both Amount and CheckCommand fields")
+	}
+	return fmt.Errorf("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourceAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}} %v", err)
 }
 
 // UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and ResourcesAvailable properly

@@ -31,7 +31,7 @@ func TestValidConfigMinimal(t *testing.T) {
 		"ResourcesAvailable": {
 			"RAM": 10000, //Random access memory!
 			"VRAM-GPU-1": 20000, /* Wow, VRAM! */
-            "VRAM-GPU-2": {"Amount": 1000, "CheckCommand": "Look, I am an object!"},
+            "VRAM-GPU-2": {"Amount": 1000, "CheckCommand": "Look, I am an object!", "CheckIntervalMilliseconds": 4000},
 		},
         /* A multi-line comment
            to make sure JSONc works
@@ -65,6 +65,7 @@ func TestValidConfigMinimal(t *testing.T) {
 	assert.Equal(t, "", config.ResourcesAvailable["VRAM-GPU-1"].CheckCommand)
 	assert.Equal(t, 1000, config.ResourcesAvailable["VRAM-GPU-2"].Amount)
 	assert.Equal(t, "Look, I am an object!", config.ResourcesAvailable["VRAM-GPU-2"].CheckCommand)
+	assert.Equal(t, uint(4000), config.ResourcesAvailable["VRAM-GPU-2"].CheckIntervalMilliseconds)
 	assert.Equal(t, "7070", config.OpenAiApi.ListenPort)
 	assert.Equal(t, "", config.ManagementApi.ListenPort)
 	assert.Len(t, config.Services, 2)
@@ -955,12 +956,23 @@ func TestJsonWithNoAmountOrCommand(t *testing.T) {
 
 func TestJsonWithCheckCommand(t *testing.T) {
 	t.Parallel()
-	_, err := loadConfigFromString(t, `{
+	config, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": { "RAM": {"CheckCommand": "Bar",} },
 	}`)
 	if err != nil {
 		t.Fatalf("did not expect an error but got: %v", err)
 	}
+	assert.Equal(t, "Bar", config.ResourcesAvailable["RAM"].CheckCommand)
+	assert.Equal(t, uint(1000), config.ResourcesAvailable["RAM"].CheckIntervalMilliseconds)
+}
+func TestJsonWithNonIntegerInCheckInterval(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": { "CheckCommand": "Bar", "CheckFrequencyMilliseconds": "string" },
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"each entry in ResourcesAvailable must be an integer or an object with at least one of the fields",
+	})
 }
 
 func TestLogLevelDefaultIsNormal(t *testing.T) {

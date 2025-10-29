@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func testImplConnectOnly(test *testing.T, proxyAddress string) {
@@ -899,7 +900,7 @@ func TestAppScenarios(test *testing.T) {
 			Name: "no-resource-requirements",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{"VRAM": 20},
+					ResourcesAvailable: map[string]ResourceAvailable{"VRAM": {Amount: 20}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2032",
@@ -1039,7 +1040,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				timeoutMs := uint(2000)
 				return Config{
-					ResourcesAvailable: map[string]int{"CPU": 1},
+					ResourcesAvailable: map[string]ResourceAvailable{"CPU": {Amount: 1}},
 					ManagementApi: ManagementApi{
 						ListenPort: "2065",
 					},
@@ -1116,7 +1117,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
 					ShutDownAfterInactivitySeconds: 3,
-					ResourcesAvailable:             map[string]int{"RAM": 1},
+					ResourcesAvailable:             map[string]ResourceAvailable{"RAM": {Amount: 1}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2008",
@@ -1146,7 +1147,7 @@ func TestAppScenarios(test *testing.T) {
 			Name: "client-close-full",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{"VRAM": 1},
+					ResourcesAvailable: map[string]ResourceAvailable{"VRAM": {Amount: 1}},
 					Services: []ServiceConfig{
 						{
 							ListenPort:           "2030",
@@ -1360,7 +1361,6 @@ func TestAppScenarios(test *testing.T) {
 				testOpenAiApiModelsByID(t, "http://localhost:2071", expectedModelIDs, missingModelIDs)
 			},
 		},
-
 		{
 			Name: "args-with-whitespace",
 			GetConfig: func(t *testing.T, testName string) Config {
@@ -1433,8 +1433,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "dying-processes",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2035",
@@ -1486,8 +1486,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "failed-to-start-process-exit-immediately",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2067",
@@ -1522,8 +1522,8 @@ func TestAppScenarios(test *testing.T) {
 			Name: "failed-to-start-process-exit-after-sleep",
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2069",
@@ -1559,8 +1559,8 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				monitorProcessStatus := false
 				return Config{
-					ResourcesAvailable: map[string]int{
-						"CPU": 1,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"CPU": {Amount: 1},
 					},
 					ManagementApi: ManagementApi{
 						ListenPort: "2046",
@@ -1755,7 +1755,7 @@ func TestAppScenarios(test *testing.T) {
 			GetConfig: func(t *testing.T, testName string) Config {
 				timeoutMs := uint(3000)
 				return Config{
-					ResourcesAvailable: map[string]int{"CPU": 2},
+					ResourcesAvailable: map[string]ResourceAvailable{"CPU": {Amount: 2}},
 					ManagementApi:      ManagementApi{ListenPort: "2063"},
 					Services: []ServiceConfig{
 						{
@@ -1800,6 +1800,55 @@ func TestAppScenarios(test *testing.T) {
 					"localhost:2066",
 					"localhost:2063",
 				)
+			},
+		},
+		{
+			Name: "resource-check-command",
+			TestFunc: func(t *testing.T) {
+				testResourceCheckCommand(t, "localhost:2077", "localhost:2076", "TestResource", "resource-check-command_service0")
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							//this command increments a number in the file by one every time it runs
+							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+							CheckIntervalMilliseconds: 2000,
+						},
+					},
+					ManagementApi: ManagementApi{
+						ListenPort: "2076",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:           "2077",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12077",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12077",
+							ResourceRequirements: map[string]int{"TestResource": 3},
+						},
+						{
+							ListenPort:           "2079",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12079",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12079",
+							ResourceRequirements: map[string]int{"TestResource": 6},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2076",
+				"localhost:2077",
+				"localhost:12077",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.Remove("test-logs/resource-check-command.counter.txt")
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatalf("Failed to remove test-logs/resource-check-command.counter.txt: %v", err)
+				}
 			},
 		},
 	}
@@ -2045,4 +2094,40 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Errorf("expected slow-fail service to be starting with healtcheck working")
 	}
 	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
+}
+
+// TODO: move to monitor_resources_test.go
+// TODO: Implement check commands for each process that overrides resources used
+// TODO: document in README
+func testResourceCheckCommand(t *testing.T, serviceAddress string, managementApiAddress string, resourceName string, serviceName string) {
+	//TODO: add second service
+	time.Sleep(200 * time.Millisecond) //give lmp time to run the check command for the first time
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})
+	verifyServiceStatus(t, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	conn, err := net.Dial("tcp", serviceAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceAddress, err)
+	}
+	defer func() { _ = conn.Close() }()
+	time.Sleep(2000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2})
+	//todo: add healthcheck checks since API is already considering the resources as used
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
+
+	time.Sleep(2000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 0})
+
+	//since the check whether the resource is available is currently once per second,
+	//wait for 1 more iteration to avoid race conditions
+	time.Sleep(2000 * time.Millisecond)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceName, true, map[string]int{resourceName: 3})
+
+	pid := readPidFromOpenConnection(t, conn)
+	assert.True(t, isProcessRunning(pid))
 }

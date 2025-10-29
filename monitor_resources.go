@@ -22,7 +22,7 @@ func monitorResourceAvailability(resourceName string, checkCommand string, check
 			if err == nil {
 				if *resourceManager.resourcesAvailable[resourceName] != resourceIntValue { //Don't need a lock for reading since this is the only place which writes
 					log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
-					resourceManager.serviceMutex.Lock()
+					resourceManager.serviceMutex.Lock() //Avoid other places reading while we write
 					*resourceManager.resourcesAvailable[resourceName] = resourceIntValue
 					resourceManager.serviceMutex.Unlock()
 				}

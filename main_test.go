@@ -1828,6 +1828,14 @@ func TestAppScenarios(test *testing.T) {
 							Args:                 "-p 12077",
 							ResourceRequirements: map[string]int{"TestResource": 3},
 						},
+						{
+							ListenPort:           "2079",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12079",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12079",
+							ResourceRequirements: map[string]int{"TestResource": 6},
+						},
 					},
 				}
 			},
@@ -2089,7 +2097,10 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 }
 
 // TODO: move to monitor_resources_test.go
+// TODO: Implement check commands for each process that overrides resources used
+// TODO: document in README
 func testResourceCheckCommand(t *testing.T, serviceAddress string, managementApiAddress string, resourceName string, serviceName string) {
+	//TODO: add second service
 	time.Sleep(200 * time.Millisecond) //give lmp time to run the check command for the first time
 	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})

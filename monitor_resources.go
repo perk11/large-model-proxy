@@ -20,10 +20,12 @@ func monitorResourceAvailability(resourceName string, checkCommand string, check
 			outputString = strings.TrimSuffix(outputString, "\n")
 			resourceIntValue, err := strconv.Atoi(outputString)
 			if err == nil {
-				log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
-				resourceManager.serviceMutex.Lock()
-				resourceManager.resourcesAvailable[resourceName] = resourceIntValue
-				resourceManager.serviceMutex.Unlock()
+				if *resourceManager.resourcesAvailable[resourceName] != resourceIntValue { //Don't need a lock for reading since this is the only place which writes
+					log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
+					resourceManager.serviceMutex.Lock()
+					*resourceManager.resourcesAvailable[resourceName] = resourceIntValue
+					resourceManager.serviceMutex.Unlock()
+				}
 			} else {
 				log.Printf("[Resource Monitor][%s] Failed to parse check command \"%s\" output: %v. Output:\n%s", resourceName, checkCommand, err, string(output))
 			}

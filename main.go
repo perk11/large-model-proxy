@@ -38,7 +38,7 @@ type RunningService struct {
 type ResourceManager struct {
 	serviceMutex       *sync.Mutex
 	resourcesInUse     map[string]int
-	resourcesAvailable map[string]int
+	resourcesAvailable map[string]*int
 	runningServices    map[string]RunningService
 }
 type OpenAiApiModels struct {
@@ -151,19 +151,23 @@ func main() {
 
 	resourceManager = ResourceManager{
 		resourcesInUse:     make(map[string]int),
-		resourcesAvailable: make(map[string]int),
+		resourcesAvailable: make(map[string]*int),
 		runningServices:    make(map[string]RunningService),
 		serviceMutex:       &sync.Mutex{},
 	}
 
 	for name, resource := range config.ResourcesAvailable {
-		resourceManager.resourcesAvailable[name] = resource.Amount
-		go monitorResourceAvailability(
-			name,
-			resource.CheckCommand,
-			time.Duration(resource.CheckIntervalMilliseconds)*time.Millisecond,
-			&resourceManager,
-		)
+		//Using int reference to avoid having a lock for reading from the map
+		resourceManager.resourcesAvailable[name] = new(int)
+		*resourceManager.resourcesAvailable[name] = resource.Amount
+		if resource.CheckCommand != "" {
+			go monitorResourceAvailability(
+				name,
+				resource.CheckCommand,
+				time.Duration(resource.CheckIntervalMilliseconds)*time.Millisecond,
+				&resourceManager,
+			)
+		}
 	}
 	for _, service := range config.Services {
 		if service.ListenPort != "" {
@@ -918,7 +922,7 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 
 func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
 	for resource, amount := range resourceRequirements {
-		if resourceManager.resourcesInUse[resource]+amount > resourceManager.resourcesAvailable[resource] {
+		if resourceManager.resourcesInUse[resource]+amount > *resourceManager.resourcesAvailable[resource] {
 			if outputError {
 				log.Printf(
 					"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",

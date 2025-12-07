@@ -934,7 +934,7 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 					"[%s] Not enough %s to start. Total: %d, In use: %d, Required: %d",
 					requestingService,
 					resource,
-					resourceManager.resourcesAvailable[resource],
+					*resourceManager.resourcesAvailable[resource],
 					resourceManager.resourcesInUse[resource],
 					amount,
 				)

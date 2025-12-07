@@ -72,6 +72,11 @@ Below is an example `config.jsonc`:
         "CheckIntervalMilliseconds": 1000,
     }
     "RAM": 32000,
+    // Alternatively use a shell command to check current RAM available:
+    //"RAM": {
+    //    "CheckCommand": "awk '/MemAvailable/ {printf \"%d\\n\", $2/1024}' /proc/meminfo",
+    //     "CheckIntervalMilliseconds": 1000,
+    //}
   },
   "Services": [
     {

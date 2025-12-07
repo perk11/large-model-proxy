@@ -2099,7 +2099,7 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 // TODO: move to monitor_resources_test.go
 // TODO: Implement check commands for each process that overrides resources used
 // TODO: document in README
-// TODO: there is a bug where another resource is considered to be not enough
+// TODO: there is a bug where none of the resources are actually considered available
 // TODO: add debug output option
 func testResourceCheckCommand(t *testing.T, serviceAddress string, managementApiAddress string, resourceName string, serviceName string) {
 	//TODO: add second service

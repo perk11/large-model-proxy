@@ -8,9 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TODO: add debug output option
-// testResourceCheckCommand verifies dynamic resource availability updates driven by a check command.
-// It connects to the service and observes total resources available and service status over time.
+// testResourceCheckCommand
+// The test resource availability increases by 1 with each check which is
+// scheduled to be every second.
+// Service One needs 3 units of the resource and takes 10 seconds to start
+// Service two needs 4 units of the resource
+// Both service connections are open at the same time
+// Testing that: 1. Service One starts after 6 seconds
+//  2. Service Two starts after 11 seconds
 func testResourceCheckCommand(
 	t *testing.T, serviceOneAddress string,
 	serviceTwoAddress string,
@@ -22,21 +27,26 @@ func testResourceCheckCommand(
 	resourceName string,
 ) {
 	//TODO: make second service need more resource and wait for longer
+	//TODO: services that are currently starting should be counted towards the resource use
 	time.Sleep(200 * time.Millisecond) // give lmp time to run the check command for the first time
 	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 1})
 	verifyServiceStatus(t, statusResponse, serviceOneName, false, map[string]int{resourceName: 0})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
-	conn, err := net.Dial("tcp", serviceOneAddress)
+	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
 	}
-	defer func() { _ = conn.Close() }()
-	time.Sleep(2000 * time.Millisecond)
+	connTwo, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
+	}
+	defer func() { _ = connTwo.Close() }()
+	time.Sleep(1000 * time.Millisecond)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2})
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2}) //resource check should've ran 2 times
 	//the check below is weird, but the API already considers the service as running and "using" resources here
 	//to be fixed when API is reworked
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 3})
@@ -48,6 +58,8 @@ func testResourceCheckCommand(
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 3})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
+	serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
 
 	// since the check whether the resource is available is currently once per second,
 	// wait for 1 more iteration to avoid race conditions
@@ -56,9 +68,9 @@ func testResourceCheckCommand(
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 4})
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 3})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
-	serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceOneHealthCheckAddress)
-	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
+	//serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	//assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
 
-	pid := readPidFromOpenConnection(t, conn)
+	pid := readPidFromOpenConnection(t, connOne)
 	assert.True(t, isProcessRunning(pid))
 }

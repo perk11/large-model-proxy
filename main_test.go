@@ -1823,9 +1823,10 @@ func TestAppScenarios(test *testing.T) {
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
 							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
-							CheckIntervalMilliseconds: 2000,
+							CheckIntervalMilliseconds: 1000,
 						},
 					},
+					LogLevel: LogLevelDebug,
 					ManagementApi: ManagementApi{
 						ListenPort: "2076",
 					},
@@ -1844,7 +1845,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetPort:      "12079",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12079 -healthcheck-port 2081",
-							ResourceRequirements: map[string]int{"TestResource": 6},
+							ResourceRequirements: map[string]int{"TestResource": 4},
 						},
 					},
 				}

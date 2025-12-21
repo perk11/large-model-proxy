@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func checkExpectedErrorMessages(t *testing.T, err error, expectedMsgs []string) {
@@ -899,4 +901,65 @@ func TestJsonWithInvalidDataAfterObject(t *testing.T) {
 	checkExpectedErrorMessages(t, err, []string{
 		"extra data after the first JSON object",
 	})
+}
+
+func TestLogLevelDefaultIsNormal(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {"RAM": 10000},
+		"Services": [
+			{"Name": "svc", "ListenPort": "8080", "Command": "/bin/echo"}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != LogLevelNormal {
+		t.Fatalf("expected default LogLevel to be Normal, got %q", string(cfg.LogLevel))
+	}
+}
+
+func TestLogLevelAcceptsDebug(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"LogLevel": "Debug",
+		"ResourcesAvailable": {"RAM": 10000},
+		"Services": [
+			{"Name": "svc", "ListenPort": "8080", "Command": "/bin/echo"}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assert.Equal(t, LogLevelDebug, cfg.LogLevel, "expected LogLevel to be Debug")
+}
+
+func TestLogLevelAcceptsNormal(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"LogLevel": "Normal",
+		"ResourcesAvailable": {"RAM": 10000},
+		"Services": [
+			{"Name": "svc", "ListenPort": "8080", "Command": "/bin/echo"}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assert.Equal(t, LogLevelNormal, cfg.LogLevel, "expected LogLevel to be Normal")
+}
+
+func TestLogLevelInvalidValue(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"LogLevel": "Verbose",
+		"ResourcesAvailable": {"RAM": 10000},
+		"Services": [
+			{"Name": "svc", "ListenPort": "8080", "Command": "/bin/echo"}
+		]
+	}`)
+	if err == nil {
+		t.Fatalf("expected error for invalid LogLevel but got nil")
+	}
+	assert.Contains(t, err.Error(), "invalid LogLevel")
 }

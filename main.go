@@ -925,20 +925,20 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 	for resource, amount := range resourceRequirements {
 		var enoughOfResource bool
 		totalAvailableAmountRef, ok := resourceManager.resourcesAvailable[resource]
-		totalAvailableAmount := *totalAvailableAmountRef
 		if !ok {
 			log.Printf(
-				"[%s] ERROR: Resource \"%s\" is missing from a list available resources. This shouldn't be happening",
+				"[%s] ERROR: Resource \"%s\" is missing from the list of the available resources. This shouldn't be happening",
 				requestingService,
 				resource,
 			)
 			return &resource
 		}
+		totalAvailableAmount := *totalAvailableAmountRef
 		if config.ResourcesAvailable[resource].CheckCommand == "" {
 			inUseAmount, ok := resourceManager.resourcesInUse[resource]
 			if !ok {
 				log.Printf(
-					"[%s] ERROR: Resource \"%s\" is missing from a list of resources in use. This shouldn't be happening",
+					"[%s] ERROR: Resource \"%s\" is missing from the list of the resources in use. This shouldn't be happening",
 					requestingService,
 					resource,
 				)

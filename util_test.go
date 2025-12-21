@@ -596,6 +596,7 @@ func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Dur
 
 	t.Fatalf("connection to %s is still open after %s", connection.RemoteAddr(), within)
 }
+
 func isConnectionReset(err error) bool {
 	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
 }

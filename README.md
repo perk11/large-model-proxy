@@ -70,7 +70,7 @@ Below is an example `config.jsonc`:
         "Amount": 24000,
         "CheckCommand": "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 0",
         "CheckIntervalMilliseconds": 1000,
-    }
+    },
     "RAM": 32000,
     // Alternatively use a shell command to check current RAM available:
     //"RAM": {

@@ -104,7 +104,7 @@ type Config struct {
 	ShutDownAfterInactivitySeconds                                uint
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
 	OutputServiceLogs                                             *bool
-	LogLevel                                                      LogLevel        `json:"LogLevel,omitempty"`
+	LogLevel                                                      LogLevel                     `json:"LogLevel,omitempty"`
 	DefaultServiceUrl                                             *string                      `json:"DefaultServiceUrl"`
 	Services                                                      []ServiceConfig              `json:"Services"`
 	ResourcesAvailable                                            map[string]ResourceAvailable `json:"ResourcesAvailable"`
@@ -175,7 +175,7 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	if err == nil {
 		err = errors.New("missing both Amount and CheckCommand fields")
 	}
-	return fmt.Errorf("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourceAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}} %v", err)
+	return fmt.Errorf("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourcesAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}} %v", err)
 }
 
 // UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and ResourcesAvailable properly

@@ -904,6 +904,7 @@ func TestJsonWithInvalidDataAfterObject(t *testing.T) {
 }
 
 func TestLogLevelDefaultIsNormal(t *testing.T) {
+	t.Parallel()
 	cfg, err := loadConfigFromString(t, `{
 		"ResourcesAvailable": {"RAM": 10000},
 		"Services": [
@@ -949,6 +950,7 @@ func TestLogLevelAcceptsNormal(t *testing.T) {
 }
 
 func TestLogLevelInvalidValue(t *testing.T) {
+	t.Parallel()
 	_, err := loadConfigFromString(t, `{
 		"LogLevel": "Verbose",
 		"ResourcesAvailable": {"RAM": 10000},

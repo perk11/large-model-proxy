@@ -498,6 +498,7 @@ func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) Statu
 	return statusResp
 }
 func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
+	t.Helper()
 	resp, err := http.Get(fmt.Sprintf("http://%s/", address))
 	if err != nil {
 		t.Fatalf("Failed to get healthcheck response: %v", err)

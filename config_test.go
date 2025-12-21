@@ -919,6 +919,7 @@ func TestLogLevelDefaultIsNormal(t *testing.T) {
 }
 
 func TestLogLevelAcceptsDebug(t *testing.T) {
+	t.Parallel()
 	cfg, err := loadConfigFromString(t, `{
 		"LogLevel": "Debug",
 		"ResourcesAvailable": {"RAM": 10000},

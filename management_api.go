@@ -121,10 +121,12 @@ func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 
 	// Add status endpoint
 	mux.HandleFunc("/status", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrlManagementApi(request)
 		handleStatus(responseWriter, request, services)
 	})
 
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
+		printRequestUrlManagementApi(request)
 		if request.URL.Path != "/" {
 			http.NotFound(responseWriter, request)
 			return
@@ -148,4 +150,7 @@ func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("[Management API] Could not start management API: %s\n", err.Error())
 	}
+}
+func printRequestUrlManagementApi(request *http.Request) {
+	log.Printf("[Management API] %s %s", request.Method, request.URL)
 }

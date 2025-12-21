@@ -106,7 +106,7 @@ func testResourceCheckCommand(
 	assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 	serviceTwoHealthCheckResponse := getHealthcheckResponse(t, serviceTwoHealthCheckAddress)
 	assert.Equal(t, "ok", serviceTwoHealthCheckResponse.Message)
-	//Todo: wait for service one to start
+
 	pid := readPidFromOpenConnection(t, connOne)
 	assert.True(t, isProcessRunning(pid))
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)

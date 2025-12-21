@@ -119,7 +119,6 @@ var uiIndexContents []byte
 func startManagementApi(managementAPI ManagementApi, services []ServiceConfig) {
 	mux := http.NewServeMux()
 
-	// Add status endpoint
 	mux.HandleFunc("/status", func(responseWriter http.ResponseWriter, request *http.Request) {
 		printRequestUrlManagementApi(request)
 		handleStatus(responseWriter, request, services)

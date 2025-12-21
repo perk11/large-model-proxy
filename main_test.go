@@ -1836,8 +1836,8 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12077",
 							Command:              "./test-server/test-server",
-							Args:                 "-p 12077 -healthcheck-port 2080",
-							ResourceRequirements: map[string]int{"TestResource": 3},
+							Args:                 "-p 12077 -healthcheck-port 2080 -startup-duration 10s",
+							ResourceRequirements: map[string]int{"TestResource": 4},
 						},
 						{
 							ListenPort:           "2079",
@@ -1845,7 +1845,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetPort:      "12079",
 							Command:              "./test-server/test-server",
 							Args:                 "-p 12079 -healthcheck-port 2081",
-							ResourceRequirements: map[string]int{"TestResource": 4},
+							ResourceRequirements: map[string]int{"TestResource": 5},
 						},
 					},
 				}

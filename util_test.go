@@ -497,23 +497,31 @@ func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) Statu
 
 	return statusResp
 }
-func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
+func attemptReadHealthcheckResponse(t *testing.T, address string) (HealthCheckResponse, error) {
 	t.Helper()
 	resp, err := http.Get(fmt.Sprintf("http://%s/", address))
 	if err != nil {
-		t.Fatalf("Failed to get healthcheck response: %v", err)
+		return HealthCheckResponse{}, fmt.Errorf("failed to get healthcheck response: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("Failed to read body: %v", err)
+		return HealthCheckResponse{}, fmt.Errorf("failed to read body: %w", err)
 	}
 	var healthCheckResponse HealthCheckResponse
 	if err := json.Unmarshal(body, &healthCheckResponse); err != nil {
-		t.Fatalf("Failed to decode healthcheck response JSON: %v; body=%s", err, string(body))
+		return HealthCheckResponse{}, fmt.Errorf("failed to decode healthcheck response JSON: %w; body=%s", err, string(body))
 	}
-	return healthCheckResponse
+	return healthCheckResponse, nil
+}
+func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
+	t.Helper()
+	resp, err := attemptReadHealthcheckResponse(t, address)
+	if err != nil {
+		t.Fatalf("Failed to get healthcheck response: %v", err)
+	}
+	return resp
 }
 
 // verifyServiceStatus checks if a specific service has the expected running status and resource usage

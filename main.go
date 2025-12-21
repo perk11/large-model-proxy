@@ -160,6 +160,7 @@ func main() {
 		//Using int reference to avoid having a lock for reading from the map
 		resourceManager.resourcesAvailable[name] = new(int)
 		*resourceManager.resourcesAvailable[name] = resource.Amount
+		resourceManager.resourcesInUse[name] = 0
 		if resource.CheckCommand != "" {
 			go monitorResourceAvailability(
 				name,
@@ -923,10 +924,29 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[string]int, requestingService string, outputError bool) *string {
 	for resource, amount := range resourceRequirements {
 		var enoughOfResource bool
+		totalAvailableAmountRef, ok := resourceManager.resourcesAvailable[resource]
+		totalAvailableAmount := *totalAvailableAmountRef
+		if !ok {
+			log.Printf(
+				"[%s] ERROR: Resource \"%s\" is missing from a list available resources. This shouldn't be happening",
+				requestingService,
+				resource,
+			)
+			return &resource
+		}
 		if config.ResourcesAvailable[resource].CheckCommand == "" {
-			enoughOfResource = resourceManager.resourcesInUse[resource]+amount > *resourceManager.resourcesAvailable[resource]
+			inUseAmount, ok := resourceManager.resourcesInUse[resource]
+			if !ok {
+				log.Printf(
+					"[%s] ERROR: Resource \"%s\" is missing from a list of resources in use. This shouldn't be happening",
+					requestingService,
+					resource,
+				)
+				inUseAmount = 0
+			}
+			enoughOfResource = amount <= totalAvailableAmount-inUseAmount
 		} else { //Ignore resources in use if available amount is dynamically calculated
-			enoughOfResource = amount > *resourceManager.resourcesAvailable[resource]
+			enoughOfResource = amount <= totalAvailableAmount
 		}
 		if !enoughOfResource {
 			if outputError {

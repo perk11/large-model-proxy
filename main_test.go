@@ -1805,7 +1805,17 @@ func TestAppScenarios(test *testing.T) {
 		{
 			Name: "resource-check-command",
 			TestFunc: func(t *testing.T) {
-				testResourceCheckCommand(t, "localhost:2077", "localhost:2076", "TestResource", "resource-check-command_service0")
+				testResourceCheckCommand(
+					t,
+					"localhost:2077",
+					"localhost:2079",
+					"localhost:2080",
+					"localhost:2081",
+					"resource-check-command_service0",
+					"resource-check-command_service1",
+					"localhost:2076",
+					"TestResource",
+				)
 			},
 			GetConfig: func(t *testing.T, testName string) Config {
 				return Config{
@@ -1825,7 +1835,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12077",
 							Command:              "./test-server/test-server",
-							Args:                 "-p 12077",
+							Args:                 "-p 12077 -healthcheck-port 2080",
 							ResourceRequirements: map[string]int{"TestResource": 3},
 						},
 						{
@@ -1833,7 +1843,7 @@ func TestAppScenarios(test *testing.T) {
 							ProxyTargetHost:      "localhost",
 							ProxyTargetPort:      "12079",
 							Command:              "./test-server/test-server",
-							Args:                 "-p 12079",
+							Args:                 "-p 12079 -healthcheck-port 2081",
 							ResourceRequirements: map[string]int{"TestResource": 6},
 						},
 					},
@@ -1842,7 +1852,11 @@ func TestAppScenarios(test *testing.T) {
 			AddressesToCheckAfterStopping: []string{
 				"localhost:2076",
 				"localhost:2077",
+				"localhost:2079",
+				"localhost:2080",
+				"localhost:2081",
 				"localhost:12077",
+				"localhost:12079",
 			},
 			SetupFunc: func(t *testing.T) {
 				err := os.Remove("test-logs/resource-check-command.counter.txt")

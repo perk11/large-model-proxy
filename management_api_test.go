@@ -15,6 +15,11 @@ type StatusResponse struct {
 	Services  []ServiceStatus          `json:"services"`
 	Resources map[string]ResourceUsage `json:"resources"`
 }
+type HealthCheckResponse struct {
+	Message             string `json:"message"`
+	MainPortConnections int    `json:"main_port_connections"`
+	Status              int    `json:"status"`
+}
 
 // ServiceStatus represents the current state of a service
 type ServiceStatus struct {

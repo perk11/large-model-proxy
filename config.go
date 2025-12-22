@@ -178,7 +178,7 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("each entry in ResourcesAvailable must be an integer or an object with at least one of the fields: \"Amount\", \"CheckCommand\", e.g. \"ResourcesAvailable: {\"RAM\": {\"Amount\": 1, \"CheckCommand\": \"echo 1\"}} %v", err)
 }
 
-// UnmarshalJSON implements custom unmarshaling for ServiceConfig to handle ServiceUrl and ResourcesAvailable properly
+// UnmarshalJSON implements custom unmarshalling for ServiceConfig to handle ServiceUrl properly
 func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 	type Alias ServiceConfig
 	aux := &struct {

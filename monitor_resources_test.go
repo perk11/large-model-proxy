@@ -41,7 +41,7 @@ func testResourceCheckCommand(
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
 	defer func() { _ = connTwo.Close() }()
 	if err != nil {
-		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
+		t.Fatalf("failed to connect to %s: %v", serviceTwoAddress, err)
 	}
 
 	assert.Less(t, statusResponse.Resources[resourceName].TotalAvailable, 4, "Resource check ran too many times before the test started")

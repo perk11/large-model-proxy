@@ -92,7 +92,7 @@ func testResourceCheckCommand(
 		verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 4})
 		//service two should not be starting. Even though >=5 total units are available, 4 should be reserved for service one
 		verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 5})
-		serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceOneHealthCheckAddress)
+		serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 		assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 		assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
 		resourceAvailableAmountExpected++

@@ -68,7 +68,7 @@ Below is an example `config.jsonc`:
   "ResourcesAvailable": {
     "VRAM-GPU-1": {
         "Amount": 24000,
-        "CheckCommand": "nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 0",
+        "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0",
         "CheckIntervalMilliseconds": 1000,
     },
     "RAM": 32000,

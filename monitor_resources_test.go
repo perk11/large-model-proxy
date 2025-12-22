@@ -58,7 +58,7 @@ func testResourceCheckCommand(
 		}
 	}
 
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3}) //resource check should've ran 2 times
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 0})
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 4})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 5})

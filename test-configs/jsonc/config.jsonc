@@ -16,6 +16,6 @@
       "Command": "../../test-server/test-server",
       "LogFilePath": "../../test-logs/default-config-file-name-jsonc.log",
       "Args": "-p 12048",
-    }
+    },
   ]
 }

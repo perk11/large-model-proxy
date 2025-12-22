@@ -97,6 +97,7 @@ func testResourceCheckCommand(
 		assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
 		resourceAvailableAmountExpected++
 		time.Sleep(1000 * time.Millisecond)
+		//TODO: do we need to sleep more since service two health check can fail still
 	}
 
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)

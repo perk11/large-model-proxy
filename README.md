@@ -67,9 +67,9 @@ Below is an example `config.jsonc`:
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
     "VRAM-GPU-1": {
-        "Amount": 24000,
-        "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0",
-        "CheckIntervalMilliseconds": 1000,
+      "Amount": 24000,
+      "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0",
+      "CheckIntervalMilliseconds": 1000,
     },
     "RAM": 32000,
     // Alternatively use a shell command to check current RAM available:

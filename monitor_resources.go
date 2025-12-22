@@ -16,7 +16,7 @@ func monitorResourceAvailability(resourceName string, checkCommand string, check
 		cmd := exec.Command("sh", "-c", checkCommand)
 		output, err := cmd.Output()
 		if err != nil {
-			log.Printf("[Resource Monitor][%s] Failed to start check command \"%s\": %v", resourceName, checkCommand, err)
+			log.Printf("[Resource Monitor][%s] Failed to execute check command \"%s\": %v", resourceName, checkCommand, err)
 		} else {
 			outputString := string(output)
 			outputString = strings.TrimSuffix(outputString, "\n")

@@ -113,3 +113,23 @@ func testResourceCheckCommand(
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
 }
+
+// testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult
+// Test resource starts at 10 units, but service one is changing it to 0 units.
+// Check command runs every 10 seconds.
+// We immediately spawn service one and then service two.
+// Service two is not supposed to start while service one is running, even though check command hasn't ran yet
+// It should start after service one terminates after 15 seconds.
+func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
+	t *testing.T,
+	serviceOneAddress string,
+	serviceTwoAddress string,
+	serviceOneHealthCheckAddress string,
+	serviceTwoHealthCheckAddress string,
+	serviceOneName string,
+	serviceTwoName string,
+	managementApiAddress string,
+	resourceName string,
+) {
+	//TODO: implement and fix by changing monitoring to a queue
+}

@@ -34,15 +34,15 @@ func testResourceCheckCommand(
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 0})
 	connOne, err := net.Dial("tcp", serviceOneAddress)
-	defer func() { _ = connOne.Close() }()
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
 	}
+	defer func() { _ = connOne.Close() }()
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
-	defer func() { _ = connTwo.Close() }()
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceTwoAddress, err)
 	}
+	defer func() { _ = connTwo.Close() }()
 
 	assert.Less(t, statusResponse.Resources[resourceName].TotalAvailable, 4, "Resource check ran too many times before the test started")
 

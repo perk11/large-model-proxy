@@ -15,6 +15,11 @@ type StatusResponse struct {
 	Services  []ServiceStatus          `json:"services"`
 	Resources map[string]ResourceUsage `json:"resources"`
 }
+type HealthCheckResponse struct {
+	Message             string `json:"message"`
+	MainPortConnections int    `json:"main_port_connections"`
+	Status              int    `json:"status"`
+}
 
 // ServiceStatus represents the current state of a service
 type ServiceStatus struct {
@@ -42,8 +47,8 @@ func TestManagementUI(t *testing.T) {
 
 	cfg := Config{
 		ShutDownAfterInactivitySeconds: 4,
-		ResourcesAvailable: map[string]int{
-			"CPU": 4,
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 4},
 		},
 		ManagementApi: ManagementApi{
 			ListenPort: "2044",
@@ -119,9 +124,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	cfg := Config{
 		ShutDownAfterInactivitySeconds: 4,
-		ResourcesAvailable: map[string]int{
-			"CPU": 4,
-			"GPU": 2,
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 4},
+			"GPU": {Amount: 2},
 		},
 		ManagementApi: ManagementApi{
 			ListenPort: "2040",

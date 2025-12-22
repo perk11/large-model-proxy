@@ -462,6 +462,23 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 	}
 }
 
+// verifyTotalResourcesAvailable checks if the total resource availability matches the expected values
+func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAvailable map[string]int) {
+	t.Helper()
+	for resource, expectedAmount := range expectedAvailable {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+
+		if resourceInfo.TotalAvailable != expectedAmount {
+			t.Errorf("Expected total %s available: %d, actual: %d",
+				resource, expectedAmount, resourceInfo.TotalAvailable)
+		}
+	}
+}
+
 func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
 	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {
@@ -479,6 +496,32 @@ func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) Statu
 	}
 
 	return statusResp
+}
+func attemptReadHealthcheckResponse(t *testing.T, address string) (HealthCheckResponse, error) {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("http://%s/", address))
+	if err != nil {
+		return HealthCheckResponse{}, fmt.Errorf("failed to get healthcheck response: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return HealthCheckResponse{}, fmt.Errorf("failed to read body: %w", err)
+	}
+	var healthCheckResponse HealthCheckResponse
+	if err := json.Unmarshal(body, &healthCheckResponse); err != nil {
+		return HealthCheckResponse{}, fmt.Errorf("failed to decode healthcheck response JSON: %w; body=%s", err, string(body))
+	}
+	return healthCheckResponse, nil
+}
+func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
+	t.Helper()
+	resp, err := attemptReadHealthcheckResponse(t, address)
+	if err != nil {
+		t.Fatalf("Failed to get healthcheck response: %v", err)
+	}
+	return resp
 }
 
 // verifyServiceStatus checks if a specific service has the expected running status and resource usage
@@ -562,6 +605,7 @@ func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Dur
 
 	t.Fatalf("connection to %s is still open after %s", connection.RemoteAddr(), within)
 }
+
 func isConnectionReset(err error) bool {
 	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
 }

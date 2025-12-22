@@ -1,5 +1,12 @@
 /* This file is to test that config.jsonc is automatically used if no -config parameter is passed */
 {
+  "ResourcesAvailable": {
+    //formatting is off here intentionally
+  "Test":   {
+    "Amount":         123,
+  },
+    "Test2": 456,
+},
   "Services": [
     {
       "Name": "jsonc-test", //Look ma, a comment!
@@ -9,6 +16,6 @@
       "Command": "../../test-server/test-server",
       "LogFilePath": "../../test-logs/default-config-file-name-jsonc.log",
       "Args": "-p 12048",
-    }
+    },
   ]
 }

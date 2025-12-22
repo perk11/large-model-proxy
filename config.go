@@ -182,8 +182,7 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 func (sc *ServiceConfig) UnmarshalJSON(data []byte) error {
 	type Alias ServiceConfig
 	aux := &struct {
-		ServiceUrl         json.RawMessage              `json:"ServiceUrl"`
-		ResourcesAvailable map[string]ResourceAvailable `json:"ResourcesAvailable"`
+		ServiceUrl json.RawMessage `json:"ServiceUrl"`
 		*Alias
 	}{
 		Alias: (*Alias)(sc),

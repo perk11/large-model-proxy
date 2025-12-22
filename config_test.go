@@ -968,7 +968,7 @@ func TestJsonWithCheckCommand(t *testing.T) {
 func TestJsonWithNonIntegerInCheckInterval(t *testing.T) {
 	t.Parallel()
 	_, err := loadConfigFromString(t, `{
-		"ResourcesAvailable": { "CheckCommand": "Bar", "CheckFrequencyMilliseconds": "string" },
+		"ResourcesAvailable": { "CheckCommand": "Bar", "CheckIntervalMilliseconds": "string" },
 	}`)
 	checkExpectedErrorMessages(t, err, []string{
 		"each entry in ResourcesAvailable must be an integer or an object with at least one of the fields",

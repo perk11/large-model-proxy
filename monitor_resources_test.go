@@ -17,7 +17,8 @@ import (
 // Testing that: 1. Service One starts after 6 seconds
 //  2. Service Two starts after 11 seconds
 func testResourceCheckCommand(
-	t *testing.T, serviceOneAddress string,
+	t *testing.T,
+	serviceOneAddress string,
 	serviceTwoAddress string,
 	serviceOneHealthCheckAddress string,
 	serviceTwoHealthCheckAddress string,

@@ -37,7 +37,7 @@ type RunningService struct {
 
 type ResourceManager struct {
 	serviceMutex       *sync.Mutex
-	resourcesInUse     map[string]int  // used by services but any service that are currently starting or running
+	resourcesInUse     map[string]int  // used by services that are currently starting or running
 	resourcesReserved  map[string]int  // used by services that are currently starting but have not yet passed the health check
 	resourcesAvailable map[string]*int // if CheckCommand is used, the result returned by CheckCommand. Otherwise, unused
 	runningServices    map[string]RunningService
@@ -952,14 +952,6 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 				inUseAmount = 0
 			}
 			totalAvailableAmount := config.ResourcesAvailable[resource].Amount
-			if !ok {
-				log.Printf(
-					"[%s] ERROR: Resource \"%s\" is missing from the list of the resources in use. This shouldn't be happening",
-					requestingService,
-					resource,
-				)
-				inUseAmount = 0
-			}
 			enoughOfResource = requiredAmount <= totalAvailableAmount-inUseAmount
 		} else {
 			// Use resources reserved instead of used for the calculation as we only need
@@ -987,8 +979,8 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 						requestingService,
 						resource,
 						config.ResourcesAvailable[resource].Amount,
-						resourceManager.resourcesReserved[resource],
 						currentlyAvailableAmount,
+						resourceManager.resourcesReserved[resource],
 						requiredAmount,
 					)
 				} else {

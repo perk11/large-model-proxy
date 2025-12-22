@@ -869,6 +869,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	}
 	startTime := time.Now()
 	var iteration = 0 // Log status roughly every 60 seconds: 600 iterations * 100ms sleep per iteration
+	var iteration = 0
 	const logOutputIterationFrequency = 600
 	for time.Since(startTime) < maxWaitTime {
 		resourceManager.serviceMutex.Lock()

@@ -161,7 +161,6 @@ func main() {
 	for name, resource := range config.ResourcesAvailable {
 		//Using int reference to avoid having a lock for reading from the map
 		resourceManager.resourcesAvailable[name] = new(int)
-		*resourceManager.resourcesAvailable[name] = resource.Amount
 		resourceManager.resourcesInUse[name] = 0
 		resourceManager.resourcesReserved[name] = 0
 		if resource.CheckCommand != "" {
@@ -869,7 +868,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		maxWaitTime = time.Duration(*config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds) * time.Second
 	}
 	startTime := time.Now()
-	var iteration = 0
+	var iteration = 0 // Log status roughly every 60 seconds: 600 iterations * 100ms sleep per iteration
 	const logOutputIterationFrequency = 600
 	for time.Since(startTime) < maxWaitTime {
 		resourceManager.serviceMutex.Lock()

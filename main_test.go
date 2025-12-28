@@ -1866,6 +1866,74 @@ func TestAppScenarios(test *testing.T) {
 				}
 			},
 		},
+		{
+			Name: "should-not-use-an-outdated-resource-check-result",
+			TestFunc: func(t *testing.T) {
+				testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
+					t,
+					"localhost:2082",
+					"localhost:2083",
+					"localhost:2084",
+					"localhost:2085",
+					"should-not-use-an-outdated-resource-check-result_service0",
+					"should-not-use-an-outdated-resource-check-result_service1",
+					"localhost:2086",
+					"TestResource",
+				)
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							CheckCommand:              "cat test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt",
+							CheckIntervalMilliseconds: 60000,
+							Amount:                    2, //Initial amount is different to make sure the check command runs
+						},
+					},
+					LogLevel: LogLevelDebug,
+					ManagementApi: ManagementApi{
+						ListenPort: "2086",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:      "2082",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12077",
+							Command:         "sh -c",
+							Args: "echo '11' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
+								"sleep 4 && " +
+								"echo '0' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
+								"./test-server/test-server -p 12077 -healthcheck-port 2084 -exit-after-duration 2s && " +
+								"echo '12' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt",
+							ResourceRequirements: map[string]int{"TestResource": 10},
+						},
+						{
+							ListenPort:           "2083",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12079",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12079 -healthcheck-port 2085",
+							ResourceRequirements: map[string]int{"TestResource": 10},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2076",
+				"localhost:2077",
+				"localhost:2079",
+				"localhost:2080",
+				"localhost:2081",
+				"localhost:12077",
+				"localhost:12079",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.WriteFile("test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt", []byte("10"), 0666)
+				if err != nil {
+					t.Fatalf("failed to write resource-amount file: %v", err)
+				}
+			},
+		},
 	}
 
 	for _, testCase := range tests {

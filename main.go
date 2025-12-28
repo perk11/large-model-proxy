@@ -36,11 +36,15 @@ type RunningService struct {
 }
 
 type ResourceManager struct {
-	serviceMutex       *sync.Mutex
-	resourcesInUse     map[string]int  // used by services that are currently starting or running
-	resourcesReserved  map[string]int  // used by services that are currently starting but have not yet passed the health check
-	resourcesAvailable map[string]*int // if CheckCommand is used, the result returned by CheckCommand. Otherwise, unused
-	runningServices    map[string]RunningService
+	serviceMutex          *sync.Mutex
+	resourcesInUse        map[string]int  // used by services that are currently starting or running
+	resourcesReserved     map[string]int  // used by services that are currently starting but have not yet passed the health check
+	resourcesAvailable    map[string]*int // if CheckCommand is used, the result returned by CheckCommand. Otherwise, unused
+	runningServices       map[string]RunningService
+	monitorResetChans     map[string]chan struct{} // per-resource signal to reset the monitor sleep back to full interval
+	monitorPauseChans     map[string]chan bool     // per-resource pause/resume control for monitorResourceAvailability
+	monitorCheckDoneChans map[string]chan struct{} // per-resource signal fired after a check command completes and resource amount is updated
+	resourceChangeChans   map[string]chan struct{} // per-resource signal fired when resource amounts may have changed (checks ran or services stopped)
 }
 type OpenAiApiModels struct {
 	Object string           `json:"object"`
@@ -151,11 +155,15 @@ func main() {
 	}
 
 	resourceManager = ResourceManager{
-		resourcesInUse:     make(map[string]int),
-		resourcesReserved:  make(map[string]int),
-		resourcesAvailable: make(map[string]*int),
-		runningServices:    make(map[string]RunningService),
-		serviceMutex:       &sync.Mutex{},
+		resourcesInUse:        make(map[string]int),
+		resourcesReserved:     make(map[string]int),
+		resourcesAvailable:    make(map[string]*int),
+		runningServices:       make(map[string]RunningService),
+		serviceMutex:          &sync.Mutex{},
+		monitorResetChans:     make(map[string]chan struct{}),
+		monitorPauseChans:     make(map[string]chan bool),
+		monitorCheckDoneChans: make(map[string]chan struct{}),
+		resourceChangeChans:   make(map[string]chan struct{}),
 	}
 
 	for name, resource := range config.ResourcesAvailable {
@@ -163,11 +171,18 @@ func main() {
 		resourceManager.resourcesAvailable[name] = new(int)
 		resourceManager.resourcesInUse[name] = 0
 		resourceManager.resourcesReserved[name] = 0
+		// create per-resource change channel for all resources
+		resourceManager.resourceChangeChans[name] = make(chan struct{}, 1)
 		if resource.CheckCommand != "" {
+			resourceManager.monitorResetChans[name] = make(chan struct{}, 1)
+			resourceManager.monitorPauseChans[name] = make(chan bool, 1)
+			resourceManager.monitorCheckDoneChans[name] = make(chan struct{}, 1)
 			go monitorResourceAvailability(
 				name,
 				resource.CheckCommand,
 				time.Duration(resource.CheckIntervalMilliseconds)*time.Millisecond,
+				resourceManager.monitorResetChans[name],
+				resourceManager.monitorPauseChans[name],
 				&resourceManager,
 			)
 		}
@@ -868,12 +883,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		maxWaitTime = time.Duration(*config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds) * time.Second
 	}
 	startTime := time.Now()
-	var iteration = 0 // Log status roughly every 60 seconds: 600 iterations * 100ms sleep per iteration
-	const logOutputIterationFrequency = 600
+	lastLogTime := time.Now()
 	for time.Since(startTime) < maxWaitTime {
 		resourceManager.serviceMutex.Lock()
-		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, iteration%logOutputIterationFrequency == 0)
-		iteration++
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false)
 		if missingResource == nil {
 			for resource, amount := range resourceRequirements {
 				resourceManager.resourcesInUse[resource] += amount
@@ -890,13 +903,24 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			continue
 		}
 
-		if iteration == 1 {
-			log.Printf("[%s] Failed to find a service to stop; will check every 100ms.", requestingService)
-		} else if iteration%logOutputIterationFrequency == 0 {
-			log.Printf("[%s] Failed to find a service to stop; continuing to check every 100ms.", requestingService)
+		// Log at start and roughly every 60 seconds while waiting for changes
+		if time.Since(lastLogTime) >= 60*time.Second {
+			log.Printf("[%s] Waiting for resources to change (on resource check or service stop) before retrying.", requestingService)
+			lastLogTime = time.Now()
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		remaining := maxWaitTime - time.Since(startTime)
+		if remaining <= 0 {
+			break
+		}
+		// Wait for a change in the specific missing resource (or timeout)
+		ch := resourceManager.resourceChangeChans[*missingResource]
+		select {
+		case <-ch:
+			// resource state changed; loop to re-evaluate
+		case <-time.After(remaining):
+			// timed out
+		}
 	}
 
 	log.Printf("[%s] Failed to find a service to stop, closing client connection", requestingService)
@@ -1358,6 +1382,17 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	runningService.stderrWriter.FinalFlush()
 	releaseResourcesWhenServiceMutexIsLocked(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
+	// Notify waiters that resources may have changed due to service stop
+	if resourceManager.resourceChangeChans != nil {
+		for res := range service.ResourceRequirements {
+			if ch, ok := resourceManager.resourceChangeChans[res]; ok && ch != nil {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
 }
 
 func waitForProcessToTerminate(exitWaitGroup *sync.WaitGroup) bool {

@@ -67,24 +67,9 @@ func testResourceCheckCommand(
 	time.Sleep(1000 * time.Millisecond)
 	var serviceOneHealthCheckResponse HealthCheckResponse
 	var resourceAvailableAmountExpected int
-	for {
-		//The resource is available now, but we need more time for the check to realize this.
-		// This can be removed after https://github.com/perk11/large-model-proxy/issues/94 is implemented.
-		time.Sleep(100 * time.Millisecond)
 
-		serviceOneHealthCheckResponse, err = attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
-		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-		if resourceAvailableAmountExpected > 5 {
-			t.Fatalf("service one should have started by now")
-			return
-		}
-		if err == nil {
-			resourceAvailableAmountExpected = statusResponse.Resources[resourceName].TotalAvailable
-			assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
-			break
-		}
-	}
-
+	serviceOneHealthCheckResponse, err = attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	for resourceAvailableAmountExpected < 9 {
 		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 		verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: resourceAvailableAmountExpected})

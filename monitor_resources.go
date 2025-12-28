@@ -1,6 +1,7 @@
 package main
 
 import (
+	"iter"
 	"log"
 	"os/exec"
 	"strconv"
@@ -12,83 +13,27 @@ func monitorResourceAvailability(
 	resourceName string,
 	checkCommand string,
 	checkInterval time.Duration,
-	checkTimerResetChan chan struct{},
-	pauseResumeChan chan bool,
+	pauseResumeChan chan struct{},
 	resourceManager *ResourceManager,
 ) {
-	// Use a timer-driven loop so we can reset the sleep interval when requested.
 	timer := time.NewTimer(0) // fire immediately to perform the initial check
-	paused := true
 	for {
 		select {
 		case <-timer.C:
-			if !paused {
-				checkResourceAvailabilityWithKnownCommand(resourceName, checkCommand, resourceManager)
-				// Signal completion to any waiter that the check finished and resource amount was updated
-				if ch, ok := resourceManager.monitorCheckDoneChans[resourceName]; ok && ch != nil {
-					select {
-					case ch <- struct{}{}:
-					default:
-					}
-				}
-				// Also signal that this resource may have changed so waiters can re-check
-				if ch, ok := resourceManager.resourceChangeChans[resourceName]; ok && ch != nil {
-					select {
-					case ch <- struct{}{}:
-					default:
-					}
-				}
+			checkResourceAvailabilityWithKnownCommand(resourceName, checkCommand, resourceManager)
+		case _, ok := <-pauseResumeChan:
+			if !ok {
+				panic("pauseResumeChan closed unexpectedly, crashing to avoid infinite loop")
 			}
-			// After a check (or if paused), schedule the next interval.
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			if paused {
-				// Keep timer stopped while paused.
-				continue
-			}
-			timer.Reset(checkInterval)
-		case <-checkTimerResetChan:
-			if paused {
-				log.Printf("[Resource Monitor][%s] ERROR: check timer reset requested while not paused", resourceName)
-				continue
-			}
-			if !timer.Stop() {
-				// Drain if it already fired to avoid immediate trigger race.
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			// Reset to zero to run the check right away; after the check, we will schedule the next at checkInterval.
-			timer.Reset(0)
-		case shouldBePaused := <-pauseResumeChan:
-			if shouldBePaused { // pause
-				paused = true
-				// stop and drain timer so it doesn't fire while paused
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-			} else { // resume
-				if paused {
-					paused = false
-					// On resume, trigger immediate check
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(0)
-				}
-			}
+			timer.Stop()
+			log.Printf("[Resource Monitor][%s] An immediate check was requested", resourceName)
+			checkResourceAvailabilityWithKnownCommand(resourceName, checkCommand, resourceManager)
 		}
+		resourceManager.resourceChangeByResourceMutex.Lock()
+		if len(resourceManager.resourceChangeByResourceChans[resourceName]) > 0 || len(resourceManager.checkCommandFirstChangeByResourceChans) > 0 {
+			timer.Reset(checkInterval)
+		}
+		resourceManager.resourceChangeByResourceMutex.Unlock()
 	}
 }
 
@@ -100,103 +45,89 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 	output, err := cmd.Output()
 	if err != nil {
 		log.Printf("[Resource Monitor][%s] Failed to execute check command \"%s\": %v", resourceName, checkCommand, err)
-	} else {
-		outputString := string(output)
-		outputString = strings.TrimSuffix(outputString, "\n")
-		resourceIntValue, err := strconv.Atoi(outputString)
-		if err == nil {
-			if *resourceManager.resourcesAvailable[resourceName] != resourceIntValue { //Don't need a lock for reading since this is the only place which writes
-				if config.LogLevel == LogLevelDebug {
-					log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
-				}
-				resourceManager.serviceMutex.Lock() //Avoid other places reading while we write
-				*resourceManager.resourcesAvailable[resourceName] = resourceIntValue
-				resourceManager.serviceMutex.Unlock()
-			}
-		} else {
-			log.Printf("[Resource Monitor][%s] Failed to parse check command \"%s\" output: %v. Output:\n%s", resourceName, checkCommand, err, string(output))
+		return
+	}
+
+	outputString := string(output)
+	outputString = strings.TrimSuffix(outputString, "\n")
+	resourceIntValue, err := strconv.Atoi(outputString)
+	if err != nil {
+		log.Printf("[Resource Monitor][%s] Failed to parse check command \"%s\" output: %v. Output:\n%s", resourceName, checkCommand, err, string(output))
+		return
+	}
+	resourceManager.resourcesAvailableMutex.Lock()
+	amountChanged := resourceManager.resourcesAvailable[resourceName] != resourceIntValue
+	if amountChanged { //Don't need a lock for reading since this is the only place which writes
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
 		}
+		resourceManager.resourcesAvailable[resourceName] = resourceIntValue
+	}
+	resourceManager.resourcesAvailableMutex.Unlock()
 
+	if amountChanged {
+		resourceManager.resourceChangeByResourceMutex.Lock()
+		resourceManager.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName)
+		resourceManager.resourcesAvailableMutex.Unlock()
 	}
 }
 
-// PauseResourceAvailabilityMonitoring pauses running the check for the given resource.
-// The monitor loop keeps its own timer and state; this function just signals pause.
-func PauseResourceAvailabilityMonitoring(resourceName string) {
-	resourceManager.serviceMutex.Lock()
-	pauseCh := resourceManager.monitorPauseChans[resourceName]
-	resourceManager.serviceMutex.Unlock()
+func UnpauseResourceAvailabilityMonitoring(resourceName string) {
+	resourceManager.monitorUnpauseChansMutex.Lock()
+	pauseCh := resourceManager.monitorUnpauseChans[resourceName]
+	resourceManager.monitorUnpauseChansMutex.Unlock()
 	if pauseCh == nil {
-		log.Printf("[Resource Monitor][%s] ERROR: Failed to find a pause channel", resourceName)
+		log.Printf("[Resource Monitor][%s] ERROR: Failed to find an unpause channel", resourceName)
 		return
 	}
 	select {
-	case pauseCh <- true:
-		log.Printf("[Resource Monitor][%s] Monitoring paused", resourceName)
-	default:
-		// if a signal is already pending, that's fine
-	}
-}
-
-// ResumeResourceAvailabilityMonitoring resumes checks for the given resource.
-// The monitor will reset its timer to run a check immediately upon resume.
-func ResumeResourceAvailabilityMonitoring(resourceName string) {
-	resourceManager.serviceMutex.Lock()
-	pauseCh := resourceManager.monitorPauseChans[resourceName]
-	resourceManager.serviceMutex.Unlock()
-	if pauseCh == nil {
-		log.Printf("[Resource Monitor][%s] ERROR: Failed to find a pause channel", resourceName)
-		return
-	}
-	select {
-	case pauseCh <- false:
+	case pauseCh <- struct{}{}:
 		log.Printf("[Resource Monitor][%s] Monitoring resumed", resourceName)
 	default:
 		// if a signal is already pending, that's fine
 	}
 }
 
-func CheckResourceAvailabilityIfNecessary(resourceName string, resourceManager *ResourceManager, config *Config) {
-	resourceRecord, ok := config.ResourcesAvailable[resourceName]
-	if !ok {
-		log.Printf("[Resource Monitor][%s] ERROR: Failed to find resource record in the resources available map", resourceName)
-		return
-	}
-	if resourceRecord.CheckCommand == "" {
-		return
-	}
-	checkResourceImmediatelyAndWaitForCompletion(resourceName)
-}
-
-// checkResourceImmediatelyAndWaitForCompletion triggers an immediate resource availability check
-// for the given resource and blocks until the check command finishes and the
-// resource amount is updated by the monitor.
-func checkResourceImmediatelyAndWaitForCompletion(resourceName string) {
-	// Lookup channels under lock to avoid races on the maps
-	resourceManager.serviceMutex.Lock()
-	resetCh := resourceManager.monitorResetChans[resourceName]
-	doneCh := resourceManager.monitorCheckDoneChans[resourceName]
-	resourceManager.serviceMutex.Unlock()
-	if resetCh == nil || doneCh == nil {
-		log.Printf("[Resource Monitor][%s] ERROR: missing reset or done channel", resourceName)
-		return
-	}
-	// Drain any stale completion notifications so we wait for the next check
-	for {
-		select {
-		case <-doneCh:
-			// keep draining
-		default:
-			goto drained
+func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string]) {
+	resourcesWithCheckCommand := make([]string, 0)
+	for resource := range resources {
+		if config.ResourcesAvailable[resource].CheckCommand != "" {
+			resourcesWithCheckCommand = append(resourcesWithCheckCommand, resource)
 		}
 	}
-
-drained:
-	// Request an immediate check; if a reset is already pending, that's fine
-	select {
-	case resetCh <- struct{}{}:
-	default:
+	if len(resourcesWithCheckCommand) == 0 {
+		return
 	}
-	// Wait until the monitor completes the check and updates the value
-	<-doneCh
+
+	rm.resourceChangeByResourceMutex.Lock()
+	defer rm.resourceChangeByResourceMutex.Unlock()
+	for _, resource := range resourcesWithCheckCommand {
+		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource)
+	}
+}
+
+func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string) {
+	resourceChangeByResourceChans, ok := rm.checkCommandFirstChangeByResourceChans[resourceName]
+	if !ok {
+		log.Printf("[Resource Monitor][%s] ERROR: checkCommandFirstChangeByResourceChans map is not initialized", resourceName)
+		return
+	}
+	sendSignalToChannels(resourceChangeByResourceChans, resourceName)
+
+	serviceChannels, ok := rm.resourceChangeByResourceChans[resourceName]
+	if !ok {
+		log.Printf("[Resource Monitor][%s] ERROR: resourceChangeByResourceChans map is not initialized", resourceName)
+		return
+	}
+	sendSignalToChannels(serviceChannels, resourceName)
+}
+
+func sendSignalToChannels(serviceChannels map[string]chan struct{}, resourceName string) {
+	for serviceName, resourceChangeChannel := range serviceChannels {
+		select {
+		case resourceChangeChannel <- struct{}{}:
+		default:
+			log.Printf("[Resource Monitor][%s] ERROR: resourceChange or checkCommandFirstChange channel for service \"%s\" is blocked", resourceName, serviceName)
+		}
+	}
 }

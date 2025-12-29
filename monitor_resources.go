@@ -57,7 +57,7 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 	}
 	resourceManager.resourcesAvailableMutex.Lock()
 	amountChanged := resourceManager.resourcesAvailable[resourceName] != resourceIntValue
-	if amountChanged { //Don't need a lock for reading since this is the only place which writes
+	if amountChanged {
 		if config.LogLevel == LogLevelDebug {
 			log.Printf("[Resource Monitor][%s] Setting available resource amount to %d", resourceName, resourceIntValue)
 		}
@@ -68,7 +68,7 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 	if amountChanged {
 		resourceManager.resourceChangeByResourceMutex.Lock()
 		resourceManager.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName)
-		resourceManager.resourcesAvailableMutex.Unlock()
+		resourceManager.resourceChangeByResourceMutex.Unlock()
 	}
 }
 

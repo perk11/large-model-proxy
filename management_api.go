@@ -52,10 +52,16 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	}
 
 	// Initialize resource usage tracking
-	for resource := range config.ResourcesAvailable {
-		response.Resources[resource] = ResourceUsage{
-			TotalAvailable: resourceManager.resourcesAvailable[resource],
-			TotalInUse:     resourceManager.resourcesInUse[resource],
+	for resourceName, resourceConfig := range config.ResourcesAvailable {
+		var totalAvailable int
+		if resourceConfig.CheckCommand == "" {
+			totalAvailable = config.ResourcesAvailable[resourceName].Amount
+		} else {
+			totalAvailable = resourceManager.resourcesAvailable[resourceName]
+		}
+		response.Resources[resourceName] = ResourceUsage{
+			TotalAvailable: totalAvailable,
+			TotalInUse:     resourceManager.resourcesInUse[resourceName],
 			UsageByService: make(map[string]int),
 		}
 	}

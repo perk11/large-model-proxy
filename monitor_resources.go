@@ -89,30 +89,17 @@ func UnpauseResourceAvailabilityMonitoring(resourceName string) {
 }
 
 func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string]) {
-	resourcesWithCheckCommand := make([]string, 0)
 	for resource := range resources {
-		if config.ResourcesAvailable[resource].CheckCommand != "" {
-			resourcesWithCheckCommand = append(resourcesWithCheckCommand, resource)
-		}
-	}
-	if len(resourcesWithCheckCommand) == 0 {
-		return
-	}
-
-	rm.resourceChangeByResourceMutex.Lock()
-	defer rm.resourceChangeByResourceMutex.Unlock()
-	for _, resource := range resourcesWithCheckCommand {
 		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource)
 	}
 }
 
 func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string) {
 	resourceChangeByResourceChans, ok := rm.checkCommandFirstChangeByResourceChans[resourceName]
-	if !ok {
-		log.Printf("[Resource Monitor][%s] ERROR: checkCommandFirstChangeByResourceChans map is not initialized", resourceName)
+	if ok { //map is not initialized for resources without CheckCommand
+		sendSignalToChannels(resourceChangeByResourceChans, resourceName)
 		return
 	}
-	sendSignalToChannels(resourceChangeByResourceChans, resourceName)
 
 	serviceChannels, ok := rm.resourceChangeByResourceChans[resourceName]
 	if !ok {
@@ -127,7 +114,7 @@ func sendSignalToChannels(serviceChannels map[string]chan struct{}, resourceName
 		select {
 		case resourceChangeChannel <- struct{}{}:
 		default:
-			log.Printf("[Resource Monitor][%s] ERROR: resourceChange or checkCommandFirstChange channel for service \"%s\" is blocked", resourceName, serviceName)
+			log.Printf("[Resource Monitor][%s] ERROR: checkCommandFirstChange channel for service \"%s\" is blocked", resourceName, serviceName)
 		}
 	}
 }

@@ -938,7 +938,13 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		triggeredByResourceChange = false
 		select {
 		case <-resourceChangeService:
+			resourceManager.resourceChangeByResourceMutex.Lock()
+			delete(resourceManager.resourceChangeByResourceChans[*missingResource], requestingService)
+			resourceManager.resourceChangeByResourceMutex.Unlock()
+
+			log.Printf("[%s] Received a resource change event for %s, rechecking if the service can be started now", requestingService, *missingResource)
 			triggeredByResourceChange = true
+
 			// resource state changed; loop to re-evaluate
 		case <-maxWaitTimeTimer.C:
 			log.Printf("[%s] Failed to find a service to stop in %d, closing client connection", requestingService, maxWaitTime)
@@ -1000,7 +1006,7 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 				newChannel := make(chan struct{}, 1)
 				firstChangeChanByResource[resource] = newChannel
 				resourceManager.resourceChangeByResourceMutex.Lock()
-				resourceManager.resourceChangeByResourceChans[resource][requestingService] = newChannel
+				resourceManager.checkCommandFirstChangeByResourceChans[resource][requestingService] = newChannel
 				resourceManager.resourceChangeByResourceMutex.Unlock()
 			} else {
 				currentlyAvailableAmount,
@@ -1026,6 +1032,9 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 			requestingService,
 			resourceRequirements[resource],
 		)
+		resourceManager.resourceChangeByResourceMutex.Lock()
+		delete(resourceManager.checkCommandFirstChangeByResourceChans[resource], requestingService)
+		resourceManager.resourceChangeByResourceMutex.Unlock()
 		if !enoughOfResource {
 			handleNotEnoughResource(requestingService, outputError, true, resource, currentlyAvailableAmount, resourceRequirements[resource])
 			return &resource

@@ -66,10 +66,10 @@ func testResourceCheckCommand(
 
 	time.Sleep(1000 * time.Millisecond)
 	var serviceOneHealthCheckResponse HealthCheckResponse
-	var resourceAvailableAmountExpected int
 
 	serviceOneHealthCheckResponse, err = attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	var resourceAvailableAmountExpected = statusResponse.Resources[resourceName].TotalAvailable
 	for resourceAvailableAmountExpected < 9 {
 		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 		verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: resourceAvailableAmountExpected})

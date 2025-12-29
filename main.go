@@ -897,9 +897,9 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	maxWaitTimeTimer := time.NewTimer(maxWaitTime)
 	var triggeredByResourceChange = false
 	for {
-		if interrupted {
-			return false
-		}
+		//if interrupted {
+		//	return false
+		//}
 		resourceManager.serviceMutex.Lock()
 		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, !triggeredByResourceChange)
 		if missingResource == nil {
@@ -988,7 +988,8 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 	for resource, requiredAmount := range resourceRequirements {
 		var enoughOfResource bool
 		var currentlyAvailableAmount int
-		if config.ResourcesAvailable[resource].CheckCommand == "" {
+		resourceConfig := config.ResourcesAvailable[resource]
+		if resourceConfig.CheckCommand == "" {
 			inUseAmount, ok := resourceManager.resourcesInUse[resource]
 			if !ok {
 				log.Printf(
@@ -1018,7 +1019,7 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 					)
 			}
 		}
-		if !firstCheckNeeded && !enoughOfResource {
+		if !enoughOfResource && (!firstCheckNeeded || resourceConfig.CheckCommand == "") {
 			handleNotEnoughResource(requestingService, outputError, false, resource, currentlyAvailableAmount, requiredAmount)
 			return &resource
 		}

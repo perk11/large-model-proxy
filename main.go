@@ -925,20 +925,19 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			continue
 		}
 
-		log.Printf("[%s] Not enough %s to start and no services eligible stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
+		log.Printf("[%s] Not enough %s to start and no services eligible to stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
 
-		resourceChangeService := make(chan struct{})
+		resourceChangeServiceChannel := make(chan struct{})
 		resourceManager.resourceChangeByResourceMutex.Lock()
-		resourceChannels := resourceManager.resourceChangeByResourceChans[*missingResource]
-		if _, ok := resourceChannels[requestingService]; ok {
+		if _, ok := resourceManager.resourceChangeByResourceChans[*missingResource][requestingService]; ok {
 			log.Printf("[%s] ERROR: Resource %s is already being reserved by this service", requestingService, *missingResource)
 		}
-		resourceChannels[requestingService] = resourceChangeService
+		resourceManager.resourceChangeByResourceChans[*missingResource][requestingService] = resourceChangeServiceChannel
 		resourceManager.resourceChangeByResourceMutex.Unlock()
 
 		triggeredByResourceChange = false
 		select {
-		case <-resourceChangeService:
+		case <-resourceChangeServiceChannel:
 			resourceManager.resourceChangeByResourceMutex.Lock()
 			delete(resourceManager.resourceChangeByResourceChans[*missingResource], requestingService)
 			resourceManager.resourceChangeByResourceMutex.Unlock()

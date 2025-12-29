@@ -132,7 +132,7 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	defer func() { _ = connOne.Close() }()
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
-	//starting the service will set total resource amount to 11, but the check command should not run again until we receive another request
+	//starting the service will set the total resource amount to 11, but the check command should not run again until we receive another request
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 10})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 10})

@@ -65,11 +65,13 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 	}
 	resourceManager.resourcesAvailableMutex.Unlock()
 
+	resourceManager.resourceChangeByResourceMutex.Lock()
+	resourceManager.broadcastFirstChangeIfMutexIsLocked(resourceName)
 	if amountChanged {
-		resourceManager.resourceChangeByResourceMutex.Lock()
 		resourceManager.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName)
-		resourceManager.resourceChangeByResourceMutex.Unlock()
 	}
+
+	resourceManager.resourceChangeByResourceMutex.Unlock()
 }
 
 func UnpauseResourceAvailabilityMonitoring(resourceName string) {
@@ -96,13 +98,14 @@ func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string]) {
 		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource)
 	}
 }
-
-func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string) {
+func (rm ResourceManager) broadcastFirstChangeIfMutexIsLocked(resourceName string) {
 	resourceChangeByResourceChans, ok := rm.checkCommandFirstChangeByResourceChans[resourceName]
-	if ok { //map is not initialized for resources without CheckCommand
-		sendSignalToChannels(resourceChangeByResourceChans, resourceName, "checkCommandFirstChangeByResourceChans")
+	if !ok {
+		return //map is not initialized for resources without CheckCommand, so it being missing is ok
 	}
-
+	sendSignalToChannels(resourceChangeByResourceChans, resourceName, "checkCommandFirstChangeByResourceChans")
+}
+func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string) {
 	serviceChannels, ok := rm.resourceChangeByResourceChans[resourceName]
 	if !ok {
 		log.Printf("[Resource Monitor][%s] ERROR: resourceChangeByResourceChans map is not initialized", resourceName)

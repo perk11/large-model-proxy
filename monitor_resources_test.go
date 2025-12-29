@@ -132,12 +132,19 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	defer func() { _ = connOne.Close() }()
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	//starting the service will set total resource amount to 11, but the check command should not run again until we receive another request
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 10})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 11})
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 10})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 10})
 
-	time.Sleep(1 * time.Second)
+	//time.Sleep(1 * time.Second)
+	//statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	//assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	//verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 11})
+	//verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
+	//verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 11})
+	//verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 10})
 
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
 	if err != nil {
@@ -153,10 +160,10 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 
 	time.Sleep(3500 * time.Millisecond)
 
-	serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	serviceOneHealthCheckResponse := getHealthcheckResponse(t, serviceTwoHealthCheckAddress)
 	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
 	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 10})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 10})
 	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 11})

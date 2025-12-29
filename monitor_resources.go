@@ -76,7 +76,7 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 
 func UnpauseResourceAvailabilityMonitoring(resourceName string) {
 	if config.LogLevel == LogLevelDebug {
-		log.Printf("[Resource Monitor][%s] Getting a lock to unpause monitoring", resourceName)
+		log.Printf("[Resource Monitor][%s] Getting a lock to send unpause monitoring signal", resourceName)
 	}
 	resourceManager.monitorUnpauseChansMutex.Lock()
 	pauseCh := resourceManager.monitorUnpauseChans[resourceName]

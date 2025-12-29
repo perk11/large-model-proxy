@@ -172,6 +172,7 @@ func main() {
 		serviceMutex:                           &sync.Mutex{},
 		resourcesAvailableMutex:                &sync.Mutex{},
 		resourceChangeByResourceMutex:          &sync.Mutex{},
+		monitorUnpauseChansMutex:               &sync.Mutex{},
 		monitorUnpauseChans:                    make(map[string]chan struct{}),
 		checkCommandFirstChangeByResourceChans: make(map[string]map[string]chan struct{}),
 		resourceChangeByResourceChans:          make(map[string]map[string]chan struct{}),
@@ -901,7 +902,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			return false
 		}
 		resourceManager.serviceMutex.Lock()
-		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, triggeredByResourceChange)
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, !triggeredByResourceChange)
 		if missingResource == nil {
 			resourceManager.resourceChangeByResourceMutex.Lock()
 			for resource := range resourceRequirements {
@@ -1008,6 +1009,7 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 				resourceManager.resourceChangeByResourceMutex.Lock()
 				resourceManager.checkCommandFirstChangeByResourceChans[resource][requestingService] = newChannel
 				resourceManager.resourceChangeByResourceMutex.Unlock()
+				UnpauseResourceAvailabilityMonitoring(resource)
 			} else {
 				currentlyAvailableAmount,
 					enoughOfResource =
@@ -1018,7 +1020,7 @@ func findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements map[s
 					)
 			}
 		}
-		if !enoughOfResource {
+		if !firstCheckNeeded && !enoughOfResource {
 			handleNotEnoughResource(requestingService, outputError, false, resource, currentlyAvailableAmount, requiredAmount)
 			return &resource
 		}

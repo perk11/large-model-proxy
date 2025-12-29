@@ -30,7 +30,7 @@ func monitorResourceAvailability(
 			checkResourceAvailabilityWithKnownCommand(resourceName, checkCommand, resourceManager)
 		}
 		resourceManager.resourceChangeByResourceMutex.Lock()
-		if len(resourceManager.resourceChangeByResourceChans[resourceName]) > 0 || len(resourceManager.checkCommandFirstChangeByResourceChans) > 0 {
+		if len(resourceManager.resourceChangeByResourceChans[resourceName]) > 0 || len(resourceManager.checkCommandFirstChangeByResourceChans[resourceName]) > 0 {
 			timer.Reset(checkInterval)
 		}
 		resourceManager.resourceChangeByResourceMutex.Unlock()
@@ -73,6 +73,9 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 }
 
 func UnpauseResourceAvailabilityMonitoring(resourceName string) {
+	if config.LogLevel == LogLevelDebug {
+		log.Printf("[Resource Monitor][%s] Getting a lock to unpause monitoring", resourceName)
+	}
 	resourceManager.monitorUnpauseChansMutex.Lock()
 	pauseCh := resourceManager.monitorUnpauseChans[resourceName]
 	resourceManager.monitorUnpauseChansMutex.Unlock()

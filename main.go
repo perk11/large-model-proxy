@@ -897,9 +897,6 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	maxWaitTimeTimer := time.NewTimer(maxWaitTime)
 	var triggeredByResourceChange = false
 	for {
-		//if interrupted {
-		//	return false
-		//}
 		resourceManager.serviceMutex.Lock()
 		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, !triggeredByResourceChange)
 		if missingResource == nil {

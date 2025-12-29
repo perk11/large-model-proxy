@@ -925,7 +925,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			continue
 		}
 
-		log.Printf("[%s] Not enough %s to start and no services eligible stop, waiting until next resource change or service status change.", requestingService, *missingResource)
+		log.Printf("[%s] Not enough %s to start and no services eligible stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
 
 		resourceChangeService := make(chan struct{})
 		resourceManager.resourceChangeByResourceMutex.Lock()

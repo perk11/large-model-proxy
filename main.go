@@ -179,7 +179,6 @@ func main() {
 	}
 
 	for name, resource := range config.ResourcesAvailable {
-		//Using int reference to avoid having a lock for reading from the map
 		resourceManager.resourcesAvailable[name] = 0
 		resourceManager.resourcesInUse[name] = 0
 		resourceManager.resourcesReserved[name] = 0

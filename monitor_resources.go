@@ -26,7 +26,9 @@ func monitorResourceAvailability(
 				panic("pauseResumeChan closed unexpectedly, crashing to avoid infinite loop")
 			}
 			timer.Stop()
-			log.Printf("[Resource Monitor][%s] An immediate check was requested", resourceName)
+			if config.LogLevel == LogLevelDebug {
+				log.Printf("[Resource Monitor][%s] An immediate check was requested", resourceName)
+			}
 			checkResourceAvailabilityWithKnownCommand(resourceName, checkCommand, resourceManager)
 		}
 		resourceManager.resourceChangeByResourceMutex.Lock()
@@ -87,9 +89,11 @@ func UnpauseResourceAvailabilityMonitoring(resourceName string) {
 	}
 	select {
 	case pauseCh <- struct{}{}:
-		log.Printf("[Resource Monitor][%s] Monitoring resumed", resourceName)
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[Resource Monitor][%s] Requesting an immediate CommandCheck run", resourceName)
+		}
 	default:
-		// if a signal is already pending, that's fine
+		log.Printf("[Resource Monitor][%s] Immediate CommandCheck run is already requested", resourceName)
 	}
 }
 
@@ -117,7 +121,7 @@ func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMut
 func sendSignalToChannels(serviceChannels map[string]chan struct{}, resourceName string, channelName string) {
 	for serviceName, resourceChangeChannel := range serviceChannels {
 		if config.LogLevel == LogLevelDebug {
-			log.Printf("[Resource Monitor][%s] Sending signal to %s channel for service \"%s\"", resourceName, channelName, serviceName)
+			log.Printf("[Resource Monitor][%s] Sending an update to %s channel for service \"%s\"", resourceName, channelName, serviceName)
 		}
 		select {
 		case resourceChangeChannel <- struct{}{}:

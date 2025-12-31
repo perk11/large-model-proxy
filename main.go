@@ -25,16 +25,17 @@ import (
 )
 
 type RunningService struct {
-	manageMutex       *sync.Mutex
-	cmd               *exec.Cmd
-	isReady           bool
-	activeConnections int
-	lastUsed          *time.Time
-	idleTimer         *time.Timer
-	exitWaitGroup     *sync.WaitGroup
-	resourcesReleased *bool
-	stdoutWriter      *serviceLoggingWriter
-	stderrWriter      *serviceLoggingWriter
+	manageMutex           *sync.Mutex
+	cmd                   *exec.Cmd
+	isWaitingForResources bool
+	isReady               bool
+	activeConnections     int
+	lastUsed              *time.Time
+	idleTimer             *time.Timer
+	exitWaitGroup         *sync.WaitGroup
+	resourcesReleased     *bool
+	stdoutWriter          *serviceLoggingWriter
+	stderrWriter          *serviceLoggingWriter
 }
 
 type ResourceManager struct {
@@ -118,10 +119,11 @@ func (rm ResourceManager) incrementConnection(name string, count int) {
 func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) RunningService {
 	now := time.Now()
 	rs := RunningService{
-		activeConnections: 0,
-		lastUsed:          &now,
-		manageMutex:       &sync.Mutex{},
-		resourcesReleased: new(bool),
+		activeConnections:     0,
+		lastUsed:              &now,
+		isWaitingForResources: true,
+		manageMutex:           &sync.Mutex{},
+		resourcesReleased:     new(bool),
 	}
 	rm.storeRunningService(serviceConfig.Name, rs)
 	return rs
@@ -638,6 +640,8 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)
 	}
+	runningService.isWaitingForResources = false
+	resourceManager.storeRunningService(serviceConfig.Name, runningService)
 
 	cmd, outW, errW := runServiceCommand(serviceConfig)
 	if cmd == nil {

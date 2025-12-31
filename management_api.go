@@ -23,7 +23,8 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		Name                 string         `json:"name"`
 		ListenPort           string         `json:"listen_port"`
 		Status               ServiceState   `json:"status"`
-		ActiveConnections    int            `json:"active_connections"`
+		WaitingConnections   int            `json:"waiting_connections"`
+		ProxiedConnections   int            `json:"proxied_connections"`
 		LastUsed             *time.Time     `json:"last_used"`
 		ServiceUrl           *string        `json:"service_url,omitempty"`
 		ResourceRequirements map[string]int `json:"resource_requirements"`
@@ -114,7 +115,8 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			} else {
 				status.Status = ServiceStateStarting
 			}
-			status.ActiveConnections = runningService.activeConnections
+			status.WaitingConnections = runningService.waitingConnections
+			status.ProxiedConnections = runningService.proxiedConnections
 			status.LastUsed = runningService.lastUsed
 
 			// Update resource usage by service

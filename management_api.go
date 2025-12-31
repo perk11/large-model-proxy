@@ -15,6 +15,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 	type ServiceStatus struct {
 		Name                 string         `json:"name"`
 		ListenPort           string         `json:"listen_port"`
+		IsReady              bool           `json:"is_ready"`
 		IsRunning            bool           `json:"is_running"`
 		ActiveConnections    int            `json:"active_connections"`
 		LastUsed             *time.Time     `json:"last_used"`
@@ -24,9 +25,11 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 	// ResourceUsage represents the current usage of a resource
 	type ResourceUsage struct {
-		TotalAvailable int            `json:"total_available"`
-		TotalInUse     int            `json:"total_in_use"`
-		UsageByService map[string]int `json:"usage_by_service"`
+		TotalAvailable             int            `json:"total_available,omitempty"`
+		ReservedByStartingServices int            `json:"reserved_by_starting_services_by_starting_services"`
+		InUse                      int            `json:"in_use"`
+		Free                       int            `json:"free"`
+		UsageByService             map[string]int `json:"usage_by_service"`
 	}
 
 	// StatusResponse represents the complete status response
@@ -53,16 +56,18 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 	// Initialize resource usage tracking
 	for resourceName, resourceConfig := range config.ResourcesAvailable {
-		var totalAvailable int
+		var free int
 		if resourceConfig.CheckCommand == "" {
-			totalAvailable = config.ResourcesAvailable[resourceName].Amount
+			free = config.ResourcesAvailable[resourceName].Amount - resourceManager.resourcesInUse[resourceName]
 		} else {
-			totalAvailable = resourceManager.resourcesAvailable[resourceName]
+			free = resourceManager.resourcesAvailable[resourceName]
 		}
 		response.Resources[resourceName] = ResourceUsage{
-			TotalAvailable: totalAvailable,
-			TotalInUse:     resourceManager.resourcesInUse[resourceName],
-			UsageByService: make(map[string]int),
+			TotalAvailable:             config.ResourcesAvailable[resourceName].Amount,
+			ReservedByStartingServices: resourceManager.resourcesReserved[resourceName],
+			InUse:                      resourceManager.resourcesInUse[resourceName],
+			Free:                       free,
+			UsageByService:             make(map[string]int),
 		}
 	}
 
@@ -95,6 +100,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 		// Check if service is running
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
+			status.IsReady = runningService.isReady
 			status.IsRunning = true
 			status.ActiveConnections = runningService.activeConnections
 			status.LastUsed = runningService.lastUsed

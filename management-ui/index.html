@@ -27,27 +27,36 @@
         padding: 0;
       }
 
-      .all-services tr.running {
-        background-color: #c8ffb9;
-      }
-
-      .all-services tr.running:nth-child(even) {
-        background-color: #d2ffc4;
-      }
-      .all-services tr.starting {
-        background-color: #fff78b;
-      }
-
-      .all-services tr.starting:nth-child(even) {
-        background-color: #fefab5;
-      }
-
       .all-services tr.stopped {
-        background-color: #ffc6c6;
+        background-color: #d1d5db;
       }
 
       .all-services tr.stopped:nth-child(even) {
-        background-color: #ffa5a5;
+        background-color: #e5e7eb;
+      }
+
+      .all-services tr.waiting_for_resources {
+        background-color: #fde68a;
+      }
+
+      .all-services tr.waiting_for_resources:nth-child(even) {
+        background-color: #fcd34d;
+      }
+
+      .all-services tr.starting {
+        background-color: #bfdbfe;
+      }
+
+      .all-services tr.starting:nth-child(even) {
+        background-color: #93c5fd;
+      }
+
+      .all-services tr.ready {
+        background-color: #bbf7d0;
+      }
+
+      .all-services tr.ready:nth-child(even) {
+        background-color: #86efac;
       }
 
       .all-services {
@@ -194,11 +203,13 @@
           const services = statusJSON.services.sort(getSortFunction(sortOrder));
           let items = "";
           const allServiceProperties = {
-            is_running: "Running",
-            is_ready: "Ready",
-            listen_port: "Listen Port",
-            active_connections: "Proxied Connections",
-            last_used: "Last Used",
+            status: {
+              name: "Status",
+              getLabel: (status) => serviceStatusLabels[status] ?? status,
+            },
+            listen_port: { name: "Listen Port" },
+            active_connections: { name: "Proxied Connections" },
+            last_used: { name: "Last Used" },
           };
           if (!statusJSON.hasOwnProperty("resources")) {
             displayError(
@@ -217,7 +228,8 @@
             .join("")}`;
           items += `${Object.entries(allServiceProperties)
             .map(
-              ([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`,
+              ([key, property]) =>
+                `<th class="${key}">${escapeHtml(property.name)}</th>`,
             )
             .join("")}`;
           items += `</tr></thead><tbody>`;
@@ -300,7 +312,12 @@
             items += `<td class="resource">${totalAmount}</td>`;
           }
           items += `<td class="blank-column" colspan="${numberOfBlankColumnsForResources}"></td></tr>`;
-
+          const serviceStatusLabels = {
+            stopped: "Stopped",
+            waiting_for_resources: "Waiting for resources",
+            starting: "Starting",
+            ready: "Ready",
+          };
           //services
           for (
             let serviceIndex = 0;
@@ -308,17 +325,7 @@
             serviceIndex++
           ) {
             const service = services[serviceIndex];
-            let serviceClass;
-            if (service.is_running) {
-              if (service.is_ready) {
-                serviceClass = "running";
-              } else {
-                serviceClass = "starting";
-              }
-            } else {
-              serviceClass = "stopped";
-            }
-            items += `<tr class="${serviceClass}">`;
+            items += `<tr class="${service.status}">`;
             if (!service.hasOwnProperty("name")) {
               displayError(
                 `Invalid response from /status endpoint: A service in services is missing "name" property`,
@@ -353,12 +360,16 @@
                 return;
               }
 
-              let cellContent;
-              const propertyNameEscaped = escapeHtml(
-                String(service[propertyName]),
-              );
+              let displayedValue;
+              let value = service[propertyName];
+              let attributes = allServiceProperties[propertyName];
+              if (attributes.hasOwnProperty("getLabel")) {
+                displayedValue = attributes.getLabel(value);
+              } else {
+                displayedValue = String(value);
+              }
 
-              items += `<td class="property-${propertyName}">${propertyNameEscaped}</td>`;
+              items += `<td class="property-${propertyName}">${escapeHtml(displayedValue)}</td>`;
             }
             items += "</tr>";
           }

@@ -27,6 +27,7 @@ import (
 type RunningService struct {
 	manageMutex       *sync.Mutex
 	cmd               *exec.Cmd
+	isReady           bool
 	activeConnections int
 	lastUsed          *time.Time
 	idleTimer         *time.Timer
@@ -720,6 +721,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
+	runningService.isReady = true
 	resourceManager.serviceMutex.Lock()
 	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 	resourceManager.storeRunningServiceNoLock(serviceConfig.Name, runningService)
@@ -920,7 +922,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			stopService(*findServiceConfigByName(earliestLastUsedService))
 			continue
 		}
-
+		//TODO: add resource amounts
 		log.Printf("[%s] Not enough %s to start and no services eligible to stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
 
 		resourceChangeServiceChannel := make(chan struct{})

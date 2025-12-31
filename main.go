@@ -29,7 +29,8 @@ type RunningService struct {
 	cmd                   *exec.Cmd
 	isWaitingForResources bool
 	isReady               bool
-	activeConnections     int
+	proxiedConnections    int
+	waitingConnections    int
 	lastUsed              *time.Time
 	idleTimer             *time.Timer
 	exitWaitGroup         *sync.WaitGroup
@@ -96,21 +97,22 @@ func (rm ResourceManager) storeRunningServiceNoLock(name string, rs RunningServi
 	rm.runningServices[name] = rs
 }
 
-func (rm ResourceManager) incrementConnection(name string, count int) {
+func (rm ResourceManager) incrementConnection(name string, proxiedConnectionsCountChange int, waitingConnectionsCountChange int) {
 	rm.serviceMutex.Lock()
 	defer rm.serviceMutex.Unlock()
 	runningService, ok := rm.maybeGetRunningServiceNoLock(name)
 	if !ok {
-		if count > 0 {
+		if proxiedConnectionsCountChange > 0 {
 			// Do not print this when decrementing, since it can happen if a service exited before connection was closed
 			// which does not necessarily constitute a warning
 			log.Printf("[%s] Warning: Tried to increment the number of active connection but couldn't get the running service, did it stop", name)
 		}
 		return
 	}
-	runningService.activeConnections += count
+	runningService.proxiedConnections += proxiedConnectionsCountChange
+	runningService.waitingConnections += waitingConnectionsCountChange
 	rm.storeRunningServiceNoLock(name, runningService)
-	if runningService.activeConnections == 0 {
+	if runningService.proxiedConnections == 0 && runningService.waitingConnections == 0 {
 		log.Printf("[%s] All connections closed, sending resourceChange event", name)
 		rm.broadcastResourceChanges(maps.Keys(serviceConfigByName[name].ResourceRequirements))
 	}
@@ -119,7 +121,8 @@ func (rm ResourceManager) incrementConnection(name string, count int) {
 func (rm ResourceManager) createRunningService(serviceConfig ServiceConfig) RunningService {
 	now := time.Now()
 	rs := RunningService{
-		activeConnections:     0,
+		proxiedConnections:    0,
+		waitingConnections:    1,
 		lastUsed:              &now,
 		isWaitingForResources: true,
 		manageMutex:           &sync.Mutex{},
@@ -563,6 +566,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 }
 
 func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
+	resourceManager.incrementConnection(serviceConfig.Name, 0, -1)
 	log.Printf(
 		"[%s] Closing %s connection %s: %s",
 		serviceConfig.Name,
@@ -608,6 +612,7 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 		}
 		trackServiceLastUsed(serviceConfig, true)
 		runningService.manageMutex.Unlock()
+		resourceManager.incrementConnection(serviceConfig.Name, 0, 1)
 		serviceConnection = connectToService(serviceConfig)
 	}
 	return serviceConnection
@@ -725,9 +730,20 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	if interrupted {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
-	runningService.isReady = true
+
 	resourceManager.serviceMutex.Lock()
 	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
+
+	var ok bool
+	//read the service again before updating because other connections could've been opened while it was starting
+	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
+	if !ok {
+		resourceManager.serviceMutex.Unlock()
+		return nil, fmt.Errorf("ERROR: service \"%s\" not found in the list of the running service", serviceConfig.Name)
+	}
+	runningService.isReady = true
+	runningService.proxiedConnections += 1
+	runningService.waitingConnections -= 1
 	resourceManager.storeRunningServiceNoLock(serviceConfig.Name, runningService)
 	resourceManager.serviceMutex.Unlock()
 
@@ -825,10 +841,13 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 				log.Printf("[%s] Failed to restart: %v", serviceConfig.Name, err)
 				return nil
 			}
+			resourceManager.incrementConnection(serviceConfig.Name, 1, -1)
 			return serviceConn
 		}
+		resourceManager.incrementConnection(serviceConfig.Name, 0, -1)
 		return nil
 	}
+	resourceManager.incrementConnection(serviceConfig.Name, 1, -1)
 	return serviceConn
 }
 func tryConnectingUntilTimeoutOrProcessExit(
@@ -1136,7 +1155,7 @@ func canBeStopped(serviceName string) bool {
 		return false
 	}
 	runningService.manageMutex.Unlock()
-	return runningService.activeConnections == 0
+	return runningService.proxiedConnections == 0
 }
 
 func releaseResourcesWhenServiceMutexIsLocked(used map[string]int) {
@@ -1293,8 +1312,7 @@ func produceStartCommandLogString(serviceConfig ServiceConfig) (string, []any) {
 }
 
 func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {
-	defer resourceManager.incrementConnection(serviceName, -1)
-	resourceManager.incrementConnection(serviceName, 1)
+	defer resourceManager.incrementConnection(serviceName, -1, 0)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

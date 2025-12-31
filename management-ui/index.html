@@ -127,12 +127,12 @@
               }
               return a.last_used < b.last_used;
             };
-          case "active_connections":
+          case "proxied_connections":
             return (a, b) => {
-              if (a.active_connections === b.active_connections) {
+              if (a.proxied_connections === b.proxied_connections) {
                 return a.name.toUpperCase() > b.name.toUpperCase();
               }
-              return a.active_connections < b.active_connections;
+              return a.proxied_connections < b.proxied_connections;
             };
           case "name":
             return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
@@ -208,7 +208,8 @@
               getLabel: (status) => serviceStatusLabels[status] ?? status,
             },
             listen_port: { name: "Listen Port" },
-            active_connections: { name: "Proxied Connections" },
+            waiting_connections: { name: "Waiting Connections" },
+            proxied_connections: { name: "Proxied Connections" },
             last_used: { name: "Last Used" },
           };
           if (!statusJSON.hasOwnProperty("resources")) {
@@ -430,7 +431,7 @@
       <label for="sort-order-selector">Sort Order</label>
       <select id="sort-order-selector">
         <option value="last_used">Last Used</option>
-        <option value="active_connections">Proxied Connections</option>
+        <option value="proxied_connections">Proxied Connections</option>
         <option value="name">Name</option>
       </select>
     </header>

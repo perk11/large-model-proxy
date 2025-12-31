@@ -11,12 +11,18 @@ import (
 
 // handleStatus handles the /status endpoint request
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
+	type ServiceState string
+	const (
+		ServiceStateStopped             ServiceState = "stopped"
+		ServiceStateWaitingForResources ServiceState = "waiting_for_resources"
+		ServiceStateStarting            ServiceState = "starting"
+		ServiceStateReady               ServiceState = "ready"
+	)
 	// ServiceStatus represents the current state of a service
 	type ServiceStatus struct {
 		Name                 string         `json:"name"`
 		ListenPort           string         `json:"listen_port"`
-		IsReady              bool           `json:"is_ready"`
-		IsRunning            bool           `json:"is_running"`
+		Status               ServiceState   `json:"status"`
 		ActiveConnections    int            `json:"active_connections"`
 		LastUsed             *time.Time     `json:"last_used"`
 		ServiceUrl           *string        `json:"service_url,omitempty"`
@@ -77,6 +83,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			Name:                 service.Name,
 			ListenPort:           service.ListenPort,
 			ResourceRequirements: service.ResourceRequirements,
+			Status:               ServiceStateStopped,
 		}
 
 		// Determine service URL template to use
@@ -100,8 +107,13 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 		// Check if service is running
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
-			status.IsReady = runningService.isReady
-			status.IsRunning = true
+			if runningService.isReady {
+				status.Status = ServiceStateReady
+			} else if runningService.isWaitingForResources {
+				status.Status = ServiceStateWaitingForResources
+			} else {
+				status.Status = ServiceStateStarting
+			}
 			status.ActiveConnections = runningService.activeConnections
 			status.LastUsed = runningService.lastUsed
 

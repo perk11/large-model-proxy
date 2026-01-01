@@ -113,7 +113,9 @@ func (rm ResourceManager) incrementConnection(name string, proxiedConnectionsCou
 	runningService.waitingConnections += waitingConnectionsCountChange
 	rm.storeRunningServiceNoLock(name, runningService)
 	if runningService.proxiedConnections == 0 && runningService.waitingConnections == 0 {
-		log.Printf("[%s] All connections closed, sending resourceChange event", name)
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[%s] All connections closed, sending resourceChange event", name)
+		}
 		rm.broadcastResourceChanges(maps.Keys(serviceConfigByName[name].ResourceRequirements))
 	}
 }
@@ -1464,17 +1466,25 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 		if resourceManager.serviceMutex.TryLock() {
 			defer resourceManager.serviceMutex.Unlock()
 		} else {
-			log.Printf("[%s] Not cleaning up resources due to large-model-proxy being interrupted", serviceName)
+			if config.LogLevel == LogLevelDebug {
+				log.Printf("[%s] Not cleaning up resources due to large-model-proxy being interrupted", serviceName)
+			}
 			return
 		}
 	} else {
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[%s] Acquiring a serviceMutex lock to clean up resources", serviceName)
+		}
 		resourceManager.serviceMutex.Lock()
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[%s] Acquired serviceMutex lock to clean up resources", serviceName)
+		}
 		defer resourceManager.serviceMutex.Unlock()
 	}
 
 	runningService, ok := resourceManager.maybeGetRunningServiceNoLock(serviceName)
 	if !ok {
-		log.Printf("[%s] Process exited, but service was not found in the list of running services, this is probably a bug", serviceName)
+		log.Printf("[%s] ERROR: Process exited, but service was not found in the list of running services", serviceName)
 		return
 	}
 
@@ -1486,8 +1496,14 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	if !shouldReleaseResources || *runningService.resourcesReleased {
 		return
 	}
+	if config.LogLevel == LogLevelDebug {
+		log.Printf("[%s] Cleaning up resources for stopped service", service.Name)
+	}
 	*runningService.resourcesReleased = true
 	if runningService.idleTimer != nil {
+		if config.LogLevel == LogLevelDebug {
+			log.Printf("[%s] Stopping the timer for stopped service", service.Name)
+		}
 		runningService.idleTimer.Stop()
 	}
 	runningService.stdoutWriter.FinalFlush()

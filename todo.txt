@@ -6,6 +6,8 @@ Tests
 Readme changes
 
 Add last resource check time to API?
+check stopping and idle timer
+
 2026/01/01 07:02:08.946323 [upscale-comfy] Idle timeout 1h0m0s reached, stopping service
 2026/01/01 07:02:08.946357 [upscale-comfy] Sending SIGTERM to service process group: -877997
 2026/01/01 07:02:08.967941 [upscale-comfy] Process with pid 877997 terminated with exit code -1

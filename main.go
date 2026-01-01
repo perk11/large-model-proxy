@@ -105,7 +105,7 @@ func (rm ResourceManager) incrementConnection(name string, proxiedConnectionsCou
 		if proxiedConnectionsCountChange > 0 {
 			// Do not print this when decrementing, since it can happen if a service exited before connection was closed
 			// which does not necessarily constitute a warning
-			log.Printf("[%s] Warning: Tried to increment the number of active connection but couldn't get the running service, did it stop", name)
+			log.Printf("[%s] Warning: Tried to increment the number of active connection but couldn't get the running service, did it stop?", name)
 		}
 		return
 	}
@@ -604,9 +604,23 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 			if interrupted {
 				return nil
 			}
-			//The service could be currently starting or stopping, so let's wait for that to finish and try again
+			resourceManager.incrementConnection(serviceConfig.Name, 0, 1)
+			log.Printf("[%s] Service is already starting or stopping, waiting for that operation to finish before proceeding witht the current connection", serviceConfig.Name)
 			runningService.manageMutex.Lock()
 			runningService.manageMutex.Unlock()
+
+			/**
+			Decrement waitingConnections since it will either be set to 1 if the service starts again, or will
+			get incremented if it's already started.
+
+			I wanted to put the other increment under a boolean check instead to avoid touching the mutex,
+			but that causes a bug: if the service is being stopped, it will start at 1 connection, and all
+			the connections waiting for the stop will not be counted.
+
+			The current solution is also not ideal since the connection will not be reported for some time
+			if rm.serviceMutex gets locked after this change but before it can get incremented again, but that should not last long
+			*/
+			resourceManager.incrementConnection(serviceConfig.Name, 0, -1)
 			//As the service might stop after the mutex is unlocked, we need to run the search for it again
 			return startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 		}

@@ -1,23 +1,6 @@
-Not changing from waiting to resources to healthcheck?
+Not changing from waiting to resources to healthcheck? - solve with a test
 Check resources after service is started (might be not needed, but looks better)
 Tests
 Readme changes
 
 Add last resource check time to API?
-check stopping and idle timer
-
-2026/01/01 07:02:08.946323 [upscale-comfy] Idle timeout 1h0m0s reached, stopping service
-2026/01/01 07:02:08.946357 [upscale-comfy] Sending SIGTERM to service process group: -877997
-2026/01/01 07:02:08.967941 [upscale-comfy] Process with pid 877997 terminated with exit code -1
-2026/01/01 07:02:37.446852 [comfyui-upscale] Warning: A check whether service can be stopped failed to find the service in the running services list, it is probably already being stopped. Assuming it can't be stopped
-2026/01/01 07:02:37.446870 [comfyui-upscale] Idle timeout 1h0m0s reached, but service is busy, resetting idle time
-panic: runtime error: invalid memory address or nil pointer dereference
-[signal SIGSEGV: segmentation violation code=0x1 addr=0x8 pc=0x4e4b2e]
-
-goroutine 7769 [running]:
-time.(*Timer).Reset(0xc0000d85d0?, 0x0?)
-        /usr/lib/go/src/time/sleep.go:172 +0xe
-main.startService.func1()
-        /home/perk11/Dropbox/Projects/large-model-proxy/main.go:727 +0x330
-created by time.goFunc
-        /usr/lib/go/src/time/sleep.go:215 +0x2d

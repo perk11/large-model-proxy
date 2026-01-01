@@ -727,6 +727,23 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 
+	if interrupted {
+		return nil, fmt.Errorf("interrupt signal was received")
+	}
+
+	resourceManager.serviceMutex.Lock()
+	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
+
+	var ok bool
+	//read the service again before updating because other connections could've been opened while it was starting
+	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
+	if !ok {
+		resourceManager.serviceMutex.Unlock()
+		return nil, fmt.Errorf("ERROR: service \"%s\" not found in the list of the running service", serviceConfig.Name)
+	}
+	runningService.isReady = true
+	runningService.proxiedConnections += 1
+	runningService.waitingConnections -= 1
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {
 		if interrupted {
@@ -747,23 +764,6 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 			runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
 		}
 	})
-	if interrupted {
-		return nil, fmt.Errorf("interrupt signal was received")
-	}
-
-	resourceManager.serviceMutex.Lock()
-	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
-
-	var ok bool
-	//read the service again before updating because other connections could've been opened while it was starting
-	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
-	if !ok {
-		resourceManager.serviceMutex.Unlock()
-		return nil, fmt.Errorf("ERROR: service \"%s\" not found in the list of the running service", serviceConfig.Name)
-	}
-	runningService.isReady = true
-	runningService.proxiedConnections += 1
-	runningService.waitingConnections -= 1
 	resourceManager.storeRunningServiceNoLock(serviceConfig.Name, runningService)
 	resourceManager.serviceMutex.Unlock()
 

@@ -1,5 +1,3 @@
-Change counter to connection status?
-Waiting connections number doesn't increment when waiting for resources (and during healthcheck?)
 Not changing from waiting to resources to healthcheck?
 Check resources after service is started (might be not needed, but looks better)
 Tests

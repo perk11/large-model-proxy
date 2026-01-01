@@ -52,14 +52,11 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 	responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	// Lock to safely access resource manager state
-	resourceManager.serviceMutex.Lock()
-	defer resourceManager.serviceMutex.Unlock()
-
 	response := StatusResponse{
 		Services:  make([]ServiceStatus, 0, len(services)),
 		Resources: make(map[string]ResourceUsage),
 	}
+	resourceManager.serviceMutex.Lock()
 
 	// Initialize resource usage tracking
 	for resourceName, resourceConfig := range config.ResourcesAvailable {
@@ -78,7 +75,6 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 		}
 	}
 
-	// Process all services
 	for _, service := range services {
 		status := ServiceStatus{
 			Name:                 service.Name,
@@ -106,7 +102,6 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			}
 		}
 
-		// Check if service is running
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
 			if runningService.isReady {
 				status.Status = ServiceStateReady
@@ -130,6 +125,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 		response.Services = append(response.Services, status)
 	}
+	resourceManager.serviceMutex.Unlock()
 
 	// Encode and send response
 	if err := json.NewEncoder(responseWriter).Encode(response); err != nil {

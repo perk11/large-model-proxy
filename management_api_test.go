@@ -11,32 +11,10 @@ import (
 )
 
 // StatusResponse represents the complete status response from the management API
-type StatusResponse struct {
-	Services  []ServiceStatus          `json:"services"`
-	Resources map[string]ResourceUsage `json:"resources"`
-}
 type HealthCheckResponse struct {
 	Message             string `json:"message"`
 	MainPortConnections int    `json:"main_port_connections"`
 	Status              int    `json:"status"`
-}
-
-// ServiceStatus represents the current state of a service
-type ServiceStatus struct {
-	Name                 string         `json:"name"`
-	ListenPort           string         `json:"listen_port"`
-	IsRunning            bool           `json:"is_running"`
-	ActiveConnections    int            `json:"active_connections"`
-	LastUsed             *time.Time     `json:"last_used"`
-	ServiceUrl           *string        `json:"service_url,omitempty"`
-	ResourceRequirements map[string]int `json:"resource_requirements"`
-}
-
-// ResourceUsage represents the current usage of a resource
-type ResourceUsage struct {
-	TotalAvailable int            `json:"total_available"`
-	TotalInUse     int            `json:"total_in_use"`
-	UsageByService map[string]int `json:"usage_by_service"`
 }
 
 func TestManagementUI(t *testing.T) {

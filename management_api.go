@@ -9,42 +9,44 @@ import (
 	"time"
 )
 
+type ServiceState string
+
+const (
+	ServiceStateStopped             ServiceState = "stopped"
+	ServiceStateWaitingForResources ServiceState = "waiting_for_resources"
+	ServiceStateStarting            ServiceState = "starting"
+	ServiceStateReady               ServiceState = "ready"
+)
+
+// ServiceStatus represents the current state of a service
+type ServiceStatus struct {
+	Name                 string         `json:"name"`
+	ListenPort           string         `json:"listen_port"`
+	Status               ServiceState   `json:"status"`
+	WaitingConnections   int            `json:"waiting_connections"`
+	ProxiedConnections   int            `json:"proxied_connections"`
+	LastUsed             *time.Time     `json:"last_used"`
+	ServiceUrl           *string        `json:"service_url,omitempty"`
+	ResourceRequirements map[string]int `json:"resource_requirements"`
+}
+
+// ResourceUsage represents the current usage of a resource
+type ResourceUsage struct {
+	TotalAvailable             int            `json:"total_available,omitempty"`
+	ReservedByStartingServices int            `json:"reserved_by_starting_services_by_starting_services"`
+	InUse                      int            `json:"in_use"`
+	Free                       int            `json:"free"`
+	UsageByService             map[string]int `json:"usage_by_service"`
+}
+
+// StatusResponse represents the complete status response
+type StatusResponse struct {
+	Services  []ServiceStatus          `json:"services"`
+	Resources map[string]ResourceUsage `json:"resources"`
+}
+
 // handleStatus handles the /status endpoint request
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
-	type ServiceState string
-	const (
-		ServiceStateStopped             ServiceState = "stopped"
-		ServiceStateWaitingForResources ServiceState = "waiting_for_resources"
-		ServiceStateStarting            ServiceState = "starting"
-		ServiceStateReady               ServiceState = "ready"
-	)
-	// ServiceStatus represents the current state of a service
-	type ServiceStatus struct {
-		Name                 string         `json:"name"`
-		ListenPort           string         `json:"listen_port"`
-		Status               ServiceState   `json:"status"`
-		WaitingConnections   int            `json:"waiting_connections"`
-		ProxiedConnections   int            `json:"proxied_connections"`
-		LastUsed             *time.Time     `json:"last_used"`
-		ServiceUrl           *string        `json:"service_url,omitempty"`
-		ResourceRequirements map[string]int `json:"resource_requirements"`
-	}
-
-	// ResourceUsage represents the current usage of a resource
-	type ResourceUsage struct {
-		TotalAvailable             int            `json:"total_available,omitempty"`
-		ReservedByStartingServices int            `json:"reserved_by_starting_services_by_starting_services"`
-		InUse                      int            `json:"in_use"`
-		Free                       int            `json:"free"`
-		UsageByService             map[string]int `json:"usage_by_service"`
-	}
-
-	// StatusResponse represents the complete status response
-	type StatusResponse struct {
-		Services  []ServiceStatus          `json:"services"`
-		Resources map[string]ResourceUsage `json:"resources"`
-	}
-
 	if request.Method != "GET" {
 		http.Error(responseWriter, "Only GET requests allowed", http.StatusMethodNotAllowed)
 		return

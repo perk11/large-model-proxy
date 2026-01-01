@@ -455,9 +455,9 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 			continue
 		}
 
-		if resourceInfo.TotalInUse != expectedAmount {
+		if resourceInfo.InUse != expectedAmount {
 			t.Errorf("Expected total %s usage: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalInUse)
+				resource, expectedAmount, resourceInfo.InUse)
 		}
 	}
 }
@@ -544,8 +544,9 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 	}
 
 	// Check running status
-	if service.IsRunning != expectedRunning {
-		t.Errorf("Service %s - expected running: %v, actual: %v", serviceName, expectedRunning, service.IsRunning)
+	isRunning := service.Status == ServiceStateReady || service.Status == ServiceStateStarting || service.Status == ServiceStateWaitingForResources
+	if isRunning != expectedRunning {
+		t.Errorf("Service %s - expected running: %v, actual: %v (status: %s)", serviceName, expectedRunning, isRunning, service.Status)
 	}
 
 	// Check resource usage

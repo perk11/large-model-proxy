@@ -818,7 +818,7 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 		remainingUntilDeadlineDuration = time.Until(totalTimeoutDeadlineTime)
 		if sleepDuration > remainingUntilDeadlineDuration {
 			return fmt.Errorf(
-				"healthcheck timed out, not starting another healthcheck command due to less time than %dms left out of %s",
+				"healthcheck timed out, not starting another healthcheck command: not enough time left for another HealthcheckInterval(%v) in StartupTimeout(%v)",
 				sleepDuration,
 				timeout,
 			)

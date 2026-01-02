@@ -185,10 +185,16 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 	for _, service := range resp.Services {
-		verifyServiceStatus(t, resp, service.Name, false, map[string]int{
-			"CPU": 0,
-			"GPU": 0,
-		})
+		verifyServiceStatus(t,
+			resp,
+			service.Name,
+			ServiceStateStopped,
+			0,
+			0,
+			map[string]int{
+				"CPU": 0,
+				"GPU": 0,
+			})
 	}
 
 	verifyTotalResourceUsage(t, resp, map[string]int{
@@ -208,7 +214,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 1
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 0,
@@ -229,8 +235,8 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 2
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
-	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", ServiceStateRunning, 0, 0, map[string]int{"GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 1,
@@ -251,9 +257,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 
 	// Check status after starting Service 3
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", true, map[string]int{"CPU": 2})
-	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
-	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2})
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", ServiceStateRunning, 0, 0, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 4,
 		"GPU": 2,
@@ -262,14 +268,13 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		t.Errorf("Expected 3 services in the responses, got %d", len(resp.Services))
 	}
 
-	// Wait for Service 1 to terminate due to inactivity timeout
 	t.Log("Waiting for Service 1 to terminate due to timeout")
 	time.Sleep(1250 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", true, map[string]int{"GPU": 1})
-	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", ServiceStateRunning, 0, 0, map[string]int{"GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 2,
@@ -283,9 +288,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1250 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
-	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", true, map[string]int{"CPU": 2, "GPU": 1})
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", ServiceStateRunning, 0, 0, map[string]int{"CPU": 2, "GPU": 1})
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 2,
 		"GPU": 1,
@@ -299,9 +304,9 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 	time.Sleep(1250 * time.Millisecond)
 
 	resp = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", false, nil)
-	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", false, nil)
-	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", false, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service1-cpu", ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service2-gpu", ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, resp, "management-api-test_service3-cpu-gpu", ServiceStateStopped, 0, 0, nil)
 	verifyTotalResourceUsage(t, resp, map[string]int{
 		"CPU": 0,
 		"GPU": 0,

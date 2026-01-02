@@ -32,7 +32,7 @@ func testImplConnectOnly(test *testing.T, proxyAddress string) {
 
 func testImplConnectWithTimeoutAssertFailure(test *testing.T, proxyAddress string, managementApiAddress string, timeout time.Duration, serviceName string, resourceName string) {
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 
 	expectedFinishTime := time.Now().Add(timeout).Add(3 * time.Second)
@@ -46,7 +46,7 @@ func testImplConnectWithTimeoutAssertFailure(test *testing.T, proxyAddress strin
 	}
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 }
 
@@ -776,8 +776,8 @@ func testDyingProcesses(test *testing.T,
 	}
 
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 
 	pid2 := readPidFromOpenConnection(test, conn2)
@@ -797,8 +797,8 @@ func testDyingProcesses(test *testing.T,
 	pid3 := readPidFromOpenConnection(test, conn3)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 	err = syscall.Kill(pid2, syscall.SIGINT)
 	if err != nil {
@@ -808,8 +808,8 @@ func testDyingProcesses(test *testing.T,
 	time.Sleep(250 * time.Millisecond)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
 
 	if isProcessRunning(pid) {
@@ -830,8 +830,8 @@ func testDyingProcesses(test *testing.T,
 	pid = runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 
 	time.Sleep(1250 * time.Millisecond)
@@ -840,8 +840,8 @@ func testDyingProcesses(test *testing.T,
 	}
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
 
 	//verify that a service can restart after it died
@@ -855,7 +855,7 @@ func testFailingToStartServiceIsCleaningUpResources(
 	resourceName string,
 ) {
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, processName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 
 	con, _ := net.DialTimeout("tcp", proxyAddress, time.Duration(3)*time.Second)
@@ -864,7 +864,7 @@ func testFailingToStartServiceIsCleaningUpResources(
 	}()
 	assertRemoteClosedWithin(test, con, 2*time.Second)
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, processName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 }
 func TestAppScenarios(test *testing.T) {
@@ -1992,8 +1992,8 @@ func testUnmonitoredProcess(
 
 	//large-model-proxy should still see the service as running since it's not monitoring it
 	statusResponse := getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
 
 	//Let's make sure we can't read anything from the process - ensures large-model-proxy did not attempt to restart it
@@ -2023,8 +2023,8 @@ func testUnmonitoredProcess(
 	time.Sleep(3250 * time.Millisecond)
 	//Idle timeout should kick in now
 	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 0})
 
 	assertPortsAreClosed(t, []string{directDyingUnmonitoredServiceAddress})
@@ -2034,8 +2034,8 @@ func testUnmonitoredProcess(
 	pid2 := runReadPidCloseConnection(t, proxiedNonDyingService)
 
 	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
 	if isProcessRunning(pid) {
 		t.Fatalf("unmonitored process %d was supposed to shut down", pid)
@@ -2143,8 +2143,8 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Fatalf("fast-start service process %d is not running after reading PID", fastPid)
 	}
 	status := getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, status, testName+"_fast-start", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_fast-start", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 1})
 	err = fastConn.Close()
 	if err != nil {
@@ -2165,8 +2165,8 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	}
 
 	status = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, status, testName+"_fast-start", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_fast-start", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 0})
 	assertPortsAreClosed(t, []string{slowFailDirectAddress, slowFailHealthcheckAddress})
 	go func() {

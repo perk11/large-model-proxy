@@ -15,7 +15,7 @@ const (
 	ServiceStateStopped             ServiceState = "stopped"
 	ServiceStateWaitingForResources ServiceState = "waiting_for_resources"
 	ServiceStateStarting            ServiceState = "starting"
-	ServiceStateReady               ServiceState = "ready"
+	ServiceStateRunning             ServiceState = "running"
 )
 
 // ServiceStatus represents the current state of a service
@@ -106,7 +106,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
 			if runningService.isReady {
-				status.Status = ServiceStateReady
+				status.Status = ServiceStateRunning
 			} else if runningService.isWaitingForResources {
 				status.Status = ServiceStateWaitingForResources
 			} else {

@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // OpenAiApiCompletionResponse is what /v1/completions returns
@@ -524,8 +526,15 @@ func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
 	return resp
 }
 
-// verifyServiceStatus checks if a specific service has the expected running status and resource usage
-func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
+func verifyServiceStatus(
+	t *testing.T,
+	resp StatusResponse,
+	serviceName string,
+	expectedStatus ServiceState,
+	expectedWaitingConnections int,
+	expectedProxiedConnections int,
+	expectedResources map[string]int,
+) {
 	t.Helper()
 	// Find service in Services
 	var found bool
@@ -543,17 +552,21 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 		t.Fatalf("Service %s not found in Services", serviceName)
 	}
 
-	// Check running status
-	isRunning := service.Status == ServiceStateReady || service.Status == ServiceStateStarting || service.Status == ServiceStateWaitingForResources
-	if isRunning != expectedRunning {
-		t.Errorf("Service %s - expected running: %v, actual: %v (status: %s)", serviceName, expectedRunning, isRunning, service.Status)
-	}
+	assert.Equal(t, expectedStatus, service.Status, "Service %s status", serviceName)
+	assert.Equal(t, expectedWaitingConnections, service.WaitingConnections, "Service %s waiting connections", serviceName)
+	assert.Equal(t, expectedProxiedConnections, service.ProxiedConnections, "Service %s proxied connections", serviceName)
 
 	// Check resource usage
 	for resource, expectedAmount := range expectedResources {
-		if !expectedRunning {
+		if expectedStatus == ServiceStateStopped {
 			if expectedAmount != 0 {
 				t.Errorf("Service %s - Error in test logic, expected no usage for resource %s when service is not running", serviceName, resource)
+			}
+			if expectedWaitingConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no waiting connections %s when service is not running", serviceName, resource)
+			}
+			if expectedProxiedConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no waiting %s when service is not running", serviceName, resource)
 			}
 			continue
 		}
@@ -569,10 +582,7 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 			continue
 		}
 
-		if actualAmount != expectedAmount {
-			t.Errorf("Service %s - expected %s usage: %d, actual: %d",
-				serviceName, resource, expectedAmount, actualAmount)
-		}
+		assert.Equal(t, expectedAmount, actualAmount, "Service %s - expected %s usage: %d, actual: %d", serviceName, resource, expectedAmount, actualAmount)
 	}
 }
 

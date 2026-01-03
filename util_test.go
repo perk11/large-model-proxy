@@ -482,6 +482,7 @@ func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAv
 }
 
 func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
+	t.Helper()
 	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {
 		t.Fatalf("Failed to get status from management API: %v", err)
@@ -582,7 +583,7 @@ func verifyServiceStatus(
 			continue
 		}
 
-		assert.Equal(t, expectedAmount, actualAmount, "Service %s - expected %s usage: %d, actual: %d", serviceName, resource, expectedAmount, actualAmount)
+		assert.Equal(t, expectedAmount, actualAmount, "Service %s - resource %s usage", serviceName, resource)
 	}
 }
 

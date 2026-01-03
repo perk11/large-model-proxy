@@ -124,7 +124,7 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 10})
+	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 2})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 0})
 	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {

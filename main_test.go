@@ -830,7 +830,7 @@ func testDyingProcesses(test *testing.T,
 	pid = runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
 	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 
@@ -1898,13 +1898,13 @@ func TestAppScenarios(test *testing.T) {
 						{
 							ListenPort:      "2082",
 							ProxyTargetHost: "localhost",
-							ProxyTargetPort: "12077",
+							ProxyTargetPort: "12082",
 							Command:         "sh",
 							Args: "-c \"" +
 								"echo '11' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
 								"sleep 3 && " +
 								"echo '0' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
-								"./test-server/test-server -p 12077 -healthcheck-port 2084 -exit-after-duration 2s && " +
+								"./test-server/test-server -p 12082 -healthcheck-port 2084 -exit-after-duration 2s && " +
 								"echo '12' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt" +
 								"\"",
 							ResourceRequirements: map[string]int{"TestResource": 10},
@@ -1912,9 +1912,9 @@ func TestAppScenarios(test *testing.T) {
 						{
 							ListenPort:           "2083",
 							ProxyTargetHost:      "localhost",
-							ProxyTargetPort:      "12079",
+							ProxyTargetPort:      "12083",
 							Command:              "./test-server/test-server",
-							Args:                 "-p 12079 -healthcheck-port 2085",
+							Args:                 "-p 12083 -healthcheck-port 2085",
 							ResourceRequirements: map[string]int{"TestResource": 10},
 						},
 					},

@@ -32,13 +32,11 @@ func testResourceCheckCommand(
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
-	//connOneTime := time.Now()
 	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
 	}
 	defer func() { _ = connOne.Close() }()
-	//connTwoTime := time.Now()
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceTwoAddress, err)
@@ -99,9 +97,9 @@ func testResourceCheckCommand(
 	}
 
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 9})
-	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 4})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 5})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 5})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 4}, map[string]int{resourceName: 9}, map[string]int{resourceName: 9}, map[string]int{resourceName: 0})
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 	serviceTwoHealthCheckResponse := getHealthcheckResponse(t, serviceTwoHealthCheckAddress)
@@ -111,6 +109,10 @@ func testResourceCheckCommand(
 	assert.True(t, isProcessRunning(pid))
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 5})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 9}, map[string]int{resourceName: 0})
 }
 
 // Test resource starts at 10 units, but service one is changing it to 0 units right before its healthcheck is ready.

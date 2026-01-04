@@ -46,7 +46,7 @@ func TestManagementUI(t *testing.T) {
 		},
 	}
 
-	StandardizeConfigNamesAndPaths(&cfg, testName, t) // Standardize names and paths
+	StandardizeConfigNamesAndPaths(&cfg, testName)
 	configFilePath := createTempConfig(t, cfg)
 
 	// Start large-model-proxy with our test configuration
@@ -147,7 +147,7 @@ func TestManagementAPIStatusAcrossServices(t *testing.T) {
 		},
 	}
 
-	StandardizeConfigNamesAndPaths(&cfg, testName, t) // Standardize names and paths
+	StandardizeConfigNamesAndPaths(&cfg, testName)
 	configFilePath := createTempConfig(t, cfg)
 	const managementApiAddress = "localhost:2040"
 
@@ -378,7 +378,7 @@ func TestManagementAPIServiceUrls(t *testing.T) {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	StandardizeConfigNamesAndPaths(&cfg, testName, t)
+	StandardizeConfigNamesAndPaths(&cfg, testName)
 	configFilePath := createTempConfig(t, cfg)
 
 	// Start large-model-proxy

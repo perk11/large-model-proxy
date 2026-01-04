@@ -431,7 +431,7 @@ func ptrToString(s string) *string {
 // If no service name is provided, one will be allocated based on the index in the config.
 // The resulting service name will be standardized to include both the test name and the service name.
 // The log file will also use the standardized name.
-func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.T) {
+func StandardizeConfigNamesAndPaths(config *Config, testName string) {
 	for i := range config.Services {
 		service := &config.Services[i] // Get a pointer to modify the struct in the slice
 		originalServiceName := service.Name

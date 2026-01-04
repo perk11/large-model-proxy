@@ -46,6 +46,8 @@ func testResourceCheckCommand(
 
 	assert.Less(t, statusResponse.Resources[resourceName].TotalAvailable, 4, "Resource check ran too many times before the test started")
 
+	maxWaitingTime := 10 * time.Second
+	deadline := time.Now().Add(maxWaitingTime)
 	for statusResponse.Resources[resourceName].TotalAvailable < 3 {
 		//Give lmp time to run the check 3 times.
 		//There are sleeps in the init test code, so normally it takes 1.8 s until the
@@ -54,6 +56,10 @@ func testResourceCheckCommand(
 		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 		if statusResponse.Resources[resourceName].TotalAvailable > 3 {
 			t.Fatalf("Failed to catch resource check run exactly 3 times")
+			return
+		}
+		if deadline.Before(time.Now()) {
+			t.Fatalf("The attempt to catch resource run 3 times in did not finish in %v", maxWaitingTime)
 			return
 		}
 	}

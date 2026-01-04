@@ -32,7 +32,7 @@ type ServiceStatus struct {
 
 // ResourceUsage represents the current usage of a resource
 type ResourceUsage struct {
-	TotalAvailable             int            `json:"total_available,omitempty"`
+	Total                      int            `json:"total,omitempty"`
 	ReservedByStartingServices int            `json:"reserved_by_starting_services_by_starting_services"`
 	InUse                      int            `json:"in_use"`
 	Free                       int            `json:"free"`
@@ -69,7 +69,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			free = resourceManager.resourcesAvailable[resourceName]
 		}
 		response.Resources[resourceName] = ResourceUsage{
-			TotalAvailable:             config.ResourcesAvailable[resourceName].Amount,
+			Total:                      config.ResourcesAvailable[resourceName].Amount,
 			ReservedByStartingServices: resourceManager.resourcesReserved[resourceName],
 			InUse:                      resourceManager.resourcesInUse[resourceName],
 			Free:                       free,

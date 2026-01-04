@@ -557,6 +557,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 				"service",
 				"internal error",
 			)
+			resourceManager.incrementConnection(serviceConfig.Name, -1, 0)
 			return
 		}
 	}
@@ -655,7 +656,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 			return nil, fmt.Errorf("interrupt signal was received")
 		}
 		resourceManager.serviceMutex.Lock()
-		cleanUpStoppedServiceWhenServiceMutexIsLocked(&serviceConfig, runningService, false)
+		cleanUpStoppedServiceWhenServiceMutexIsLocked(&serviceConfig, runningService, true)
 		resourceManager.serviceMutex.Unlock()
 		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)

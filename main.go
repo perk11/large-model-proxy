@@ -543,6 +543,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	trackServiceLastUsed(serviceConfig, true)
 
 	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
+		resourceManager.incrementConnection(serviceConfig.Name, 0, -1)
 		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
 			log.Printf("[%s] Error writing bytes read from client to service: %v", serviceConfig.Name, err)
 			closeConnectionAndHandleError(
@@ -568,7 +569,6 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 }
 
 func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
-	resourceManager.incrementConnection(serviceConfig.Name, 0, -1)
 	log.Printf(
 		"[%s] Closing %s connection %s: %s",
 		serviceConfig.Name,

@@ -466,6 +466,7 @@ func verifyResourceUsage(t *testing.T, resp StatusResponse, expectedReserved map
 }
 
 // verifyTotalResourceUsage checks if the total resource usage matches the expected values
+// Deprecated: use verifyResourceUsage instead
 func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
 	t.Helper()
 	for resource, expectedAmount := range expectedUsage {
@@ -483,6 +484,7 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 }
 
 // verifyTotalResourcesAvailable checks if the total resource availability matches the expected values
+// Deprecated: use verifyResourceUsage instead
 func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAvailable map[string]int) {
 	t.Helper()
 	for resource, expectedAmount := range expectedAvailable {

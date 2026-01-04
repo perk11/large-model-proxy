@@ -557,25 +557,14 @@ func verifyServiceStatus(
 	expectedResources map[string]int,
 ) {
 	t.Helper()
-	// Find service in Services
-	var found bool
-	var service ServiceStatus
-
-	for _, s := range resp.Services {
-		if s.Name == serviceName {
-			service = s
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	servicePointer := findServiceInStatusResponse(resp, serviceName)
+	if servicePointer == nil {
 		t.Fatalf("Service %s not found in Services", serviceName)
 	}
 
-	assert.Equal(t, expectedStatus, service.Status, "Service %s status", serviceName)
-	assert.Equal(t, expectedWaitingConnections, service.WaitingConnections, "Service %s waiting connections", serviceName)
-	assert.Equal(t, expectedProxiedConnections, service.ProxiedConnections, "Service %s proxied connections", serviceName)
+	assert.Equal(t, expectedStatus, servicePointer.Status, "Service %s status", serviceName)
+	assert.Equal(t, expectedWaitingConnections, servicePointer.WaitingConnections, "Service %s waiting connections", serviceName)
+	assert.Equal(t, expectedProxiedConnections, servicePointer.ProxiedConnections, "Service %s proxied connections", serviceName)
 
 	// Check resource usage
 	for resource, expectedAmount := range expectedResources {
@@ -605,6 +594,16 @@ func verifyServiceStatus(
 
 		assert.Equal(t, expectedAmount, actualAmount, "Service %s - resource %s usage", serviceName, resource)
 	}
+}
+
+func findServiceInStatusResponse(resp StatusResponse, serviceName string) *ServiceStatus {
+	for _, s := range resp.Services {
+		if s.Name == serviceName {
+			return &s
+		}
+	}
+
+	return nil
 }
 
 func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Duration) {

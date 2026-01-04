@@ -861,7 +861,6 @@ func connectToService(serviceConfig ServiceConfig) net.Conn {
 				log.Printf("[%s] Failed to restart: %v", serviceConfig.Name, err)
 				return nil
 			}
-			resourceManager.incrementConnection(serviceConfig.Name, 1, -1)
 			return serviceConn
 		}
 		resourceManager.incrementConnection(serviceConfig.Name, 0, -1)

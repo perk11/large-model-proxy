@@ -1948,7 +1948,7 @@ func TestAppScenarios(test *testing.T) {
 			waitChannel := make(chan error, 1)
 
 			currentConfig := testCase.GetConfig(t, testCase.Name)
-			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name, t)
+			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name)
 			configFilePath := createTempConfig(t, currentConfig)
 
 			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, "", waitChannel)

@@ -446,6 +446,24 @@ func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.
 		service.LogFilePath = fmt.Sprintf("test-logs/%s.log", standardizedServiceName)
 	}
 }
+func verifyResourceUsage(t *testing.T, resp StatusResponse, expectedReserved map[string]int, expectedFree map[string]int, expectedUsed map[string]int, expectedTotal map[string]int) {
+	t.Helper()
+	resourcesLen := len(expectedReserved)
+	assert.Len(t, expectedFree, resourcesLen, "Expected %d resources in free list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedUsed, resourcesLen, "Expected %d resources in used list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedTotal, resourcesLen, "Expected %d resources in total list, to match reserved list", resourcesLen)
+	for resource := range expectedReserved {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+		assert.Equal(t, expectedReserved[resource], resourceInfo.ReservedByStartingServices, "Resource %s reserved by starting services", resource)
+		assert.Equal(t, expectedFree[resource], resourceInfo.Free, "Resource %s free", resource)
+		assert.Equal(t, expectedUsed[resource], resourceInfo.InUse, "Resource %s used", resource)
+		assert.Equal(t, expectedTotal[resource], resourceInfo.Total, "Resource %s total available", resource)
+	}
+}
 
 // verifyTotalResourceUsage checks if the total resource usage matches the expected values
 func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
@@ -474,9 +492,9 @@ func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAv
 			continue
 		}
 
-		if resourceInfo.TotalAvailable != expectedAmount {
+		if resourceInfo.Total != expectedAmount {
 			t.Errorf("Expected total %s available: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalAvailable)
+				resource, expectedAmount, resourceInfo.Total)
 		}
 	}
 }

@@ -305,8 +305,8 @@
           for (const resourceName in resources) {
             const resource = resources[resourceName];
             let totalAmount;
-            if (resource.hasOwnProperty("total_available")) {
-              totalAmount = resource.total_available;
+            if (resource.hasOwnProperty("total")) {
+              totalAmount = resource.total;
             } else {
               totalAmount = "N/A";
             }

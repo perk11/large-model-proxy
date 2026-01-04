@@ -14,8 +14,7 @@ import (
 // Service One needs 4 units of the resource and takes 10 seconds to start
 // Service two needs 5 units of the resource
 // Both service connections are open at the same time
-// Testing that: 1. Service One starts after 6 seconds
-//  2. Service Two starts after 11 seconds
+// Testing that service two starts only once free resources hit 9.
 func testResourceCheckCommand(
 	t *testing.T,
 	serviceOneAddress string,
@@ -33,20 +32,22 @@ func testResourceCheckCommand(
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
+	//connOneTime := time.Now()
 	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
 	}
 	defer func() { _ = connOne.Close() }()
+	//connTwoTime := time.Now()
 	connTwo, err := net.Dial("tcp", serviceTwoAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceTwoAddress, err)
 	}
 	defer func() { _ = connTwo.Close() }()
 
-	assert.Less(t, statusResponse.Resources[resourceName].Free, 3, "Resource check ran too many times before the test started")
+	assert.Less(t, statusResponse.Resources[resourceName].Free, 3, "Resource check ran too many times before the main test started")
 
-	maxWaitingTime := 10 * time.Second
+	maxWaitingTime := 4 * time.Second
 	deadline := time.Now().Add(maxWaitingTime)
 	for statusResponse.Resources[resourceName].Free < 3 {
 		//Give lmp time to run the check 3 times.
@@ -76,13 +77,13 @@ func testResourceCheckCommand(
 	assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+
 	var resourceFreeAmountExpected = statusResponse.Resources[resourceName].Free
 	maxWaitingTime = 10 * time.Second
 	deadline = time.Now().Add(maxWaitingTime)
 	for resourceFreeAmountExpected < 9 {
-		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-		verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 4}, map[string]int{resourceName: resourceFreeAmountExpected}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
-		verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 4})
+		verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 4}, map[string]int{resourceName: resourceFreeAmountExpected}, map[string]int{resourceName: 4}, map[string]int{resourceName: 0})
+		verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 4})
 		//service two should not be starting. Even though >=5 total units are available, 4 should be reserved for service one
 		verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 5})
 		serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
@@ -94,7 +95,7 @@ func testResourceCheckCommand(
 			return
 		}
 		time.Sleep(1000 * time.Millisecond)
-		//TODO: do we need to sleep more since service two health check can fail still
+		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	}
 
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)

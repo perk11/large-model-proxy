@@ -117,6 +117,8 @@ func (rm ResourceManager) incrementConnection(name string, proxiedConnectionsCou
 			log.Printf("[%s] All connections closed, sending resourceChange event", name)
 		}
 		rm.broadcastResourceChanges(maps.Keys(serviceConfigByName[name].ResourceRequirements))
+	} else if runningService.proxiedConnections < 0 || runningService.waitingConnections < 0 {
+		log.Printf("[%s] ERROR: Negative connection count. Proxied: %d. Waiting: %d", name, runningService.proxiedConnections, runningService.waitingConnections)
 	}
 }
 

@@ -1921,13 +1921,13 @@ func TestAppScenarios(test *testing.T) {
 				}
 			},
 			AddressesToCheckAfterStopping: []string{
-				"localhost:2076",
-				"localhost:2077",
-				"localhost:2079",
-				"localhost:2080",
-				"localhost:2081",
-				"localhost:12077",
-				"localhost:12079",
+				"localhost:2082",
+				"localhost:12082",
+				"localhost:2083",
+				"localhost:12083",
+				"localhost:2084",
+				"localhost:2085",
+				"localhost:2086",
 			},
 			SetupFunc: func(t *testing.T) {
 				err := os.WriteFile("test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt", []byte("10"), 0666)

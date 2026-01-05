@@ -70,7 +70,7 @@ func checkResourceAvailabilityWithKnownCommand(resourceName string, checkCommand
 	resourceManager.resourceChangeByResourceMutex.Lock()
 	resourceManager.broadcastFirstChangeIfMutexIsLocked(resourceName)
 	if amountChanged {
-		resourceManager.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName)
+		resourceManager.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName, false)
 	}
 
 	resourceManager.resourceChangeByResourceMutex.Unlock()
@@ -97,9 +97,9 @@ func UnpauseResourceAvailabilityMonitoring(resourceName string) {
 	}
 }
 
-func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string]) {
+func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string], recheckNeeded bool) {
 	for resource := range resources {
-		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource)
+		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource, recheckNeeded)
 	}
 }
 func (rm ResourceManager) broadcastFirstChangeIfMutexIsLocked(resourceName string) {
@@ -107,26 +107,32 @@ func (rm ResourceManager) broadcastFirstChangeIfMutexIsLocked(resourceName strin
 	if !ok {
 		return //map is not initialized for resources without CheckCommand, so it being missing is ok
 	}
-	sendSignalToChannels(resourceChangeByResourceChans, resourceName, "checkCommandFirstChangeByResourceChans")
+	sendSignalToChannels(resourceChangeByResourceChans, resourceName, "checkCommandFirstChangeByResourceChans", struct{}{})
 }
-func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string) {
+func (rm ResourceManager) broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resourceName string, recheckNeeded bool) {
 	serviceChannels, ok := rm.resourceChangeByResourceChans[resourceName]
 	if !ok {
 		log.Printf("[Resource Monitor][%s] ERROR: resourceChangeByResourceChans map is not initialized", resourceName)
 		return
 	}
-	sendSignalToChannels(serviceChannels, resourceName, "resourceChangeByResourceChans")
+	sendSignalToChannels(serviceChannels, resourceName, "resourceChangeByResourceChans", recheckNeeded)
 }
 
-func sendSignalToChannels(serviceChannels map[string]chan struct{}, resourceName string, channelName string) {
+func sendSignalToChannels[T any](
+	serviceChannels map[string]chan T,
+	resourceName string,
+	channelName string,
+	signalValue T,
+) {
 	for serviceName, resourceChangeChannel := range serviceChannels {
 		if config.LogLevel == LogLevelDebug {
-			log.Printf("[Resource Monitor][%s] Sending an update to %s channel for service \"%s\"", resourceName, channelName, serviceName)
+			log.Printf("[Resource Monitor][%s] Sending an update to %s channel for service %q: %v", resourceName, channelName, serviceName, signalValue)
 		}
+
 		select {
-		case resourceChangeChannel <- struct{}{}:
+		case resourceChangeChannel <- signalValue:
 		default:
-			log.Printf("[Resource Monitor][%s] ERROR: %s channel for service \"%s\" is blocked", resourceName, channelName, serviceName)
+			log.Printf("[Resource Monitor][%s] ERROR: %s channel for service %q is blocked", resourceName, channelName, serviceName)
 		}
 	}
 }

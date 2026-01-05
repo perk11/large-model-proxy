@@ -195,8 +195,8 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	time.Sleep(100 * time.Millisecond) //Give lmp time to catch up
 	//bug in the actual code here?
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 10})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 10})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 10})
 	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
 	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
 

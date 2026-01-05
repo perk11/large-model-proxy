@@ -53,7 +53,7 @@ type ResourceManager struct {
 
 	resourceChangeByResourceMutex          *sync.Mutex //Also covers checkCommandFirstChangeByResourceChans
 	checkCommandFirstChangeByResourceChans map[string]map[string]chan struct{}
-	resourceChangeByResourceChans          map[string]map[string]chan struct{}
+	resourceChangeByResourceChans          map[string]map[string]chan bool //true if amount is already updated, false if CheckCommands needs to run
 }
 type OpenAiApiModels struct {
 	Object string           `json:"object"`
@@ -116,7 +116,7 @@ func (rm ResourceManager) incrementConnection(name string, proxiedConnectionsCou
 		if config.LogLevel == LogLevelDebug {
 			log.Printf("[%s] All connections closed, sending resourceChange event", name)
 		}
-		rm.broadcastResourceChanges(maps.Keys(serviceConfigByName[name].ResourceRequirements))
+		rm.broadcastResourceChanges(maps.Keys(serviceConfigByName[name].ResourceRequirements), true)
 	} else if runningService.proxiedConnections < 0 || runningService.waitingConnections < 0 {
 		log.Printf("[%s] ERROR: Negative connection count. Proxied: %d. Waiting: %d", name, runningService.proxiedConnections, runningService.waitingConnections)
 	}
@@ -185,14 +185,14 @@ func main() {
 		monitorUnpauseChansMutex:               &sync.Mutex{},
 		monitorUnpauseChans:                    make(map[string]chan struct{}),
 		checkCommandFirstChangeByResourceChans: make(map[string]map[string]chan struct{}),
-		resourceChangeByResourceChans:          make(map[string]map[string]chan struct{}),
+		resourceChangeByResourceChans:          make(map[string]map[string]chan bool),
 	}
 
 	for name, resource := range config.ResourcesAvailable {
 		resourceManager.resourcesAvailable[name] = 0
 		resourceManager.resourcesInUse[name] = 0
 		resourceManager.resourcesReserved[name] = 0
-		resourceManager.resourceChangeByResourceChans[name] = make(map[string]chan struct{})
+		resourceManager.resourceChangeByResourceChans[name] = make(map[string]chan bool)
 
 		if resource.CheckCommand != "" {
 			resourceManager.monitorUnpauseChans[name] = make(chan struct{}, 1)
@@ -941,10 +941,10 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		maxWaitTime = time.Duration(*config.MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds) * time.Second
 	}
 	maxWaitTimeTimer := time.NewTimer(maxWaitTime)
-	var triggeredByResourceChange = false
+	recheckNeeded := true
 	for {
 		resourceManager.serviceMutex.Lock()
-		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, !triggeredByResourceChange)
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, recheckNeeded)
 		if missingResource == nil {
 			resourceManager.resourceChangeByResourceMutex.Lock()
 			for resource := range resourceRequirements {
@@ -969,7 +969,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		//TODO: add resource amounts
 		log.Printf("[%s] Not enough %s to start and no services eligible to stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
 
-		resourceChangeServiceChannel := make(chan struct{})
+		resourceChangeServiceChannel := make(chan bool)
 		resourceManager.resourceChangeByResourceMutex.Lock()
 		if _, ok := resourceManager.resourceChangeByResourceChans[*missingResource][requestingService]; ok {
 			log.Printf("[%s] ERROR: Resource %s is already being reserved by this service", requestingService, *missingResource)
@@ -977,15 +977,13 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 		resourceManager.resourceChangeByResourceChans[*missingResource][requestingService] = resourceChangeServiceChannel
 		resourceManager.resourceChangeByResourceMutex.Unlock()
 
-		triggeredByResourceChange = false
 		select {
-		case <-resourceChangeServiceChannel:
+		case recheckNeeded = <-resourceChangeServiceChannel:
 			resourceManager.resourceChangeByResourceMutex.Lock()
 			delete(resourceManager.resourceChangeByResourceChans[*missingResource], requestingService)
 			resourceManager.resourceChangeByResourceMutex.Unlock()
 
 			log.Printf("[%s] Received a resource change event for %s, rechecking if the service can be started now", requestingService, *missingResource)
-			triggeredByResourceChange = true
 
 			// resource state changed; loop to re-evaluate
 		case <-maxWaitTimeTimer.C:
@@ -1511,7 +1509,7 @@ func cleanUpStoppedServiceWhenServiceMutexIsLocked(service *ServiceConfig, runni
 	runningService.stderrWriter.FinalFlush()
 	releaseResourcesWhenServiceMutexIsLocked(service.ResourceRequirements)
 	delete(resourceManager.runningServices, service.Name)
-	resourceManager.broadcastResourceChanges(maps.Keys(service.ResourceRequirements))
+	resourceManager.broadcastResourceChanges(maps.Keys(service.ResourceRequirements), true)
 }
 
 func waitForProcessToTerminate(exitWaitGroup *sync.WaitGroup) bool {

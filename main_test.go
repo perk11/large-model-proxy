@@ -867,6 +867,73 @@ func testFailingToStartServiceIsCleaningUpResources(
 	verifyServiceStatus(test, statusResponse, processName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 }
+func testMultipleConnectionsWhileWaitingForResources(t *testing.T,
+	serviceOneAddress string,
+	serviceTwoAddress string,
+	serviceOneHealthCheckAddress string,
+	serviceTwoHealthCheckAddress string,
+	serviceOneName string,
+	serviceTwoName string,
+	managementApiAddress string,
+	resourceName string,
+) {
+	//sanity checks
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1})
+
+	// establish 2 connections to serviceTwo and one to serviceOne. serviceOne starts and uses the resource
+	// the connections to serviceTwo are waiting for 3s until serviceOne connection is done
+	connOne, err := net.Dial("tcp", serviceOneAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
+	}
+	defer func() { _ = connOne.Close() }()
+	connTwo_1, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("connection#1 to %s: %v", serviceTwoAddress, err)
+	}
+	defer func() { _ = connTwo_1.Close() }()
+	connTwo_2, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("connection#2 to %s: %v", serviceTwoAddress, err)
+	}
+	defer func() { _ = connTwo_2.Close() }()
+
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 1})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 2, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	readPidFromOpenConnection(t, connOne) //wait for service one to be ready
+
+	time.Sleep(100 * time.Millisecond) // give lmp time to start serviceTwo
+	//Now serviceOne has done its job and should be shutdown, while serviceTwo connections are now ready
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStarting, 2, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	time.Sleep(2000 * time.Millisecond) //wait while serviceTwo is starting
+
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 2, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	readPidFromOpenConnection(t, connTwo_1)
+	readPidFromOpenConnection(t, connTwo_2)
+
+	//make sure connections went to 0
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+}
 func TestAppScenarios(test *testing.T) {
 	test.Parallel()
 	tests := []struct {
@@ -1934,6 +2001,62 @@ func TestAppScenarios(test *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to write resource-amount file: %v", err)
 				}
+			},
+		},
+		{
+			Name: "multiple-connections-while-waiting-for-resources",
+			TestFunc: func(t *testing.T) {
+				testMultipleConnectionsWhileWaitingForResources(
+					t,
+					"localhost:2087",
+					"localhost:2088",
+					"localhost:2089",
+					"localhost:2090",
+					"multiple-connections-while-waiting-for-resources_service0",
+					"multiple-connections-while-waiting-for-resources_service1",
+					"localhost:2091",
+					"TestResource",
+				)
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							Amount: 1,
+						},
+					},
+					LogLevel: LogLevelDebug,
+					ManagementApi: ManagementApi{
+						ListenPort: "2091",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:           "2087",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12087",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12087 -healthcheck-port 2089 -sleep-before-listening 3s",
+							ResourceRequirements: map[string]int{"TestResource": 1},
+						},
+						{
+							ListenPort:           "2088",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12088",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12088 -healthcheck-port 2090 -sleep-before-listening 2s -request-processing-duration 3s",
+							ResourceRequirements: map[string]int{"TestResource": 1},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2087",
+				"localhost:12087",
+				"localhost:2088",
+				"localhost:12088",
+				"localhost:2089",
+				"localhost:2090",
+				"localhost:2091",
 			},
 		},
 	}

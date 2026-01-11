@@ -200,9 +200,6 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
 	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
 
-	//verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 11})
-	//verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 10})
-
 	//TODO: rework to check resource amounts and statuses?
 	for {
 		serviceTwoHealthCheckResponse, err := attemptReadHealthcheckResponse(t, serviceTwoHealthCheckAddress)

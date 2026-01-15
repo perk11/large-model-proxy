@@ -735,7 +735,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	resourceManager.serviceMutex.Lock()
 	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 
-	//read the service again before updating because other connections could've been opened while it was starting
+	//read the service again before updating because other connections could've updated it while it was starting
 	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
 	if !ok {
 		resourceManager.serviceMutex.Unlock()

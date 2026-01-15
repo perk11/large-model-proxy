@@ -155,9 +155,9 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	}
 
 	var dto struct {
-		Amount                    int    `json:"Amount"`
-		CheckCommand              string `json:"CheckCommand"`
-		CheckIntervalMilliseconds uint   `json:"CheckWhenNotEnoughIntervalMilliseconds"`
+		Amount                                 int    `json:"Amount"`
+		CheckCommand                           string `json:"CheckCommand"`
+		CheckWhenNotEnoughIntervalMilliseconds uint   `json:"CheckWhenNotEnoughIntervalMilliseconds"`
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
@@ -165,10 +165,10 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	err = dec.Decode(&dto)
 
 	if err == nil && !(dto.Amount == 0 && dto.CheckCommand == "") {
-		if dto.CheckIntervalMilliseconds == 0 {
-			dto.CheckIntervalMilliseconds = 1000
+		if dto.CheckWhenNotEnoughIntervalMilliseconds == 0 {
+			dto.CheckWhenNotEnoughIntervalMilliseconds = 1000
 		}
-		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand, CheckWhenNotEnoughIntervalMilliseconds: dto.CheckIntervalMilliseconds}
+		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand, CheckWhenNotEnoughIntervalMilliseconds: dto.CheckWhenNotEnoughIntervalMilliseconds}
 		return nil
 	}
 

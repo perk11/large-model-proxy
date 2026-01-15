@@ -1,7 +1,4 @@
-https://chatgpt.com/c/695a2446-6290-8325-b572-9412ef7ac16f
 add a test for OpenAI API path
 Not changing from waiting to resources to healthcheck? - solve with a test
-Check resources after service is started (might be not needed, but looks better)
-Tests
-Readme changes
-After connections went to 0, signal was not sent
+Rename CheckIntervalMilliseconds to signify when the check happens?
+waiting connections do not go to 0, proxied connections can still go negative

@@ -609,7 +609,7 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 				return nil
 			}
 			resourceManager.incrementConnection(serviceConfig.Name, 0, 1)
-			log.Printf("[%s] Service is already starting or stopping, waiting for that operation to finish before proceeding witht the current connection", serviceConfig.Name)
+			log.Printf("[%s] Service is already starting or stopping, waiting for that operation to finish before proceeding with the current connection", serviceConfig.Name)
 			runningService.manageMutex.Lock()
 			runningService.manageMutex.Unlock()
 

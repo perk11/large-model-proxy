@@ -27,20 +27,36 @@
         padding: 0;
       }
 
-      .all-services tr.running {
-        background-color: #c8ffb9;
-      }
-
-      .all-services tr.running:nth-child(even) {
-        background-color: #d2ffc4;
-      }
-
       .all-services tr.stopped {
-        background-color: #ffc6c6;
+        background-color: #d1d5db;
       }
 
       .all-services tr.stopped:nth-child(even) {
-        background-color: #ffa5a5;
+        background-color: #e5e7eb;
+      }
+
+      .all-services tr.waiting_for_resources {
+        background-color: #fde68a;
+      }
+
+      .all-services tr.waiting_for_resources:nth-child(even) {
+        background-color: #fcd34d;
+      }
+
+      .all-services tr.starting {
+        background-color: #bfdbfe;
+      }
+
+      .all-services tr.starting:nth-child(even) {
+        background-color: #93c5fd;
+      }
+
+      .all-services tr.running {
+        background-color: #bbf7d0;
+      }
+
+      .all-services tr.running:nth-child(even) {
+        background-color: #86efac;
       }
 
       .all-services {
@@ -111,12 +127,16 @@
               }
               return a.last_used < b.last_used;
             };
-          case "active_connections":
+          case "connections":
             return (a, b) => {
-              if (a.active_connections === b.active_connections) {
+              const aConnections =
+                a.proxied_connections + a.waiting_connections;
+              const bConnections =
+                b.proxied_connections + b.waiting_connections;
+              if (aConnections === bConnections) {
                 return a.name.toUpperCase() > b.name.toUpperCase();
               }
-              return a.active_connections < b.active_connections;
+              return aConnections < bConnections;
             };
           case "name":
             return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
@@ -182,15 +202,23 @@
           let sortOrder = localStorage.getItem("sortOrder");
           if (sortOrder === null) {
             sortOrder = "last_used";
+          } else if (sortOrder === "proxied_connections") {
+            // proxied_connections is no longer a valid sort option but may exist in localStorage; this migration code can be removed in the future.
+            localStorage.setItem("sortOrder", "connections");
+            sortOrder = "connections";
           }
 
           const services = statusJSON.services.sort(getSortFunction(sortOrder));
           let items = "";
           const allServiceProperties = {
-            is_running: "Running",
-            listen_port: "Listen Port",
-            active_connections: "Proxied Connections",
-            last_used: "Last Used",
+            status: {
+              name: "Status",
+              getLabel: (status) => serviceStatusLabels[status] ?? status,
+            },
+            listen_port: { name: "Listen Port" },
+            waiting_connections: { name: "Waiting Connections" },
+            proxied_connections: { name: "Proxied Connections" },
+            last_used: { name: "Last Used" },
           };
           if (!statusJSON.hasOwnProperty("resources")) {
             displayError(
@@ -209,26 +237,65 @@
             .join("")}`;
           items += `${Object.entries(allServiceProperties)
             .map(
-              ([key, label]) => `<th class="${key}">${escapeHtml(label)}</th>`,
+              ([key, property]) =>
+                `<th class="${key}">${escapeHtml(property.name)}</th>`,
             )
             .join("")}`;
           items += `</tr></thead><tbody>`;
           let numberOfBlankColumnsForResources =
             Object.keys(allServiceProperties).length;
 
-          //resources used
-          items += `<tr class="resources used">
-    <td class="property-name">Resources used</td>
+          //resources reserved_by_starting_services
+          items += `<tr class="resources reserved">
+    <td class="property-name">Reserved By Starting Services</td>
 `;
           for (const resourceName in resources) {
             const resource = resources[resourceName];
-            if (!resource.hasOwnProperty("total_in_use")) {
+            if (!resource.hasOwnProperty("reserved_by_starting_services")) {
               displayError(
-                `Invalid response from /status endpoint: Resource ${resourceName} is missing "total_in_use" property`,
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "reserved_by_starting_services" property`,
               );
               return;
             }
-            items += `<td class="resource">${resource.total_in_use}</td>`;
+            items += `<td class="resource">${resource.reserved_by_starting_services}</td>`;
+          }
+          items += `<td
+            class="blank-column"
+            colspan="${numberOfBlankColumnsForResources}"
+          ></td></tr>`;
+
+          //resources in use
+          items += `<tr class="resources used">
+    <td class="property-name">In Use</td>
+`;
+          for (const resourceName in resources) {
+            const resource = resources[resourceName];
+            if (!resource.hasOwnProperty("in_use")) {
+              displayError(
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "in_use" property`,
+              );
+              return;
+            }
+            items += `<td class="resource">${resource.in_use}</td>`;
+          }
+          items += `<td
+            class="blank-column"
+            colspan="${numberOfBlankColumnsForResources}"
+          ></td></tr>`;
+
+          //resources free
+          items += `<tr class="resources free">
+    <td class="property-name">Free</td>
+`;
+          for (const resourceName in resources) {
+            const resource = resources[resourceName];
+            if (!resource.hasOwnProperty("free")) {
+              displayError(
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "free" property`,
+              );
+              return;
+            }
+            items += `<td class="resource">${resource.free}</td>`;
           }
           items += `<td
             class="blank-column"
@@ -237,20 +304,25 @@
 
           //resources total
           items += `<tr class="resources used">
-    <td class="property-name">Resources available</td>
+    <td class="property-name">Total</td>
 `;
           for (const resourceName in resources) {
             const resource = resources[resourceName];
-            if (!resource.hasOwnProperty("total_available")) {
-              displayError(
-                `Invalid response from /status endpoint: Resource ${resourceName} is missing "total_available" property`,
-              );
-              return;
+            let totalAmount;
+            if (resource.hasOwnProperty("total")) {
+              totalAmount = resource.total;
+            } else {
+              totalAmount = "N/A";
             }
-            items += `<td class="resource">${resource.total_available}</td>`;
+            items += `<td class="resource">${totalAmount}</td>`;
           }
           items += `<td class="blank-column" colspan="${numberOfBlankColumnsForResources}"></td></tr>`;
-
+          const serviceStatusLabels = {
+            stopped: "Stopped",
+            waiting_for_resources: "Waiting for resources",
+            starting: "Starting",
+            running: "Running",
+          };
           //services
           for (
             let serviceIndex = 0;
@@ -258,7 +330,7 @@
             serviceIndex++
           ) {
             const service = services[serviceIndex];
-            items += `<tr class="${service.is_running ? "running" : "stopped"}">`;
+            items += `<tr class="${service.status}">`;
             if (!service.hasOwnProperty("name")) {
               displayError(
                 `Invalid response from /status endpoint: A service in services is missing "name" property`,
@@ -280,9 +352,20 @@
                 );
                 return;
               }
-              let usage = resource.usage_by_service.hasOwnProperty(service.name)
-                ? resource.usage_by_service[service.name]
-                : 0;
+              let usage;
+              if (resource.usage_by_service.hasOwnProperty(service.name)) {
+                usage = resource.usage_by_service[service.name];
+              } else {
+                if (!service.hasOwnProperty("resource_requirements")) {
+                  usage = 0;
+                } else if (
+                  !service.resource_requirements.hasOwnProperty(resourceName)
+                ) {
+                  usage = 0;
+                } else {
+                  usage = service.resource_requirements[resourceName];
+                }
+              }
               items += `<td class="resource">${usage}</td>`;
             }
             for (let propertyName in allServiceProperties) {
@@ -293,12 +376,16 @@
                 return;
               }
 
-              let cellContent;
-              const propertyNameEscaped = escapeHtml(
-                String(service[propertyName]),
-              );
+              let displayedValue;
+              let value = service[propertyName];
+              let attributes = allServiceProperties[propertyName];
+              if (attributes.hasOwnProperty("getLabel")) {
+                displayedValue = attributes.getLabel(value);
+              } else {
+                displayedValue = String(value);
+              }
 
-              items += `<td class="property-${propertyName}">${propertyNameEscaped}</td>`;
+              items += `<td class="property-${propertyName}">${escapeHtml(displayedValue)}</td>`;
             }
             items += "</tr>";
           }
@@ -359,7 +446,7 @@
       <label for="sort-order-selector">Sort Order</label>
       <select id="sort-order-selector">
         <option value="last_used">Last Used</option>
-        <option value="active_connections">Proxied Connections</option>
+        <option value="connections">Connections</option>
         <option value="name">Name</option>
       </select>
     </header>

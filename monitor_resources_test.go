@@ -14,8 +14,7 @@ import (
 // Service One needs 4 units of the resource and takes 10 seconds to start
 // Service two needs 5 units of the resource
 // Both service connections are open at the same time
-// Testing that: 1. Service One starts after 6 seconds
-//  2. Service Two starts after 11 seconds
+// Testing that service two starts only once free resources hit 9.
 func testResourceCheckCommand(
 	t *testing.T,
 	serviceOneAddress string,
@@ -30,9 +29,9 @@ func testResourceCheckCommand(
 	var statusResponse StatusResponse
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
-	verifyServiceStatus(t, statusResponse, serviceOneName, false, map[string]int{resourceName: 0})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, false, map[string]int{resourceName: 0})
-	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
 	connOne, err := net.Dial("tcp", serviceOneAddress)
 	if err != nil {
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
@@ -44,66 +43,63 @@ func testResourceCheckCommand(
 	}
 	defer func() { _ = connTwo.Close() }()
 
-	assert.Less(t, statusResponse.Resources[resourceName].TotalAvailable, 4, "Resource check ran too many times before the test started")
+	assert.Less(t, statusResponse.Resources[resourceName].Free, 3, "Resource check ran too many times before the main test started")
 
-	for statusResponse.Resources[resourceName].TotalAvailable < 3 {
+	maxWaitingTime := 4 * time.Second
+	deadline := time.Now().Add(maxWaitingTime)
+	for statusResponse.Resources[resourceName].Free < 3 {
 		//Give lmp time to run the check 3 times.
 		//There are sleeps in the init test code, so normally it takes 1.8 s until the
 		//code gets here. Giving it 1.2 s buffer to account for possible slowdowns
-		time.Sleep(100 * time.Millisecond)
 		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-		if statusResponse.Resources[resourceName].TotalAvailable > 3 {
+		if statusResponse.Resources[resourceName].Free > 3 {
 			t.Fatalf("Failed to catch resource check run exactly 3 times")
 			return
 		}
+		if deadline.Before(time.Now()) {
+			t.Fatalf("The attempt to catch resource run 3 times did not finish in %v", maxWaitingTime)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 3})
-	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 0})
-	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 4})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 5})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 3}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 5})
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
 
 	time.Sleep(1000 * time.Millisecond)
 	var serviceOneHealthCheckResponse HealthCheckResponse
-	var resourceAvailableAmountExpected int
-	for {
-		//The resource is available now, but we need more time for the check to realize this.
-		// This can be removed after https://github.com/perk11/large-model-proxy/issues/94 is implemented.
-		time.Sleep(100 * time.Millisecond)
 
-		serviceOneHealthCheckResponse, err = attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
-		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-		if resourceAvailableAmountExpected > 5 {
-			t.Fatalf("service one should have started by now")
-			return
-		}
-		if err == nil {
-			resourceAvailableAmountExpected = statusResponse.Resources[resourceName].TotalAvailable
-			assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
-			break
-		}
-	}
+	//serviceOneHealthCheckResponse, err = attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
+	assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 
-	for resourceAvailableAmountExpected < 9 {
-		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-		verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: resourceAvailableAmountExpected})
-		verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 4})
-		verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 4})
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+
+	var resourceFreeAmountExpected = statusResponse.Resources[resourceName].Free
+	maxWaitingTime = 10 * time.Second
+	deadline = time.Now().Add(maxWaitingTime)
+	for resourceFreeAmountExpected < 9 {
+		verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 4}, map[string]int{resourceName: resourceFreeAmountExpected}, map[string]int{resourceName: 4}, map[string]int{resourceName: 0})
+		verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 4})
 		//service two should not be starting. Even though >=5 total units are available, 4 should be reserved for service one
-		verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 5})
+		verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 5})
 		serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 		assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 		assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
-		resourceAvailableAmountExpected++
+		resourceFreeAmountExpected++
+		if deadline.Before(time.Now()) {
+			t.Fatalf("The attempt to catch resource run 9 times did not finish in %v", maxWaitingTime)
+			return
+		}
 		time.Sleep(1000 * time.Millisecond)
-		//TODO: do we need to sleep more since service two health check can fail still
+		statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	}
 
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 9})
-	verifyServiceStatus(t, statusResponse, serviceOneName, true, map[string]int{resourceName: 4})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, true, map[string]int{resourceName: 5})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 5})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 4}, map[string]int{resourceName: 9}, map[string]int{resourceName: 9}, map[string]int{resourceName: 0})
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	assert.Equal(t, "server_starting", serviceOneHealthCheckResponse.Message)
 	serviceTwoHealthCheckResponse := getHealthcheckResponse(t, serviceTwoHealthCheckAddress)
@@ -113,14 +109,20 @@ func testResourceCheckCommand(
 	assert.True(t, isProcessRunning(pid))
 	serviceOneHealthCheckResponse = getHealthcheckResponse(t, serviceOneHealthCheckAddress)
 	assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 4})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 5})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 9}, map[string]int{resourceName: 0})
 }
 
-// testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult
-// Test resource starts at 10 units, but service one is changing it to 0 units.
-// Check command runs every 10 seconds.
-// We immediately spawn service one and then service two.
-// Service two is not supposed to start while service one is running, even though check command hasn't ran yet
-// It should start after service one terminates after 15 seconds.
+// Test resource starts at 10 units, but service one is changing it to 0 units right before its healthcheck is ready.
+// Check command runs every 60 seconds, so it won't run on the timer during the duration of the test
+// We immediately connect service one and after a second to service two.
+// Service one takes 3 seconds to start and then start, until then 11 resources are available
+// Connection of service one should trigger check command (we check that).
+// Service two is not supposed to start while service one is running.
+// It should start immediately after service one terminates since that
+// should trigger a check command run (we check that)
 func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	t *testing.T,
 	serviceOneAddress string,
@@ -132,5 +134,73 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	managementApiAddress string,
 	resourceName string,
 ) {
-	//TODO: implement and fix by changing monitoring to a queue
+	var statusResponse StatusResponse
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 0}, map[string]int{resourceName: 2})
+
+	connOne, err := net.Dial("tcp", serviceOneAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
+	}
+	serviceOneConnectionEstablishedTime := time.Now()
+	defer func() { _ = connOne.Close() }()
+
+	time.Sleep(100 * time.Millisecond) //give lmp time to catch up
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	//starting the service will set the total resource amount to 11, but the check command should not run again until we receive another request
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 10})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	//total never changes from 2
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 10}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
+
+	time.Sleep(1 * time.Second)
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 10})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 10}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
+
+	connTwo, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceTwoAddress, err)
+	}
+	serviceTwoConnectionEstablishedTime := time.Now()
+	defer func() { _ = connTwo.Close() }()
+	t.Logf("Service two connection established %v after service one", serviceTwoConnectionEstablishedTime.Sub(serviceOneConnectionEstablishedTime))
+
+	time.Sleep(200 * time.Millisecond) //give CheckCommand time to finish running
+
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 10})
+
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 1, 0, map[string]int{resourceName: 10})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 11}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
+
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
+	for {
+		serviceOneHealthCheckResponse, err := attemptReadHealthcheckResponse(t, serviceOneHealthCheckAddress)
+		if err == nil {
+			assert.Equal(t, "ok", serviceOneHealthCheckResponse.Message)
+			t.Logf("Service one health check response received after %v", time.Since(serviceOneConnectionEstablishedTime))
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+		if time.Since(serviceOneConnectionEstablishedTime) > 5*time.Second {
+			t.Fatal("Service one health check is still not responding after 5s")
+		}
+	}
+	time.Sleep(100 * time.Millisecond) //Give lmp time to catch up
+	//bug in the actual code here?
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, nil)
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 10})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 12}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
+	pid := readPidFromOpenConnection(t, connTwo)
+	assert.True(t, isProcessRunning(pid))
 }

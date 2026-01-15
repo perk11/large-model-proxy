@@ -164,9 +164,9 @@ func main() {
 		os.Exit(1)
 	}
 	resourceManager = ResourceManager{
-		resourcesInUse:                         make(map[string]int),
-		resourcesReserved:                      make(map[string]int),
-		resourcesAvailable:                     make(map[string]int),
+		resourcesInUse:                         make(map[string]int, len(config.ResourcesAvailable)),
+		resourcesReserved:                      make(map[string]int, len(config.ResourcesAvailable)),
+		resourcesAvailable:                     make(map[string]int, len(config.ResourcesAvailable)),
 		runningServices:                        make(map[string]RunningService),
 		serviceMutex:                           &sync.Mutex{},
 		resourcesAvailableMutex:                &sync.Mutex{},
@@ -176,7 +176,7 @@ func main() {
 		connectionStats:                        make(map[string]ServiceConnectionStats, len(config.Services)),
 		monitorUnpauseChans:                    make(map[string]chan struct{}),
 		checkCommandFirstChangeByResourceChans: make(map[string]map[string]chan struct{}),
-		resourceChangeByResourceChans:          make(map[string]map[string]chan bool),
+		resourceChangeByResourceChans:          make(map[string]map[string]chan bool, len(config.ResourcesAvailable)),
 	}
 
 	serviceConfigByName = make(map[string]*ServiceConfig, len(config.Services))

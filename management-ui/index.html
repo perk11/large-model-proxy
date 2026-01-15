@@ -127,12 +127,16 @@
               }
               return a.last_used < b.last_used;
             };
-          case "proxied_connections":
+          case "connections":
             return (a, b) => {
-              if (a.proxied_connections === b.proxied_connections) {
+              const aConnections =
+                a.proxied_connections + a.waiting_connections;
+              const bConnections =
+                b.proxied_connections + b.waiting_connections;
+              if (aConnections === bConnections) {
                 return a.name.toUpperCase() > b.name.toUpperCase();
               }
-              return a.proxied_connections < b.proxied_connections;
+              return aConnections < bConnections;
             };
           case "name":
             return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
@@ -198,6 +202,10 @@
           let sortOrder = localStorage.getItem("sortOrder");
           if (sortOrder === null) {
             sortOrder = "last_used";
+          } else if (sortOrder === "proxied_connections") {
+            //proxied_connections is no longer possible, but could be in local storage, this can be removed in the future
+            localStorage.setItem("sortOrder", "connections");
+            sortOrder = "connections";
           }
 
           const services = statusJSON.services.sort(getSortFunction(sortOrder));
@@ -427,7 +435,7 @@
       <label for="sort-order-selector">Sort Order</label>
       <select id="sort-order-selector">
         <option value="last_used">Last Used</option>
-        <option value="proxied_connections">Proxied Connections</option>
+        <option value="connections">Connections</option>
         <option value="name">Name</option>
       </select>
     </header>

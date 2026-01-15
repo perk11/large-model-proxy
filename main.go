@@ -663,8 +663,16 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("insufficient resources %s", serviceConfig.Name)
 	}
+	resourceManager.serviceMutex.Lock()
+	var ok bool
+	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
+	if !ok {
+		resourceManager.serviceMutex.Unlock()
+		return nil, fmt.Errorf("service disappeared from resource manager during startup: %s", serviceConfig.Name)
+	}
 	runningService.isWaitingForResources = false
-	resourceManager.storeRunningService(serviceConfig.Name, runningService)
+	resourceManager.storeRunningServiceNoLock(serviceConfig.Name, runningService)
+	resourceManager.serviceMutex.Unlock()
 
 	cmd, outW, errW := runServiceCommand(serviceConfig)
 	if cmd == nil {
@@ -675,6 +683,12 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		runningService.manageMutex.Unlock()
 		return nil, fmt.Errorf("failed to run command \"%s %s\"", serviceConfig.Command, serviceConfig.Args)
 	}
+	resourceManager.serviceMutex.Lock()
+	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
+	if !ok {
+		resourceManager.serviceMutex.Unlock()
+		return nil, fmt.Errorf("service disappeared from resource manager after startup: %s", serviceConfig.Name)
+	}
 	runningService.cmd = cmd
 	runningService.stdoutWriter = outW
 	runningService.stderrWriter = errW
@@ -683,7 +697,9 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	runningService.exitWaitGroup.Add(1)
 	go monitorProcess(serviceConfig.Name, cmd.Process, runningService.exitWaitGroup)
 
-	resourceManager.storeRunningService(serviceConfig.Name, runningService)
+	resourceManager.storeRunningServiceNoLock(serviceConfig.Name, runningService)
+	resourceManager.serviceMutex.Unlock()
+
 	var startupConnectionTimeout time.Duration
 	if serviceConfig.StartupTimeoutMilliseconds == nil {
 		startupConnectionTimeout = 10 * time.Minute
@@ -736,7 +752,6 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 	resourceManager.serviceMutex.Lock()
 	releaseReservedResourcesWhenServiceMutexIsLocked(serviceConfig.ResourceRequirements)
 
-	var ok bool
 	//read the service again before updating because other connections could've been opened while it was starting
 	runningService, ok = resourceManager.maybeGetRunningServiceNoLock(serviceConfig.Name)
 	if !ok {

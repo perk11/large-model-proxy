@@ -237,23 +237,19 @@
           let numberOfBlankColumnsForResources =
             Object.keys(allServiceProperties).length;
 
-          //resources reserved_by_starting_services_by_starting_services
+          //resources reserved_by_starting_services
           items += `<tr class="resources reserved">
     <td class="property-name">Reserved By Starting Services</td>
 `;
           for (const resourceName in resources) {
             const resource = resources[resourceName];
-            if (
-              !resource.hasOwnProperty(
-                "reserved_by_starting_services_by_starting_services",
-              )
-            ) {
+            if (!resource.hasOwnProperty("reserved_by_starting_services")) {
               displayError(
-                `Invalid response from /status endpoint: Resource ${resourceName} is missing "reserved_by_starting_services_by_starting_services" property`,
+                `Invalid response from /status endpoint: Resource ${resourceName} is missing "reserved_by_starting_services" property`,
               );
               return;
             }
-            items += `<td class="resource">${resource.reserved_by_starting_services_by_starting_services}</td>`;
+            items += `<td class="resource">${resource.reserved_by_starting_services}</td>`;
           }
           items += `<td
             class="blank-column"

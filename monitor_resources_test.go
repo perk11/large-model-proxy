@@ -198,7 +198,7 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, nil)
 	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 10})
 	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 12}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
-	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
 	pid := readPidFromOpenConnection(t, connTwo)
 	assert.True(t, isProcessRunning(pid))
 }

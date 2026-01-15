@@ -98,9 +98,11 @@ func UnpauseResourceAvailabilityMonitoring(resourceName string) {
 }
 
 func (rm ResourceManager) broadcastResourceChanges(resources iter.Seq[string], recheckNeeded bool) {
+	resourceManager.resourceChangeByResourceMutex.Lock()
 	for resource := range resources {
 		rm.broadcastResourceChangeWhenResourceChangeByResourceMutexIsLocked(resource, recheckNeeded)
 	}
+	resourceManager.resourceChangeByResourceMutex.Unlock()
 }
 func (rm ResourceManager) broadcastFirstChangeIfMutexIsLocked(resourceName string) {
 	resourceChangeByResourceChans, ok := rm.checkCommandFirstChangeByResourceChans[resourceName]

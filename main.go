@@ -568,6 +568,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
 
 	trackServiceLastUsed(serviceConfig, false)
+	resourceManager.incrementConnection(serviceConfig.Name, -1, 0)
 }
 
 func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
@@ -1342,8 +1343,6 @@ func produceStartCommandLogString(serviceConfig ServiceConfig) (string, []any) {
 }
 
 func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {
-	defer resourceManager.incrementConnection(serviceName, -1, 0)
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 	var EOFOnWriteFromServerToClient *bool

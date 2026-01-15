@@ -147,6 +147,8 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	}
 	serviceOneConnectionEstablishedTime := time.Now()
 	defer func() { _ = connOne.Close() }()
+
+	time.Sleep(100 * time.Millisecond) //give lmp time to catch up
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
 	//starting the service will set the total resource amount to 11, but the check command should not run again until we receive another request

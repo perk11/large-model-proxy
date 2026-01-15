@@ -103,7 +103,11 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 				status.ServiceUrl = &renderedUrl
 			}
 		}
-
+		resourceManager.connectionStatsMutex.Lock()
+		connectionStats := resourceManager.connectionStats[service.Name]
+		resourceManager.connectionStatsMutex.Unlock()
+		status.WaitingConnections = connectionStats.waiting
+		status.ProxiedConnections = connectionStats.proxied
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
 			if runningService.isReady {
 				status.Status = ServiceStateRunning
@@ -112,8 +116,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 			} else {
 				status.Status = ServiceStateStarting
 			}
-			status.WaitingConnections = runningService.waitingConnections
-			status.ProxiedConnections = runningService.proxiedConnections
+
 			status.LastUsed = runningService.lastUsed
 
 			// Update resource usage by service

@@ -1,4 +1,2 @@
-add a test for OpenAI API path
-Not changing from waiting to resources to healthcheck? - solve with a test
 todos in the code
 make tests stable

@@ -69,13 +69,13 @@ Below is an example `config.jsonc`:
     "VRAM-GPU-1": {
       "Amount": 24000,
       "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
-      "CheckIntervalMilliseconds": 1000,
+      "CheckWhenNotEnoughIntervalMilliseconds": 1000,
     },
     "RAM": 32000,
     // Alternatively use a shell command to check current RAM available (Experimental, less stable):
     //"RAM": {
     //    "CheckCommand": "awk '/MemAvailable/ {printf \"%d\\n\", $2/1024}' /proc/meminfo",
-    //     "CheckIntervalMilliseconds": 1000,
+    //     "CheckWhenNotEnoughIntervalMilliseconds": 1000,
     //}
   },
   "Services": [
@@ -171,7 +171,7 @@ Below is a breakdown of what this configuration does:
 
 With this configuration, Qwen and Automatic1111 can run at the same time. Assuming they do, a request for Gemma will unload the one least recently used. If they are currently in use, a request to Gemma will have to wait for one of the other services to free up.
 `ResourcesAvailable` can include any resource metrics, CPU cores, multiple VRAM values for multiple GPUs, etc. These values are not checked against actual usage.
-`CheckCommand` is a shell command that will ran any time a service requiring this resource needs to be started. If there is not enough resources, it will run every `CheckIntervalMilliseconds` and any time a service using this resource stops until the value returned satisfies the amount of resource required.
+`CheckCommand` is a shell command that will ran any time a service requiring this resource needs to be started. If there is not enough resources, it will run every `CheckWhenNotEnoughIntervalMilliseconds` and any time a service using this resource stops until the value returned satisfies the amount of resource required.
 
 ## Usage
 

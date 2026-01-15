@@ -1890,8 +1890,8 @@ func TestAppScenarios(test *testing.T) {
 					ResourcesAvailable: map[string]ResourceAvailable{
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
-							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
-							CheckIntervalMilliseconds: 1000,
+							CheckCommand:                           "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+							CheckWhenNotEnoughIntervalMilliseconds: 1000,
 						},
 					},
 					LogLevel: LogLevelDebug,
@@ -1953,9 +1953,9 @@ func TestAppScenarios(test *testing.T) {
 				return Config{
 					ResourcesAvailable: map[string]ResourceAvailable{
 						"TestResource": {
-							CheckCommand:              "cat test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt",
-							CheckIntervalMilliseconds: 60000,
-							Amount:                    2, //Initial amount is different to make sure the check command runs
+							CheckCommand:                           "cat test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt",
+							CheckWhenNotEnoughIntervalMilliseconds: 60000,
+							Amount:                                 2, //Initial amount is different to make sure the check command runs
 						},
 					},
 					LogLevel: LogLevelDebug,

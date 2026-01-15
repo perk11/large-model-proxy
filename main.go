@@ -938,7 +938,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	recheckNeeded := true
 	for {
 		resourceManager.serviceMutex.Lock()
-		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, false, recheckNeeded)
+		missingResource = findFirstMissingResourceWhenServiceMutexIsLocked(resourceRequirements, requestingService, true, recheckNeeded)
 		if missingResource == nil {
 			resourceManager.resourceChangeByResourceMutex.Lock()
 			for resource := range resourceRequirements {
@@ -960,7 +960,6 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			stopService(*findServiceConfigByName(earliestLastUsedService))
 			continue
 		}
-		//TODO: add resource amounts
 		log.Printf("[%s] Not enough %s to start and no services eligible to stop. Waiting until enough resources are free or a service using a resource can be stopped.", requestingService, *missingResource)
 
 		resourceChangeServiceChannel := make(chan bool)

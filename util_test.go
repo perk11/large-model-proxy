@@ -597,12 +597,11 @@ func verifyServiceStatus(
 }
 
 func findServiceInStatusResponse(resp StatusResponse, serviceName string) *ServiceStatus {
-	for _, s := range resp.Services {
-		if s.Name == serviceName {
-			return &s
+	for i := range resp.Services {
+		if resp.Services[i].Name == serviceName {
+			return &resp.Services[i]
 		}
 	}
-
 	return nil
 }
 

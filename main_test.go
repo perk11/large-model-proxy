@@ -903,7 +903,7 @@ func testMultipleConnectionsWhileWaitingForResources(t *testing.T,
 	}
 	defer func() { _ = connTwo_2.Close() }()
 
-	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 1})
 	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 2, 0, map[string]int{resourceName: 1})

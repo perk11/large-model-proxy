@@ -218,7 +218,8 @@ Each service in the `services` array includes the following fields:
 - `name`: Service name
 - `listen_port`: Port the service listens on
 - `status`: stopped, waiting_for_resources, starting or running.
-- `active_connections`: Number of active connections to the service
+- `waiting_connections`: Number of connections that are waiting for the service to start
+- `proxied_connections`: Number of connections currently being proxied to the service
 - `last_used`: Timestamp when the service was last used (for running services)
 - `service_url`: The rendered service URL (if configured), or `null` if no URL is available
 - `resource_requirements`: Resources required by the service

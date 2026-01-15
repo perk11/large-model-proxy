@@ -33,7 +33,7 @@ type ServiceStatus struct {
 // ResourceUsage represents the current usage of a resource
 type ResourceUsage struct {
 	Total                      int            `json:"total,omitempty"`
-	ReservedByStartingServices int            `json:"reserved_by_starting_services_by_starting_services"`
+	ReservedByStartingServices int            `json:"reserved_by_starting_services"`
 	InUse                      int            `json:"in_use"`
 	Free                       int            `json:"free"`
 	UsageByService             map[string]int `json:"usage_by_service"`

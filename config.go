@@ -134,9 +134,9 @@ type ServiceConfig struct {
 	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
 }
 type ResourceAvailable struct {
-	Amount                    int
-	CheckCommand              string
-	CheckIntervalMilliseconds uint
+	Amount                                 int
+	CheckCommand                           string
+	CheckWhenNotEnoughIntervalMilliseconds uint
 }
 
 // Accepts either a JSON number or an object with {Amount, CheckCommand}.
@@ -157,7 +157,7 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	var dto struct {
 		Amount                    int    `json:"Amount"`
 		CheckCommand              string `json:"CheckCommand"`
-		CheckIntervalMilliseconds uint   `json:"CheckIntervalMilliseconds"`
+		CheckIntervalMilliseconds uint   `json:"CheckWhenNotEnoughIntervalMilliseconds"`
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
@@ -168,7 +168,7 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 		if dto.CheckIntervalMilliseconds == 0 {
 			dto.CheckIntervalMilliseconds = 1000
 		}
-		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand, CheckIntervalMilliseconds: dto.CheckIntervalMilliseconds}
+		*r = ResourceAvailable{Amount: dto.Amount, CheckCommand: dto.CheckCommand, CheckWhenNotEnoughIntervalMilliseconds: dto.CheckIntervalMilliseconds}
 		return nil
 	}
 

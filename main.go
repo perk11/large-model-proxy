@@ -767,7 +767,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 			return
 		}
 		if runningService.idleTimer == nil {
-			log.Printf("[%s] Warning: Idle timer is called after the service was already destroyed. Aborting attempts to perform idle shutdwon", serviceConfig.Name)
+			log.Printf("[%s] Warning: Idle timer is called after the service was already destroyed. Aborting attempts to perform idle shutdown", serviceConfig.Name)
 			return
 		}
 		resourceManager.serviceMutex.Lock()

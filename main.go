@@ -1002,7 +1002,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 
 			// resource state changed; loop to re-evaluate
 		case <-maxWaitTimeTimer.C:
-			log.Printf("[%s] Failed to find a service to stop in %d, closing client connection", requestingService, maxWaitTime)
+			log.Printf("[%s] Failed to find a service to stop in %v, closing client connection", requestingService, maxWaitTime)
 			return false
 		}
 	}

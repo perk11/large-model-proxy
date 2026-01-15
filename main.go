@@ -29,8 +29,6 @@ type RunningService struct {
 	cmd                   *exec.Cmd
 	isWaitingForResources bool
 	isReady               bool
-	proxiedConnections    int
-	waitingConnections    int
 	lastUsed              *time.Time
 	idleTimer             *time.Timer
 	exitWaitGroup         *sync.WaitGroup

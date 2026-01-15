@@ -3,3 +3,4 @@ Not changing from waiting to resources to healthcheck? - solve with a test
 Rename CheckIntervalMilliseconds to signify when the check happens?
 waiting connections do not go to 0, proxied connections can still go negative
 todos in the code
+make tests stable

@@ -8,7 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -29,6 +32,7 @@ func main() {
 	procPort := flag.String("procinfo-port", "", "Port to expose process information")
 	plainOutput := flag.Bool("plain-output", false, "Do not add timestamps to log output")
 	logToStdout := flag.Bool("log-to-stdout", false, "Send logs to stdout instead of stderr")
+	exitScript := flag.String("exit-script", "", "Script to execute after the server exits")
 	flag.Parse()
 
 	if *plainOutput {
@@ -55,7 +59,26 @@ func main() {
 	if *procPort != "" {
 		go procListen(*procPort)
 	}
-	time.Sleep(*exitAfterDuration)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case <-time.After(*exitAfterDuration):
+		log.Println("Exiting due to exit-after-duration")
+	case sig := <-sigChan:
+		log.Printf("Exiting due to signal: %v\n", sig)
+	}
+
+	if *exitScript != "" {
+		log.Printf("Executing exit script: %s\n", *exitScript)
+		cmd := exec.Command("sh", "-c", *exitScript)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Printf("Exit script failed: %v\n", err)
+		}
+	}
 }
 
 type HealthcheckResponse struct {

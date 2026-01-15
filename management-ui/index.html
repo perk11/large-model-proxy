@@ -352,9 +352,20 @@
                 );
                 return;
               }
-              let usage = resource.usage_by_service.hasOwnProperty(service.name)
-                ? resource.usage_by_service[service.name]
-                : 0;
+              let usage;
+              if (resource.usage_by_service.hasOwnProperty(service.name)) {
+                usage = resource.usage_by_service[service.name];
+              } else {
+                if (!service.hasOwnProperty("resource_requirements")) {
+                  usage = 0;
+                } else if (
+                  !service.resource_requirements.hasOwnProperty(resourceName)
+                ) {
+                  usage = 0;
+                } else {
+                  usage = service.resource_requirements[resourceName];
+                }
+              }
               items += `<td class="resource">${usage}</td>`;
             }
             for (let propertyName in allServiceProperties) {

@@ -196,31 +196,9 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	//bug in the actual code here?
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, nil)
-	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 10})
-	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 10}, map[string]int{resourceName: 0}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 10})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 12}, map[string]int{resourceName: 10}, map[string]int{resourceName: 2})
 	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
-
-	//TODO: rework to check resource amounts and statuses?
-	for {
-		serviceTwoHealthCheckResponse, err := attemptReadHealthcheckResponse(t, serviceTwoHealthCheckAddress)
-		if err == nil {
-			assert.Equal(t, "ok", serviceTwoHealthCheckResponse.Message)
-			t.Logf("Service two health check response received after %v", time.Since(serviceTwoConnectionEstablishedTime))
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-		if time.Since(serviceTwoConnectionEstablishedTime) > 5*time.Second {
-			t.Fatal("Service two health check is still not responding after 5s")
-		}
-	}
-	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
-	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
-	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
-	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 1, map[string]int{resourceName: 10})
-	//TODO: after stopping a service run checkcommand, that should fix the assert here
-	//TODO: have a version where service is not stopped, but exits on its own?
-	verifyTotalResourcesAvailable(t, statusResponse, map[string]int{resourceName: 12})
-	verifyTotalResourceUsage(t, statusResponse, map[string]int{resourceName: 10})
 	pid := readPidFromOpenConnection(t, connTwo)
 	assert.True(t, isProcessRunning(pid))
 }

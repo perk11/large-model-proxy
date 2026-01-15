@@ -1971,8 +1971,7 @@ func TestAppScenarios(test *testing.T) {
 								"echo '11' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
 								"sleep 3 && " +
 								"echo '0' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
-								"./test-server/test-server -p 12082 -healthcheck-port 2084 -exit-after-duration 2s && " +
-								"echo '12' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt" +
+								"./test-server/test-server -p 12082 -healthcheck-port 2084 -exit-after-duration 2s -exit-script 'echo 12 > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt'" +
 								"\"",
 							ResourceRequirements: map[string]int{"TestResource": 10},
 						},

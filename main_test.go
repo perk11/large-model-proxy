@@ -891,6 +891,7 @@ func testMultipleConnectionsWhileWaitingForResources(t *testing.T,
 		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
 	}
 	defer func() { _ = connOne.Close() }()
+	time.Sleep(100 * time.Millisecond) //Make sure connections are established in the expected order
 	connTwo_1, err := net.Dial("tcp", serviceTwoAddress)
 	if err != nil {
 		t.Fatalf("connection#1 to %s: %v", serviceTwoAddress, err)

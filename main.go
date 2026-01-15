@@ -205,7 +205,6 @@ func main() {
 		}
 	}
 	for _, service := range config.Services {
-
 		if service.ListenPort != "" {
 			go startProxy(service)
 		}

@@ -66,11 +66,13 @@ Below is an example `config.jsonc`:
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-    "VRAM-GPU-1": {
-      "Amount": 24000,
-      "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
-      "CheckIntervalMilliseconds": 1000,
-    },
+   "VRAM-GPU-1": 24000,
+    //Experimntal syntax below, not yet released
+    //"VRAM-GPU-1": {
+    // "Amount": 24000,
+    // "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
+    // "CheckIntervalMilliseconds": 1000,
+    //},
     "RAM": 32000,
     // Alternatively use a shell command to check current RAM available (Experimental, less stable):
     //"RAM": {

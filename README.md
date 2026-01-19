@@ -66,7 +66,7 @@ Below is an example `config.jsonc`:
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-   "VRAM-GPU-1": 24000,
+    "VRAM-GPU-1": 24000,
     //Experimntal syntax below, not yet released
     //"VRAM-GPU-1": {
     // "Amount": 24000,

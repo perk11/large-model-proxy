@@ -1,2 +1,4 @@
 todos in the code
 make tests stable
+shutdown behavior
+counting bug still

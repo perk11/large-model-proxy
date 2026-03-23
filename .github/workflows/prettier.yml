@@ -30,7 +30,7 @@ jobs:
         run: npx prettier --write .
 
       - name: Commit & push
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@v10
         with:
           add: '.'
           message: 'style: run prettier'

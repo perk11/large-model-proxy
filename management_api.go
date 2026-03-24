@@ -9,32 +9,44 @@ import (
 	"time"
 )
 
+type ServiceState string
+
+const (
+	ServiceStateStopped             ServiceState = "stopped"
+	ServiceStateWaitingForResources ServiceState = "waiting_for_resources"
+	ServiceStateStarting            ServiceState = "starting"
+	ServiceStateRunning             ServiceState = "running"
+)
+
+// ServiceStatus represents the current state of a service
+type ServiceStatus struct {
+	Name                 string         `json:"name"`
+	ListenPort           string         `json:"listen_port"`
+	Status               ServiceState   `json:"status"`
+	WaitingConnections   int            `json:"waiting_connections"`
+	ProxiedConnections   int            `json:"proxied_connections"`
+	LastUsed             *time.Time     `json:"last_used"`
+	ServiceUrl           *string        `json:"service_url,omitempty"`
+	ResourceRequirements map[string]int `json:"resource_requirements"`
+}
+
+// ResourceUsage represents the current usage of a resource
+type ResourceUsage struct {
+	Total                      int            `json:"total,omitempty"`
+	ReservedByStartingServices int            `json:"reserved_by_starting_services"`
+	InUse                      int            `json:"in_use"`
+	Free                       int            `json:"free"`
+	UsageByService             map[string]int `json:"usage_by_service"`
+}
+
+// StatusResponse represents the complete status response
+type StatusResponse struct {
+	Services  []ServiceStatus          `json:"services"`
+	Resources map[string]ResourceUsage `json:"resources"`
+}
+
 // handleStatus handles the /status endpoint request
 func handleStatus(responseWriter http.ResponseWriter, request *http.Request, services []ServiceConfig) {
-	// ServiceStatus represents the current state of a service
-	type ServiceStatus struct {
-		Name                 string         `json:"name"`
-		ListenPort           string         `json:"listen_port"`
-		IsRunning            bool           `json:"is_running"`
-		ActiveConnections    int            `json:"active_connections"`
-		LastUsed             *time.Time     `json:"last_used"`
-		ServiceUrl           *string        `json:"service_url,omitempty"`
-		ResourceRequirements map[string]int `json:"resource_requirements"`
-	}
-
-	// ResourceUsage represents the current usage of a resource
-	type ResourceUsage struct {
-		TotalAvailable int            `json:"total_available"`
-		TotalInUse     int            `json:"total_in_use"`
-		UsageByService map[string]int `json:"usage_by_service"`
-	}
-
-	// StatusResponse represents the complete status response
-	type StatusResponse struct {
-		Services  []ServiceStatus          `json:"services"`
-		Resources map[string]ResourceUsage `json:"resources"`
-	}
-
 	if request.Method != "GET" {
 		http.Error(responseWriter, "Only GET requests allowed", http.StatusMethodNotAllowed)
 		return
@@ -42,30 +54,35 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 	responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	// Lock to safely access resource manager state
-	resourceManager.serviceMutex.Lock()
-	defer resourceManager.serviceMutex.Unlock()
-
 	response := StatusResponse{
 		Services:  make([]ServiceStatus, 0, len(services)),
 		Resources: make(map[string]ResourceUsage),
 	}
+	resourceManager.serviceMutex.Lock()
 
 	// Initialize resource usage tracking
-	for resource := range config.ResourcesAvailable {
-		response.Resources[resource] = ResourceUsage{
-			TotalAvailable: *resourceManager.resourcesAvailable[resource],
-			TotalInUse:     resourceManager.resourcesInUse[resource],
-			UsageByService: make(map[string]int),
+	for resourceName, resourceConfig := range config.ResourcesAvailable {
+		var free int
+		if resourceConfig.CheckCommand == "" {
+			free = config.ResourcesAvailable[resourceName].Amount - resourceManager.resourcesInUse[resourceName]
+		} else {
+			free = resourceManager.resourcesAvailable[resourceName]
+		}
+		response.Resources[resourceName] = ResourceUsage{
+			Total:                      config.ResourcesAvailable[resourceName].Amount,
+			ReservedByStartingServices: resourceManager.resourcesReserved[resourceName],
+			InUse:                      resourceManager.resourcesInUse[resourceName],
+			Free:                       free,
+			UsageByService:             make(map[string]int),
 		}
 	}
 
-	// Process all services
 	for _, service := range services {
 		status := ServiceStatus{
 			Name:                 service.Name,
 			ListenPort:           service.ListenPort,
 			ResourceRequirements: service.ResourceRequirements,
+			Status:               ServiceStateStopped,
 		}
 
 		// Determine service URL template to use
@@ -86,11 +103,20 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 				status.ServiceUrl = &renderedUrl
 			}
 		}
-
-		// Check if service is running
+		resourceManager.connectionStatsMutex.Lock()
+		connectionStats := resourceManager.connectionStats[service.Name]
+		resourceManager.connectionStatsMutex.Unlock()
+		status.WaitingConnections = connectionStats.waiting
+		status.ProxiedConnections = connectionStats.proxied
 		if runningService, ok := resourceManager.runningServices[service.Name]; ok {
-			status.IsRunning = true
-			status.ActiveConnections = runningService.activeConnections
+			if runningService.isReady {
+				status.Status = ServiceStateRunning
+			} else if runningService.isWaitingForResources {
+				status.Status = ServiceStateWaitingForResources
+			} else {
+				status.Status = ServiceStateStarting
+			}
+
 			status.LastUsed = runningService.lastUsed
 
 			// Update resource usage by service
@@ -104,6 +130,7 @@ func handleStatus(responseWriter http.ResponseWriter, request *http.Request, ser
 
 		response.Services = append(response.Services, status)
 	}
+	resourceManager.serviceMutex.Unlock()
 
 	// Encode and send response
 	if err := json.NewEncoder(responseWriter).Encode(response); err != nil {

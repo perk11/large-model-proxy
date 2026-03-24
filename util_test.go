@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // OpenAiApiCompletionResponse is what /v1/completions returns
@@ -429,7 +431,7 @@ func ptrToString(s string) *string {
 // If no service name is provided, one will be allocated based on the index in the config.
 // The resulting service name will be standardized to include both the test name and the service name.
 // The log file will also use the standardized name.
-func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.T) {
+func StandardizeConfigNamesAndPaths(config *Config, testName string) {
 	for i := range config.Services {
 		service := &config.Services[i] // Get a pointer to modify the struct in the slice
 		originalServiceName := service.Name
@@ -444,8 +446,27 @@ func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.
 		service.LogFilePath = fmt.Sprintf("test-logs/%s.log", standardizedServiceName)
 	}
 }
+func verifyResourceUsage(t *testing.T, resp StatusResponse, expectedReserved map[string]int, expectedFree map[string]int, expectedUsed map[string]int, expectedTotal map[string]int) {
+	t.Helper()
+	resourcesLen := len(expectedReserved)
+	assert.Len(t, expectedFree, resourcesLen, "Expected %d resources in free list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedUsed, resourcesLen, "Expected %d resources in used list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedTotal, resourcesLen, "Expected %d resources in total list, to match reserved list", resourcesLen)
+	for resource := range expectedReserved {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+		assert.Equal(t, expectedReserved[resource], resourceInfo.ReservedByStartingServices, "Resource %s reserved by starting services", resource)
+		assert.Equal(t, expectedFree[resource], resourceInfo.Free, "Resource %s free", resource)
+		assert.Equal(t, expectedUsed[resource], resourceInfo.InUse, "Resource %s used", resource)
+		assert.Equal(t, expectedTotal[resource], resourceInfo.Total, "Resource %s total available", resource)
+	}
+}
 
 // verifyTotalResourceUsage checks if the total resource usage matches the expected values
+// Deprecated: use verifyResourceUsage instead
 func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
 	t.Helper()
 	for resource, expectedAmount := range expectedUsage {
@@ -455,14 +476,15 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 			continue
 		}
 
-		if resourceInfo.TotalInUse != expectedAmount {
+		if resourceInfo.InUse != expectedAmount {
 			t.Errorf("Expected total %s usage: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalInUse)
+				resource, expectedAmount, resourceInfo.InUse)
 		}
 	}
 }
 
 // verifyTotalResourcesAvailable checks if the total resource availability matches the expected values
+// Deprecated: use verifyResourceUsage instead
 func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAvailable map[string]int) {
 	t.Helper()
 	for resource, expectedAmount := range expectedAvailable {
@@ -472,14 +494,15 @@ func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAv
 			continue
 		}
 
-		if resourceInfo.TotalAvailable != expectedAmount {
+		if resourceInfo.Total != expectedAmount {
 			t.Errorf("Expected total %s available: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalAvailable)
+				resource, expectedAmount, resourceInfo.Total)
 		}
 	}
 }
 
 func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
+	t.Helper()
 	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {
 		t.Fatalf("Failed to get status from management API: %v", err)
@@ -524,35 +547,36 @@ func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
 	return resp
 }
 
-// verifyServiceStatus checks if a specific service has the expected running status and resource usage
-func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
+func verifyServiceStatus(
+	t *testing.T,
+	resp StatusResponse,
+	serviceName string,
+	expectedStatus ServiceState,
+	expectedWaitingConnections int,
+	expectedProxiedConnections int,
+	expectedResources map[string]int,
+) {
 	t.Helper()
-	// Find service in Services
-	var found bool
-	var service ServiceStatus
-
-	for _, s := range resp.Services {
-		if s.Name == serviceName {
-			service = s
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	servicePointer := findServiceInStatusResponse(resp, serviceName)
+	if servicePointer == nil {
 		t.Fatalf("Service %s not found in Services", serviceName)
 	}
 
-	// Check running status
-	if service.IsRunning != expectedRunning {
-		t.Errorf("Service %s - expected running: %v, actual: %v", serviceName, expectedRunning, service.IsRunning)
-	}
+	assert.Equal(t, expectedStatus, servicePointer.Status, "Service %s status", serviceName)
+	assert.Equal(t, expectedWaitingConnections, servicePointer.WaitingConnections, "Service %s waiting connections", serviceName)
+	assert.Equal(t, expectedProxiedConnections, servicePointer.ProxiedConnections, "Service %s proxied connections", serviceName)
 
 	// Check resource usage
 	for resource, expectedAmount := range expectedResources {
-		if !expectedRunning {
+		if expectedStatus == ServiceStateStopped {
 			if expectedAmount != 0 {
 				t.Errorf("Service %s - Error in test logic, expected no usage for resource %s when service is not running", serviceName, resource)
+			}
+			if expectedWaitingConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no waiting connections %s when service is not running", serviceName, resource)
+			}
+			if expectedProxiedConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no waiting %s when service is not running", serviceName, resource)
 			}
 			continue
 		}
@@ -568,11 +592,17 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 			continue
 		}
 
-		if actualAmount != expectedAmount {
-			t.Errorf("Service %s - expected %s usage: %d, actual: %d",
-				serviceName, resource, expectedAmount, actualAmount)
+		assert.Equal(t, expectedAmount, actualAmount, "Service %s - resource %s usage", serviceName, resource)
+	}
+}
+
+func findServiceInStatusResponse(resp StatusResponse, serviceName string) *ServiceStatus {
+	for i := range resp.Services {
+		if resp.Services[i].Name == serviceName {
+			return &resp.Services[i]
 		}
 	}
+	return nil
 }
 
 func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Duration) {

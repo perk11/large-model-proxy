@@ -32,7 +32,7 @@ func testImplConnectOnly(test *testing.T, proxyAddress string) {
 
 func testImplConnectWithTimeoutAssertFailure(test *testing.T, proxyAddress string, managementApiAddress string, timeout time.Duration, serviceName string, resourceName string) {
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 
 	expectedFinishTime := time.Now().Add(timeout).Add(3 * time.Second)
@@ -46,7 +46,7 @@ func testImplConnectWithTimeoutAssertFailure(test *testing.T, proxyAddress strin
 	}
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, serviceName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 }
 
@@ -776,8 +776,8 @@ func testDyingProcesses(test *testing.T,
 	}
 
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 
 	pid2 := readPidFromOpenConnection(test, conn2)
@@ -797,8 +797,8 @@ func testDyingProcesses(test *testing.T,
 	pid3 := readPidFromOpenConnection(test, conn3)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 	err = syscall.Kill(pid2, syscall.SIGINT)
 	if err != nil {
@@ -808,8 +808,8 @@ func testDyingProcesses(test *testing.T,
 	time.Sleep(250 * time.Millisecond)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
 
 	if isProcessRunning(pid) {
@@ -830,8 +830,8 @@ func testDyingProcesses(test *testing.T,
 	pid = runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 1})
 
 	time.Sleep(1250 * time.Millisecond)
@@ -840,8 +840,8 @@ func testDyingProcesses(test *testing.T,
 	}
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(test, statusResponse, "dying-processes_not-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{"CPU": 0})
 
 	//verify that a service can restart after it died
@@ -855,7 +855,7 @@ func testFailingToStartServiceIsCleaningUpResources(
 	resourceName string,
 ) {
 	statusResponse := getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, processName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
 
 	con, _ := net.DialTimeout("tcp", proxyAddress, time.Duration(3)*time.Second)
@@ -864,8 +864,76 @@ func testFailingToStartServiceIsCleaningUpResources(
 	}()
 	assertRemoteClosedWithin(test, con, 2*time.Second)
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
-	verifyServiceStatus(test, statusResponse, processName, false, map[string]int{resourceName: 0})
+	verifyServiceStatus(test, statusResponse, processName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
 	verifyTotalResourceUsage(test, statusResponse, map[string]int{resourceName: 0})
+}
+func testMultipleConnectionsWhileWaitingForResources(t *testing.T,
+	serviceOneAddress string,
+	serviceTwoAddress string,
+	serviceOneHealthCheckAddress string,
+	serviceTwoHealthCheckAddress string,
+	serviceOneName string,
+	serviceTwoName string,
+	managementApiAddress string,
+	resourceName string,
+) {
+	//sanity checks
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress, serviceTwoHealthCheckAddress})
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1})
+
+	// establish 2 connections to serviceTwo and one to serviceOne. serviceOne starts and uses the resource
+	// the connections to serviceTwo are waiting for 3s until serviceOne connection is done
+	connOne, err := net.Dial("tcp", serviceOneAddress)
+	if err != nil {
+		t.Fatalf("failed to connect to %s: %v", serviceOneAddress, err)
+	}
+	defer func() { _ = connOne.Close() }()
+	time.Sleep(100 * time.Millisecond) //Make sure connections are established in the expected order
+	connTwo_1, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("connection#1 to %s: %v", serviceTwoAddress, err)
+	}
+	defer func() { _ = connTwo_1.Close() }()
+	connTwo_2, err := net.Dial("tcp", serviceTwoAddress)
+	if err != nil {
+		t.Fatalf("connection#2 to %s: %v", serviceTwoAddress, err)
+	}
+	defer func() { _ = connTwo_2.Close() }()
+
+	assertPortsAreClosed(t, []string{serviceTwoHealthCheckAddress})
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStarting, 1, 0, map[string]int{resourceName: 1})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateWaitingForResources, 2, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	readPidFromOpenConnection(t, connOne) //wait for service one to be ready
+
+	time.Sleep(100 * time.Millisecond) // give lmp time to start serviceTwo
+	//Now serviceOne has done its job and should be shutdown, while serviceTwo connections are now ready
+	assertPortsAreClosed(t, []string{serviceOneHealthCheckAddress})
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateStarting, 2, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 1}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	time.Sleep(2000 * time.Millisecond) //wait while serviceTwo is starting
+
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 2, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
+
+	readPidFromOpenConnection(t, connTwo_1)
+	readPidFromOpenConnection(t, connTwo_2)
+
+	//make sure connections went to 0
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	verifyServiceStatus(t, statusResponse, serviceTwoName, ServiceStateRunning, 0, 0, map[string]int{resourceName: 1})
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 1}, map[string]int{resourceName: 1})
 }
 func TestAppScenarios(test *testing.T) {
 	test.Parallel()
@@ -1822,8 +1890,8 @@ func TestAppScenarios(test *testing.T) {
 					ResourcesAvailable: map[string]ResourceAvailable{
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
-							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
-							CheckIntervalMilliseconds: 1000,
+							CheckCommand:                           "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+							CheckWhenNotEnoughIntervalMilliseconds: 1000,
 						},
 					},
 					LogLevel: LogLevelDebug,
@@ -1866,6 +1934,131 @@ func TestAppScenarios(test *testing.T) {
 				}
 			},
 		},
+		{
+			Name: "should-not-use-an-outdated-resource-check-result",
+			TestFunc: func(t *testing.T) {
+				testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
+					t,
+					"localhost:2082",
+					"localhost:2083",
+					"localhost:2084",
+					"localhost:2085",
+					"should-not-use-an-outdated-resource-check-result_service0",
+					"should-not-use-an-outdated-resource-check-result_service1",
+					"localhost:2086",
+					"TestResource",
+				)
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							CheckCommand:                           "cat test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt",
+							CheckWhenNotEnoughIntervalMilliseconds: 60000,
+							Amount:                                 2, //Initial amount is different to make sure the check command runs
+						},
+					},
+					LogLevel: LogLevelDebug,
+					ManagementApi: ManagementApi{
+						ListenPort: "2086",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:      "2082",
+							ProxyTargetHost: "localhost",
+							ProxyTargetPort: "12082",
+							Command:         "sh",
+							Args: "-c \"" +
+								"echo '11' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
+								"sleep 3 && " +
+								"echo '0' > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt &&" +
+								"./test-server/test-server -p 12082 -healthcheck-port 2084 -exit-after-duration 2s -exit-script 'echo 12 > test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt'" +
+								"\"",
+							ResourceRequirements: map[string]int{"TestResource": 10},
+						},
+						{
+							ListenPort:           "2083",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12083",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12083 -healthcheck-port 2085",
+							ResourceRequirements: map[string]int{"TestResource": 10},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2082",
+				"localhost:12082",
+				"localhost:2083",
+				"localhost:12083",
+				"localhost:2084",
+				"localhost:2085",
+				"localhost:2086",
+			},
+			SetupFunc: func(t *testing.T) {
+				err := os.WriteFile("test-logs/should-not-use-an-outdated-resource-check-result.resource-amount.txt", []byte("10"), 0666)
+				if err != nil {
+					t.Fatalf("failed to write resource-amount file: %v", err)
+				}
+			},
+		},
+		{
+			Name: "multiple-connections-while-waiting-for-resources",
+			TestFunc: func(t *testing.T) {
+				testMultipleConnectionsWhileWaitingForResources(
+					t,
+					"localhost:2087",
+					"localhost:2088",
+					"localhost:2089",
+					"localhost:2090",
+					"multiple-connections-while-waiting-for-resources_service0",
+					"multiple-connections-while-waiting-for-resources_service1",
+					"localhost:2091",
+					"TestResource",
+				)
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				return Config{
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							Amount: 1,
+						},
+					},
+					LogLevel: LogLevelDebug,
+					ManagementApi: ManagementApi{
+						ListenPort: "2091",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:           "2087",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12087",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12087 -healthcheck-port 2089 -sleep-before-listening 3s",
+							ResourceRequirements: map[string]int{"TestResource": 1},
+						},
+						{
+							ListenPort:           "2088",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12088",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12088 -healthcheck-port 2090 -sleep-before-listening 2s -request-processing-duration 3s",
+							ResourceRequirements: map[string]int{"TestResource": 1},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2087",
+				"localhost:12087",
+				"localhost:2088",
+				"localhost:12088",
+				"localhost:2089",
+				"localhost:2090",
+				"localhost:2091",
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -1878,7 +2071,7 @@ func TestAppScenarios(test *testing.T) {
 			waitChannel := make(chan error, 1)
 
 			currentConfig := testCase.GetConfig(t, testCase.Name)
-			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name, t)
+			StandardizeConfigNamesAndPaths(&currentConfig, testCase.Name)
 			configFilePath := createTempConfig(t, currentConfig)
 
 			cmd, err := startLargeModelProxy(testCase.Name, configFilePath, "", waitChannel)
@@ -1922,8 +2115,8 @@ func testUnmonitoredProcess(
 
 	//large-model-proxy should still see the service as running since it's not monitoring it
 	statusResponse := getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
 
 	//Let's make sure we can't read anything from the process - ensures large-model-proxy did not attempt to restart it
@@ -1953,8 +2146,8 @@ func testUnmonitoredProcess(
 	time.Sleep(3250 * time.Millisecond)
 	//Idle timeout should kick in now
 	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 0})
 
 	assertPortsAreClosed(t, []string{directDyingUnmonitoredServiceAddress})
@@ -1964,8 +2157,8 @@ func testUnmonitoredProcess(
 	pid2 := runReadPidCloseConnection(t, proxiedNonDyingService)
 
 	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", true, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, statusResponse, "unmonitored-process_non-dying-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
 	verifyTotalResourceUsage(t, statusResponse, map[string]int{"CPU": 1})
 	if isProcessRunning(pid) {
 		t.Fatalf("unmonitored process %d was supposed to shut down", pid)
@@ -2073,8 +2266,8 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Fatalf("fast-start service process %d is not running after reading PID", fastPid)
 	}
 	status := getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, status, testName+"_fast-start", true, map[string]int{"CPU": 1})
-	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_fast-start", ServiceStateRunning, 0, 1, map[string]int{"CPU": 1})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 1})
 	err = fastConn.Close()
 	if err != nil {
@@ -2095,8 +2288,8 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	}
 
 	status = getStatusFromManagementAPI(t, managementApiAddress)
-	verifyServiceStatus(t, status, testName+"_fast-start", false, map[string]int{"CPU": 0})
-	verifyServiceStatus(t, status, testName+"_slow-start-fail", false, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_fast-start", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
+	verifyServiceStatus(t, status, testName+"_slow-start-fail", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})
 	verifyTotalResourceUsage(t, status, map[string]int{"CPU": 0})
 	assertPortsAreClosed(t, []string{slowFailDirectAddress, slowFailHealthcheckAddress})
 	go func() {

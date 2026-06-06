@@ -64,7 +64,7 @@ Client → large-model-proxy → [Service Process]
 ### Source Files
 
 | File                   | Purpose                                                                           |
-|------------------------|-----------------------------------------------------------------------------------|
+| ---------------------- | --------------------------------------------------------------------------------- |
 | `main.go`              | Core proxy logic, HTTP handlers, service lifecycle orchestration, signal handling |
 | `config.go`            | Configuration loading, validation, and defaults (JSONC parsing)                   |
 | `management_api.go`    | Management HTTP server and embedded web dashboard assets                          |
@@ -74,7 +74,7 @@ Client → large-model-proxy → [Service Process]
 ### Test Files
 
 | File                     | Purpose                                             |
-|--------------------------|-----------------------------------------------------|
+| ------------------------ | --------------------------------------------------- |
 | `main_test.go`           | Core proxy integration tests                        |
 | `config_test.go`         | Configuration parsing and validation tests          |
 | `management_api_test.go` | Management API endpoint tests                       |
@@ -85,7 +85,7 @@ Client → large-model-proxy → [Service Process]
 ### Other Key Files
 
 | File             | Purpose                                                                                       |
-|------------------|-----------------------------------------------------------------------------------------------|
+| ---------------- | --------------------------------------------------------------------------------------------- |
 | `config.jsonc`   | Main configuration file (JSONC format). Never modify, you can create new config if necessary. |
 | `Makefile`       | Build and test automation                                                                     |
 | `management-ui/` | Web dashboard frontend source                                                                 |
@@ -94,7 +94,7 @@ Client → large-model-proxy → [Service Process]
 ## Makefile Targets
 
 | Target                   | Description                                            |
-|--------------------------|--------------------------------------------------------|
+| ------------------------ | ------------------------------------------------------ |
 | `make all`               | Build executable and test-server (default)             |
 | `make executable`        | Build `large-model-proxy` binary                       |
 | `make test`              | Build everything and run tests with `-v -parallel 500` |
@@ -179,10 +179,9 @@ Omit `ListenPort` to make a service accessible only via the unified OpenAI API:
   "ProxyTargetHost": "localhost",
   "ProxyTargetPort": 18082,
   "Command": "vllm",
-  "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082"
+  "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
 }
 ```
-
 
 ## Contributing
 

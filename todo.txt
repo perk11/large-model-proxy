@@ -1,4 +1,3 @@
 todos in the code
-make tests stable
 review TestProcessExitDuringShutdown
 counting bug still

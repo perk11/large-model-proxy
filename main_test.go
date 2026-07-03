@@ -828,6 +828,10 @@ func testDyingProcesses(test *testing.T,
 	}
 
 	pid = runReadPidCloseConnection(test, proxiedSelfDyingServiceAddress)
+	// Allow the proxy's handleConnection goroutine to finish cleanup.
+	// forwardConnection uses wg.Wait() to wait for both copy goroutines.
+	// The defer that decrements ProxiedConnections runs after handleConnection returns.
+	time.Sleep(50 * time.Millisecond)
 
 	statusResponse = getStatusFromManagementAPI(test, managementApiAddress)
 	verifyServiceStatus(test, statusResponse, "dying-processes_self-dying-process", ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
@@ -2155,6 +2159,10 @@ func testUnmonitoredProcess(
 	//Now start again and try to connect to another service, make sure that shuts down the unmonitored one properly
 	pid = runReadPidCloseConnection(t, proxiedDyingUnmonitoredServiceAddress)
 	pid2 := runReadPidCloseConnection(t, proxiedNonDyingService)
+	// Allow the proxy's handleConnection goroutine to finish cleanup.
+	// forwardConnection uses wg.Wait() to wait for both copy goroutines.
+	// The defer that decrements ProxiedConnections runs after handleConnection returns.
+	time.Sleep(50 * time.Millisecond)
 
 	statusResponse = getStatusFromManagementAPI(t, monitoringApiAddress)
 	verifyServiceStatus(t, statusResponse, "unmonitored-process_self-dying-unmonitored-process", ServiceStateStopped, 0, 0, map[string]int{"CPU": 0})

@@ -33,6 +33,7 @@ func main() {
 	plainOutput := flag.Bool("plain-output", false, "Do not add timestamps to log output")
 	logToStdout := flag.Bool("log-to-stdout", false, "Send logs to stdout instead of stderr")
 	exitScript := flag.String("exit-script", "", "Script to execute after the server exits")
+	ignoreSigterm := flag.Bool("ignore-sigterm", false, "Ignore SIGTERM signal (for testing)")
 	flag.Parse()
 
 	if *plainOutput {
@@ -61,7 +62,14 @@ func main() {
 	}
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	if *ignoreSigterm {
+		// Ignore SIGTERM at the OS level so the process group kill from
+		// the proxy doesn't terminate us. Only listen for SIGINT.
+		signal.Ignore(syscall.SIGTERM)
+		signal.Notify(sigChan, syscall.SIGINT)
+	} else {
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	select {
 	case <-time.After(*exitAfterDuration):

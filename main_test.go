@@ -2303,3 +2303,124 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 	}
 	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
 }
+
+// TestProcessExitDuringShutdown verifies that when a service process exits during
+// shutdown, the proxy completes promptly. This is a regression test for a deadlock
+// where monitorProcess's exitWaitGroup.Done() was in a defer that executed after
+// serviceMutex.Lock().
+//
+// The deadlock scenario (without the fix):
+// 1. Service process exits BEFORE shutdown signal arrives
+// 2. monitorProcess: process.Wait() returns, reads interrupted=false
+// 3. monitorProcess: enters else branch, hits test hook, blocks
+// 4. Shutdown signal arrives: interrupted=true, signal handler acquires serviceMutex
+// 5. signal handler: stopService → waitForProcessToTerminate blocks on exitWaitGroup
+// 6. Test releases hook: monitorProcess proceeds to serviceMutex.Lock() → BLOCKS
+// 7. exitWaitGroup.Done() is in monitorProcess's defer — never called while blocked
+// 8. DEADLOCK: circular wait (Lock() blocked, exitWaitGroup.Wait() blocked)
+//
+// The fix: call exitWaitGroup.Done() BEFORE any mutex acquisition.
+//
+// The test uses PROXY_EXIT_HOOK_FILE env var. monitorProcess blocks at this hook
+// after reading interrupted=false but before acquiring serviceMutex. The test
+// sends SIGINT while monitorProcess is at the hook, then releases the hook.
+func TestProcessExitDuringShutdown(t *testing.T) {
+	t.Parallel()
+
+	// Hook file: monitorProcess blocks here after reading interrupted=false,
+	// waiting for this file to be deleted before acquiring serviceMutex.
+	hookDir := t.TempDir()
+	hookFile := hookDir + "/exit-hook"
+	if err := os.WriteFile(hookFile, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create hook file: %v", err)
+	}
+
+	cfg := Config{
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 1},
+		},
+		ShutDownAfterInactivitySeconds: 120,
+		ManagementApi: ManagementApi{
+			ListenPort: "2099",
+		},
+		Services: []ServiceConfig{
+			{
+				ListenPort:      "2098",
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "12098",
+				Command:         "./test-server/test-server",
+				Args:            "-p 12098 -exit-after-duration 200ms --ignore-sigterm --sleep-after-writing-pid-duration 100ms",
+				ResourceRequirements: map[string]int{
+					"CPU": 1,
+				},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, "process-exit-during-shutdown")
+	configFilePath := createTempConfig(t, cfg)
+
+	// Start proxy with the hook file env var
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxyWithEnv("process-exit-during-shutdown", configFilePath, "", []string{fmt.Sprintf("PROXY_EXIT_HOOK_FILE=%s", hookFile)}, waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+
+	// Connect to start the service
+	conn, err := net.DialTimeout("tcp", "localhost:2098", 5*time.Second)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("Failed to connect to service: %v", err)
+	}
+	buf := make([]byte, 64)
+	conn.Read(buf)
+	t.Logf("Service started")
+	conn.Close()
+
+	// Process exits after 200ms (exit-after-duration, --ignore-sigterm).
+	// After exit: monitorProcess: process.Wait() returns → reads interrupted=false
+	// → enters else branch → hits hook → blocks (waiting for hook file deletion)
+	time.Sleep(300 * time.Millisecond)
+
+	// Now send SIGINT. Signal handler:
+	// 1. Sets interrupted = true (too late — monitorProcess already read it as false)
+	// 2. Acquires serviceMutex
+	// 3. stopService: sends SIGTERM (ignored by --ignore-sigterm)
+	// 4. stopService: waitForProcessToTerminate blocks on exitWaitGroup
+	shutdownStart := time.Now()
+	err = cmd.Process.Signal(syscall.SIGINT)
+	if err != nil {
+		t.Fatalf("Failed to send SIGINT to proxy: %v", err)
+	}
+
+	// Wait for signal handler to acquire serviceMutex and enter waitForProcessToTerminate
+	time.Sleep(200 * time.Millisecond)
+
+	// Release hook. monitorProcess proceeds to serviceMutex.Lock() → BLOCKS
+	// (signal handler holds serviceMutex)
+	//
+	// WITHOUT the fix: monitorProcess blocks on Lock(). defer never runs.
+	// waitForProcessToTerminate hangs for 10s (ProcessCheckTimeout).
+	// SIGKILL sent, proxy exits after ~10 seconds.
+	//
+	// WITH the fix: exitWaitGroup.Done() was called BEFORE the hook.
+	// waitForProcessToTerminate returns immediately. No deadlock.
+	if err := os.Remove(hookFile); err != nil {
+		t.Fatalf("Failed to remove hook file: %v", err)
+	}
+
+	select {
+	case err = <-waitChannel:
+		shutdownDuration := time.Since(shutdownStart)
+		t.Logf("Shutdown completed in %v", shutdownDuration)
+		if shutdownDuration > 3*time.Second {
+			t.Errorf("Shutdown took %v, expected < 3s. This indicates exitWaitGroup.Done() was not called promptly (deadlock occurred)", shutdownDuration)
+		}
+		if err != nil && err.Error() != "waitid: no child processes" && err.Error() != "wait: no child processes" {
+			t.Logf("Proxy exited with: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Errorf("Shutdown took more than 15 seconds — deadlock: exitWaitGroup.Done() was not called before serviceMutex.Lock()")
+		_ = cmd.Process.Kill()
+	}
+}

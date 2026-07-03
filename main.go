@@ -1415,10 +1415,12 @@ func monitorProcess(serviceName string, process *os.Process, runningService *Run
 	if err != nil {
 		exitMessage += fmt.Sprintf(" and an error: %v", err)
 	}
-	defer func() {
-		log.Print(exitMessage)
-		runningService.exitWaitGroup.Done()
-	}()
+	// Signal process exit immediately, before any mutex acquisition.
+	// This ensures stopService's waitForProcessToTerminate is not blocked
+	// by monitorProcess waiting for serviceMutex.
+	log.Print(exitMessage)
+	runningService.exitWaitGroup.Done()
+
 	if interrupted {
 		if resourceManager.serviceMutex.TryLock() {
 			defer resourceManager.serviceMutex.Unlock()
@@ -1429,6 +1431,18 @@ func monitorProcess(serviceName string, process *os.Process, runningService *Run
 			return
 		}
 	} else {
+		// Hook for testing: if PROXY_EXIT_HOOK_FILE env var is set, wait for
+		// the file to be deleted before acquiring serviceMutex. This allows
+		// the test to control the timing between process exit and mutex acquisition.
+		if hookFile := os.Getenv("PROXY_EXIT_HOOK_FILE"); hookFile != "" {
+			log.Printf("[General] Waiting for \"%s\" to be deleted", hookFile)
+			for {
+				if _, err := os.Stat(hookFile); os.IsNotExist(err) {
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
 		if config.LogLevel == LogLevelDebug {
 			log.Printf("[%s] Acquiring a serviceMutex lock to clean up resources", serviceName)
 		}

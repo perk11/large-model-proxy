@@ -2063,6 +2063,52 @@ func TestAppScenarios(test *testing.T) {
 				"localhost:2091",
 			},
 		},
+		{
+			Name: "resource-check-command-max-wait-timeout",
+			TestFunc: func(t *testing.T) {
+				testResourceCheckCommandMaxWaitTimeTimeout(
+					t,
+					"localhost:2092",
+					"localhost:2094",
+					"resource-check-command-max-wait-timeout_service0",
+					"localhost:2093",
+					"TestResource",
+					2,
+				)
+			},
+			GetConfig: func(t *testing.T, testName string) Config {
+				maxWait := uint(2)
+				return Config{
+					MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds: &maxWait,
+					ResourcesAvailable: map[string]ResourceAvailable{
+						"TestResource": {
+							// Always returns 0 — resources are never sufficient
+							CheckCommand: "echo 0",
+						},
+					},
+					LogLevel: LogLevelDebug,
+					ManagementApi: ManagementApi{
+						ListenPort: "2093",
+					},
+					Services: []ServiceConfig{
+						{
+							ListenPort:           "2092",
+							ProxyTargetHost:      "localhost",
+							ProxyTargetPort:      "12092",
+							Command:              "./test-server/test-server",
+							Args:                 "-p 12092 -healthcheck-port 2094",
+							ResourceRequirements: map[string]int{"TestResource": 5},
+						},
+					},
+				}
+			},
+			AddressesToCheckAfterStopping: []string{
+				"localhost:2092",
+				"localhost:2093",
+				"localhost:2094",
+				"localhost:12092",
+			},
+		},
 	}
 
 	for _, testCase := range tests {

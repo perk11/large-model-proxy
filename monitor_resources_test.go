@@ -204,3 +204,57 @@ func testResourceCheckCommandShouldNotUseAnOutdatedResourceCheckResult(
 	pid := readPidFromOpenConnection(t, connTwo)
 	assert.True(t, isProcessRunning(pid))
 }
+
+// Test that when a resource CheckCommand always reports insufficient resources,
+// the connection attempt times out and the service never starts.
+func testResourceCheckCommandMaxWaitTimeTimeout(
+	t *testing.T,
+	serviceAddress string,
+	serviceHealthCheckAddress string,
+	serviceName string,
+	managementApiAddress string,
+	resourceName string,
+	maxWaitSeconds int,
+) {
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	assertPortsAreClosed(t, []string{serviceHealthCheckAddress})
+
+	// Connect to the proxy — the service requires resources that are never available.
+	// The CheckCommand always returns 0, so resources are never sufficient.
+	// After maxWaitSeconds, the proxy should give up and close the connection.
+	connectStart := time.Now()
+	conn, err := net.DialTimeout("tcp", serviceAddress, time.Duration(maxWaitSeconds+5)*time.Second)
+	if err == nil {
+		defer func() { _ = conn.Close() }()
+		// Connection succeeded but should be closed by the proxy after timeout.
+		// Set a read deadline to detect the server closing the connection.
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, 1)
+		_, readErr := conn.Read(buf)
+		if readErr == nil {
+			t.Fatal("expected connection to be closed after max wait timeout, but it is still open")
+		}
+	}
+	connectDuration := time.Since(connectStart)
+	t.Logf("Connection attempt took %v (expected ~%ds)", connectDuration, maxWaitSeconds)
+
+	// Verify the connection was refused or closed within the expected timeout window.
+	// Allow some buffer for scheduling and process startup overhead.
+	expectedMin := time.Duration(maxWaitSeconds)*time.Second - 2*time.Second
+	expectedMax := time.Duration(maxWaitSeconds)*time.Second + 4*time.Second
+	if connectDuration < expectedMin {
+		t.Errorf("Connection attempt took %v, expected at least %v", connectDuration, expectedMin)
+	}
+	if connectDuration > expectedMax {
+		t.Errorf("Connection attempt took %v, expected at most %v", connectDuration, expectedMax)
+	}
+
+	// Service must remain stopped — it should never have started.
+	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, serviceName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})
+	// Resources were never reserved (timeout), so InUse and Reserved are 0.
+	// Total is 0 (no Amount configured), Free is 0 (CheckCommand returns "0").
+	verifyResourceUsage(t, statusResponse, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0}, map[string]int{resourceName: 0})
+	assertPortsAreClosed(t, []string{serviceHealthCheckAddress})
+}

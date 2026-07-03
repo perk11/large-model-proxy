@@ -465,10 +465,24 @@ func verifyResourceUsage(t *testing.T, resp StatusResponse, expectedReserved map
 			t.Errorf("Resource %s not found in status response", resource)
 			continue
 		}
-		assert.Equal(t, expectedReserved[resource], resourceInfo.ReservedByStartingServices, "Resource %s reserved by starting services", resource)
-		assert.Equal(t, expectedFree[resource], resourceInfo.Free, "Resource %s free", resource)
-		assert.Equal(t, expectedUsed[resource], resourceInfo.InUse, "Resource %s used", resource)
-		assert.Equal(t, expectedTotal[resource], resourceInfo.Total, "Resource %s total available", resource)
+
+		// Ensure all expected maps contain this resource key before comparison.
+		reservedExpected, ok := expectedReserved[resource]
+		assert.True(t, ok, "Expected reserved resources to contain key %s", resource)
+
+		freeExpected, ok := expectedFree[resource]
+		assert.True(t, ok, "Expected free resources to contain key %s", resource)
+
+		usedExpected, ok := expectedUsed[resource]
+		assert.True(t, ok, "Expected used resources to contain key %s", resource)
+
+		totalExpected, ok := expectedTotal[resource]
+		assert.True(t, ok, "Expected total resources to contain key %s", resource)
+
+		assert.Equal(t, reservedExpected, resourceInfo.ReservedByStartingServices, "Resource %s reserved by starting services", resource)
+		assert.Equal(t, freeExpected, resourceInfo.Free, "Resource %s free", resource)
+		assert.Equal(t, usedExpected, resourceInfo.InUse, "Resource %s used", resource)
+		assert.Equal(t, totalExpected, resourceInfo.Total, "Resource %s total available", resource)
 	}
 }
 

@@ -933,6 +933,11 @@ func testMultipleConnectionsWhileWaitingForResources(t *testing.T,
 	readPidFromOpenConnection(t, connTwo_1)
 	readPidFromOpenConnection(t, connTwo_2)
 
+	// Close connections so the proxy's forwardConnection goroutines finish and
+	// decrement ProxiedConnections before we check the status.
+	_ = connTwo_1.Close()
+	_ = connTwo_2.Close()
+
 	//make sure connections went to 0
 	statusResponse = getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, statusResponse, serviceOneName, ServiceStateStopped, 0, 0, map[string]int{resourceName: 0})

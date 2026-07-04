@@ -71,13 +71,13 @@ Below is an example `config.jsonc`:
     //"VRAM-GPU-1": {
     // "Amount": 24000,
     // "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
-    // "CheckIntervalMilliseconds": 1000,
+    // "CheckWhenNotEnoughIntervalMilliseconds": 1000,
     //},
     "RAM": 32000,
     // Alternatively use a shell command to check current RAM available (Experimental, less stable):
     //"RAM": {
     //    "CheckCommand": "awk '/MemAvailable/ {printf \"%d\\n\", $2/1024}' /proc/meminfo",
-    //     "CheckIntervalMilliseconds": 1000,
+    //     "CheckWhenNotEnoughIntervalMilliseconds": 1000,
     //}
   },
   "Services": [

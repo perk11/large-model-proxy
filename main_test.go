@@ -1823,7 +1823,7 @@ func TestAppScenarios(test *testing.T) {
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
 							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
-							CheckIntervalMilliseconds: 1000,
+							CheckWhenNotEnoughIntervalMilliseconds: 1000,
 						},
 					},
 					LogLevel: LogLevelDebug,

@@ -167,7 +167,7 @@ func main() {
 			go monitorResourceAvailability(
 				name,
 				resource.CheckCommand,
-				time.Duration(resource.CheckIntervalMilliseconds)*time.Millisecond,
+				time.Duration(resource.CheckWhenNotEnoughIntervalMilliseconds)*time.Millisecond,
 				&resourceManager,
 			)
 		}

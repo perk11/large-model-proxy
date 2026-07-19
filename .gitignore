@@ -3,5 +3,7 @@ logs
 test-logs
 package-build
 large-model-proxy
+large-model-proxy-*
 test-server/test-server
 node_modules
+.mod/

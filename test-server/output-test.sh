@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
-[[ $1 == -stderr ]] && exec 1>&2
+#!/usr/bin/env sh
+[ "$1" == "-stderr" ] && exec 1>&2
 
 echo "I am a test"
-echo -e -n "This ends with a return\r"
-echo -e "Windows style\r\nNext after CRLF"
+printf "This ends with a return\r"
+printf "Windows style\r\nNext after CRLF\n"
 printf "split write one "
 printf "plus two\n"
 printf "alpha\nbeta\ngamma\n"

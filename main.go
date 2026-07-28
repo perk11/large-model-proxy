@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -62,7 +63,7 @@ func (rm ResourceManager) maybeGetRunningServiceNoLock(name string) (RunningServ
 }
 
 func (rm ResourceManager) maybeGetRunningService(name string) (RunningService, bool) {
-	if interrupted {
+	if interrupted.Load() {
 		if rm.serviceMutex.TryLock() {
 			defer rm.serviceMutex.Unlock()
 		}
@@ -116,7 +117,7 @@ var (
 	config              Config
 	serviceConfigByName map[string]*ServiceConfig
 	resourceManager     ResourceManager
-	interrupted         = false
+	interrupted         atomic.Bool
 )
 
 func main() {
@@ -187,7 +188,7 @@ func main() {
 	for {
 		receivedSignal := <-exit
 		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))
-		interrupted = true
+		interrupted.Store(true)
 		// no need to unlock as os.Exit will be called
 		resourceManager.serviceMutex.Lock()
 		for name := range resourceManager.runningServices {
@@ -471,7 +472,7 @@ func startProxy(serviceConfig ServiceConfig) {
 	}(listener)
 
 	for {
-		if interrupted {
+		if interrupted.Load() {
 			return
 		}
 		clientConnection, err := listener.Accept()
@@ -491,7 +492,7 @@ func humanReadableConnection(conn net.Conn) string {
 }
 
 func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, dataToSendToServiceBeforeForwardingFromClient []byte) {
-	if interrupted {
+	if interrupted.Load() {
 		_ = clientConnection.Close()
 		return
 	}
@@ -556,7 +557,7 @@ func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceCon
 }
 
 func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.Conn {
-	if interrupted {
+	if interrupted.Load() {
 		return nil
 	}
 	var serviceConnection net.Conn
@@ -570,7 +571,7 @@ func startServiceIfNotAlreadyRunningAndConnect(serviceConfig ServiceConfig) net.
 		serviceConnection = serviceConn
 	} else {
 		if !runningService.manageMutex.TryLock() {
-			if interrupted {
+			if interrupted.Load() {
 				return nil
 			}
 			//The service could be currently starting or stopping, so let's wait for that to finish and try again
@@ -645,7 +646,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("healthcheck failed: %w", err)
 	}
 	log.Printf("[%s] Service started with pid %d", serviceConfig.Name, cmd.Process.Pid)
-	if interrupted {
+	if interrupted.Load() {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 
@@ -670,13 +671,13 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		return nil, fmt.Errorf("failed to connect to service")
 	}
 	defer runningService.manageMutex.Unlock()
-	if interrupted {
+	if interrupted.Load() {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 
 	idleTimeout := getIdleTimeout(serviceConfig)
 	runningService.idleTimer = time.AfterFunc(idleTimeout, func() {
-		if interrupted {
+		if interrupted.Load() {
 			return
 		}
 		resourceManager.serviceMutex.Lock()
@@ -690,7 +691,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 			runningService.idleTimer.Reset(getIdleTimeout(serviceConfig))
 		}
 	})
-	if interrupted {
+	if interrupted.Load() {
 		return nil, fmt.Errorf("interrupt signal was received")
 	}
 	resourceManager.serviceMutex.Lock()
@@ -716,7 +717,7 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 	}
 
 	for {
-		if interrupted {
+		if interrupted.Load() {
 			return errors.New("interrupt signal was received")
 		}
 
@@ -823,7 +824,7 @@ func tryConnectingUntilTimeoutOrProcessExit(
 			return nil, true
 		default:
 		}
-		if interrupted {
+		if interrupted.Load() {
 			return nil, false
 		}
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(serviceHost, servicePort), 1*time.Second)
@@ -1256,7 +1257,7 @@ func stopService(service ServiceConfig) {
 		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, multiple stops requested or service already died. Stop aborted.", service.Name)
 		return
 	}
-	if interrupted {
+	if interrupted.Load() {
 		//If the process is being interrupted, we want to stop the service no matter what, even if it's currently locked
 		runningService.manageMutex.TryLock()
 	} else {
@@ -1303,7 +1304,7 @@ func stopService(service ServiceConfig) {
 			}
 		}
 	}
-	if !interrupted && !*runningService.resourcesReleased {
+	if !interrupted.Load() && !*runningService.resourcesReleased {
 		resourceManager.serviceMutex.Lock()
 		cleanUpStoppedServiceWhenServiceMutexIsLocked(&service, runningService, true)
 		resourceManager.serviceMutex.Unlock()
@@ -1324,7 +1325,7 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 		log.Print(exitMessage)
 		exitWaitGroup.Done()
 	}()
-	if interrupted {
+	if interrupted.Load() {
 		if resourceManager.serviceMutex.TryLock() {
 			defer resourceManager.serviceMutex.Unlock()
 		} else {

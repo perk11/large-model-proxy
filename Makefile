@@ -1,5 +1,6 @@
 all: executable build-test-server
-test: executable build-test-server
+test: build-test-server
+	go build -tags testhooks -o large-model-proxy
 	go test -v -parallel 500 #Tests have a lot of sleeps in them, not CPU bound
 executable:
 	go build -o large-model-proxy

@@ -62,10 +62,19 @@ func (rm ResourceManager) maybeGetRunningServiceNoLock(name string) (RunningServ
 	return rs, ok
 }
 
+// maybeGetRunningService looks up a running service under serviceMutex. During
+// shutdown it TryLocks instead of blocking (the stop loop holds serviceMutex),
+// reporting the service as gone if the lock cannot be acquired rather than
+// reading the map unsynchronized. The shutdown path bypasses this via
+// stopRunningService.
 func (rm ResourceManager) maybeGetRunningService(name string) (RunningService, bool) {
 	if interrupted.Load() {
 		if rm.serviceMutex.TryLock() {
 			defer rm.serviceMutex.Unlock()
+		} else {
+			// Shutting down and the lock is held by the stop loop: do not read
+			// the map without the lock.
+			return RunningService{}, false
 		}
 	} else {
 		rm.serviceMutex.Lock()
@@ -189,10 +198,13 @@ func main() {
 		receivedSignal := <-exit
 		log.Printf("Received %s signal, terminating all processes", signalToString(receivedSignal))
 		interrupted.Store(true)
+		// Stop services directly from the held map: stopService -> maybeGetRunningService
+		// would re-TryLock serviceMutex (non-reentrant) and abort every stop. The map is
+		// frozen during shutdown (cleanUp is skipped), so ranging it under the lock is safe.
 		// no need to unlock as os.Exit will be called
 		resourceManager.serviceMutex.Lock()
-		for name := range resourceManager.runningServices {
-			stopService(*findServiceConfigByName(name))
+		for name, runningService := range resourceManager.runningServices {
+			stopRunningService(*findServiceConfigByName(name), runningService)
 		}
 		log.Printf("Done, exiting")
 		os.Exit(0)
@@ -1292,6 +1304,13 @@ func stopService(service ServiceConfig) {
 		log.Printf("[%s] Warning: Failed to find a service in a list of running services while stopping it, multiple stops requested or service already died. Stop aborted.", service.Name)
 		return
 	}
+	stopRunningService(service, runningService)
+}
+
+// stopRunningService is the body of stopService with the map lookup factored out,
+// so shutdown can stop each service directly from the held runningServices map
+// without re-acquiring serviceMutex via maybeGetRunningService.
+func stopRunningService(service ServiceConfig, runningService RunningService) {
 	if interrupted.Load() {
 		//If the process is being interrupted, we want to stop the service no matter what, even if it's currently locked
 		runningService.manageMutex.TryLock()
@@ -1356,10 +1375,11 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 	if err != nil {
 		exitMessage += fmt.Sprintf(" and an error: %v", err)
 	}
-	defer func() {
-		log.Print(exitMessage)
-		exitWaitGroup.Done()
-	}()
+	// Signal process exit before any mutex acquisition so stopService's
+	// waitForProcessToTerminate is not blocked by us waiting for serviceMutex.
+	log.Print(exitMessage)
+	exitWaitGroup.Done()
+
 	if interrupted.Load() {
 		if resourceManager.serviceMutex.TryLock() {
 			defer resourceManager.serviceMutex.Unlock()
@@ -1368,6 +1388,7 @@ func monitorProcess(serviceName string, process *os.Process, exitWaitGroup *sync
 			return
 		}
 	} else {
+		waitForProcessExitHook(serviceName)
 		resourceManager.serviceMutex.Lock()
 		defer resourceManager.serviceMutex.Unlock()
 	}

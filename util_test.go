@@ -307,6 +307,10 @@ func isProcessRunning(pid int) bool {
 	return false
 }
 func startLargeModelProxy(testCaseName string, configPath string, workDir string, waitChannel chan error) (*exec.Cmd, error) {
+	return startLargeModelProxyWithEnv(testCaseName, configPath, workDir, nil, waitChannel)
+}
+
+func startLargeModelProxyWithEnv(testCaseName string, configPath string, workDir string, env []string, waitChannel chan error) (*exec.Cmd, error) {
 	args := make([]string, 0)
 	if configPath != "" {
 		args = append(args, "-c", configPath)
@@ -319,6 +323,9 @@ func startLargeModelProxy(testCaseName string, configPath string, workDir string
 	cmd := exec.Command(binaryPath, args...)
 	if workDir != "" {
 		cmd.Dir = workDir
+	}
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
 	}
 	testLogsFolder := fmt.Sprintf("%s/test-logs", currentDir)
 	if _, err := os.Stat(testLogsFolder); os.IsNotExist(err) {

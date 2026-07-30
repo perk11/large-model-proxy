@@ -178,6 +178,7 @@ Below is a breakdown of what this configuration does:
 
 With this configuration, Qwen and Automatic1111 can run at the same time. Assuming they do, a request for Gemma will unload the one least recently used. If they are currently in use, a request to Gemma will have to wait for one of the other services to free up.
 `ResourcesAvailable` can include any resource metrics, CPU cores, multiple VRAM values for multiple GPUs, etc. These values are not checked against actual usage.
+`CheckCommand` is a shell command that will run any time a service requiring this resource needs to be started. If there is not enough resources, it will run every `CheckWhenNotEnoughIntervalMilliseconds` and any time a service using this resource stops until the value returned satisfies the amount of resource required.
 
 ## Usage
 
@@ -224,11 +225,20 @@ Each service in the `services` array includes the following fields:
 
 - `name`: Service name
 - `listen_port`: Port the service listens on
-- `is_running`: Whether the service is currently running
-- `active_connections`: Number of active connections to the service
+- `status`: stopped, waiting_for_resources, starting or running.
+- `waiting_connections`: Number of connections that are waiting for the service to start
+- `proxied_connections`: Number of connections currently being proxied to the service
 - `last_used`: Timestamp when the service was last used (for running services)
 - `service_url`: The rendered service URL (if configured), or `null` if no URL is available
 - `resource_requirements`: Resources required by the service
+
+Each resource in the `resources` map includes the following fields:
+
+- `total`: The statically configured `Amount` for the resource. Omitted (`null`/"N/A" in the dashboard) for resources backed by a `CheckCommand`, since their capacity is only known dynamically from the check command rather than from config.
+- `reserved_by_starting_services`: Amount reserved by services that are starting but have not yet passed their healthcheck.
+- `in_use`: Amount counted as in use by starting or running services.
+- `free`: For resources without a `CheckCommand`, `total - in_use`; for resources with a `CheckCommand`, the most recent value returned by the check command (e.g. actual free VRAM).
+- `usage_by_service`: Per-service breakdown of the resource amounts reserved/in use.
 
 The `service_url` field is generated from the service's `ServiceUrl` or `DefaultServiceUrl` configuration, with the `{{.PORT}}` template variable replaced by the service's `ListenPort`. The web dashboard consumes this endpoint to display real-time status information and enable clickable service navigation.
 

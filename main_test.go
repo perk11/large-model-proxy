@@ -647,7 +647,7 @@ func testStreamingRequest(t *testing.T, url string, requestBodyObject any, expec
 
 func testVerifyArgsAndEnv(test *testing.T, procPort string, mustHaveEnv bool) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%s/procinfo", procPort), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%s/procinfo", procPort), nil)
 	if err != nil {
 		test.Fatalf("Failed to create request: %v", err)
 	}
@@ -1667,6 +1667,7 @@ func TestAppScenarios(test *testing.T) {
 			},
 			TestFunc: func(t *testing.T) {
 				testLogOutput(t,
+					"logs-output",
 					"localhost:2049",
 					"localhost:2054",
 					"localhost:2057",
@@ -1737,6 +1738,7 @@ func TestAppScenarios(test *testing.T) {
 			},
 			TestFunc: func(t *testing.T) {
 				testLogOutput(t,
+					"logs-no-output",
 					"localhost:2055",
 					"localhost:2056",
 					"localhost:2059",
@@ -1978,6 +1980,7 @@ func testUnmonitoredProcess(
 
 func testLogOutput(
 	t *testing.T,
+	testName string,
 	serviceOneAddress string,
 	serviceTwoAddress string,
 	serviceThreeAddress string,
@@ -1990,7 +1993,6 @@ func testLogOutput(
 	serviceFourName string,
 	shouldLog bool,
 ) {
-	const logFileName = "test-logs/test_logs-output.log"
 	pidOne := runReadPidCloseConnection(t, serviceOneAddress)
 	pidTwo := runReadPidCloseConnection(t, serviceTwoAddress)
 	connThree, err := net.Dial("tcp", serviceThreeAddress)
@@ -2005,6 +2007,7 @@ func testLogOutput(
 	defer func(connFour net.Conn) { _ = connFour.Close() }(connFour)
 
 	time.Sleep(2 * time.Second)
+	logFileName := fmt.Sprintf("test-logs/test_%s.log", testName)
 	logFileContents, err := os.ReadFile(logFileName)
 	logFileContentsString := string(logFileContents)
 	if err != nil {

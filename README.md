@@ -121,7 +121,6 @@ Below is an example `config.jsonc`:
       "Command": "/home/user/.conda/envs/vllm/bin/vllm",
       "LogFilePath": "/var/log/Qwen2.5-7B.log",
       "Args": "serve Qwen/Qwen2.5-7B-Instruct --port 18082",
-      "ConsiderStoppedOnProcessExit": true,
       "ServiceUrl": null,
       "ResourceRequirements": {
         "VRAM-GPU-1": 17916,
@@ -132,8 +131,9 @@ Below is an example `config.jsonc`:
       "ListenPort": "8188",
       "TargetPort": "18188",
       "Command": "docker",
-      "Args": "run --rm --name comfyui --device nvidia.com/gpu=all -v /opt/comfyui:/workspace -p 18188:8188 pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel /bin/bash -c 'cd /workspace && source .venv/bin/activate && apt update && apt install -y git && pip install -r requirements.txt && python main.py --listen'",
+      "Args": "run -d --rm --name comfyui --device nvidia.com/gpu=all -v /opt/comfyui:/workspace -p 18188:8188 pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel /bin/bash -c 'cd /workspace && source .venv/bin/activate && apt update && apt install -y git && pip install -r requirements.txt && python main.py --listen'",
       "KillCommand": "docker kill comfyui",
+      "ConsiderStoppedOnProcessExit": false,
       "StartupTimeoutMilliseconds": 60000,
       "RestartOnConnectionFailure": true,
       "ShutDownAfterInactivitySeconds": 600,
@@ -169,7 +169,7 @@ Below is a breakdown of what this configuration does:
    These URLs appear in the management API responses and make service names clickable in the web dashboard for easy access to service interfaces.
 
 9. No ListenPort in Qwen configuration makes it only available via OpenAI API.
-10. Because ConsiderStoppedOnProcessExit set to true, if the process used by Qwen terminates, large-model-proxy will still continue to consider it running. This is useful if a process detaches from large-model-proxy.
+10. ComfyUI is started with `docker run -d` (for example sake), which starts the container in the background and returns immediately. `ConsiderStoppedOnProcessExit` is set to `false` so that the docker client returning early does not make the proxy tear down the service — the real container keeps running on `ProxyTargetPort`, and is stopped via its `KillCommand` (`docker kill comfyui`).
 
 With this configuration, Qwen and Automatic1111 can run at the same time. Assuming they do, a request for Gemma will unload the one least recently used. If they are currently in use, a request to Gemma will have to wait for one of the other services to free up.
 `ResourcesAvailable` can include any resource metrics, CPU cores, multiple VRAM values for multiple GPUs, etc. These values are not checked against actual usage.

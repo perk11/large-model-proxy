@@ -1822,7 +1822,7 @@ func TestAppScenarios(test *testing.T) {
 					ResourcesAvailable: map[string]ResourceAvailable{
 						"TestResource": {
 							//this command increments a number in the file by one every time it runs
-							CheckCommand:              "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+							CheckCommand:                           "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
 							CheckWhenNotEnoughIntervalMilliseconds: 1000,
 						},
 					},
@@ -2109,4 +2109,248 @@ func testStartupTimeoutCleansResourcesAndClosesClientConnections(
 		t.Errorf("expected slow-fail service to be starting with healtcheck working")
 	}
 	time.Sleep(3000 * time.Millisecond) // let the timeout kill the process before assert that ports are closed that runs after the test
+}
+
+// Scenario: the healthcheck command always fails ("false"), so the service
+// sits in the healthcheck phase. The process itself exits after 500ms (well
+// before the 60s startup timeout), so the process dies DURING the healthcheck
+// phase. With ConsiderStoppedOnProcessExit=true, performHealthCheck must abort
+// the moment the process exits instead of keep re-spawning the failing
+// healthcheck subprocess until StartupTimeout. The sibling test
+// TestProcessExitDuringHealthCheckDoesNotAbortWhenConsiderStoppedOnProcessExitFalse
+// verifies the opposite behavior holds when ConsiderStoppedOnProcessExit is
+// false.
+func TestProcessExitDuringHealthCheckAbortsHealthcheckLoop(t *testing.T) {
+	t.Parallel()
+
+	const managementApiAddress = "localhost:2124"
+	const serviceProxyAddress = "localhost:2125"
+	const testName = "process-exit-during-healthcheck"
+	const serviceName = testName + "_dying-process"
+
+	// The healthcheck command always fails, so the service sits in the
+	// healthcheck phase. The process sleeps 30s before it would start listening
+	// on the target port, but exits after 500ms — so the process dies during the
+	// healthcheck phase, well before the 60s startup timeout.
+	startupTimeoutMs := uint(60000)
+	considerStoppedOnProcessExit := true
+	cfg := Config{
+		ResourcesAvailable: map[string]ResourceAvailable{"TestResource": {Amount: 1}},
+		ManagementApi:      ManagementApi{ListenPort: "2124"},
+		Services: []ServiceConfig{
+			{
+				Name:                            "dying-process",
+				ListenPort:                      "2125",
+				ProxyTargetHost:                 "localhost",
+				ProxyTargetPort:                 "12125",
+				Command:                         "./test-server/test-server",
+				Args:                            "-p 12125 -sleep-before-listening 30s -exit-after-duration 500ms",
+				HealthcheckCommand:              "false",
+				HealthcheckIntervalMilliseconds: 200,
+				StartupTimeoutMilliseconds:      &startupTimeoutMs,
+				ConsiderStoppedOnProcessExit:    &considerStoppedOnProcessExit,
+				RestartOnConnectionFailure:      false,
+				ResourceRequirements:            map[string]int{"TestResource": 1},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName, t)
+	configFilePath := createTempConfig(t, cfg)
+
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{serviceProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	// Connect a client to trigger startService. The client stays connected while
+	// the service sits in the healthcheck phase.
+	clientConn, err := net.DialTimeout("tcp", serviceProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to service proxy: %v", err)
+	}
+	defer func() { _ = clientConn.Close() }()
+
+	// The service reserves TestResource and enters the healthcheck phase, so the
+	// resource is held: total_in_use == 1. Poll, since the reservation is
+	// observed asynchronously.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		if info, ok := resp.Resources["TestResource"]; ok && info.TotalInUse == 1 {
+			verifyTotalResourceUsage(t, resp, map[string]int{"TestResource": 1})
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resource TestResource was never held (total_in_use never reached 1) within %s", 3*time.Second)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// With the fix, performHealthCheck aborts as soon as the process exits
+	// (~500ms) instead of spinning for the full 60s StartupTimeout. The service
+	// stops and the resource is fully freed promptly — well before the 60s
+	// window. The 5s deadline proves the loop did not run to StartupTimeout.
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		stopped := false
+		for _, s := range resp.Services {
+			if s.Name == serviceName {
+				stopped = !s.IsRunning
+				break
+			}
+		}
+		if stopped {
+			verifyServiceStatus(t, resp, serviceName, false, map[string]int{"TestResource": 0})
+			verifyTotalResourceUsage(t, resp, map[string]int{"TestResource": 0})
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("service %s did not return to stopped and free TestResource within %s", serviceName, 5*time.Second)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The waiting client connection must be closed (EOF) promptly too, instead
+	// of hanging until the startup timeout.
+	assertRemoteClosedWithin(t, clientConn, 2*time.Second)
+}
+
+// TestProcessExitDuringHealthCheckDoesNotAbortWhenConsiderStoppedOnProcessExitFalse
+// is the counterpart to TestProcessExitDuringHealthCheckAbortsHealthcheckLoop.
+// For services whose process detaches from the proxy (ConsiderStoppedOnProcessExit=false,
+// e.g. docker containers), the child process exiting is expected and does not
+// mean the service is down, so performHealthCheck must NOT abort on process
+// exit — it keeps re-running the healthcheck command until StartupTimeout.
+//
+// Scenario: same as the abort test (healthcheck command always fails, process
+// exits after 500ms), but ConsiderStoppedOnProcessExit=false and
+// StartupTimeout is only 2s. After the process exits we assert the resource is
+// STILL held (the loop did not abort), and that it is only released once the
+// StartupTimeout elapses and the healthcheck times out.
+func TestProcessExitDuringHealthCheckDoesNotAbortWhenConsiderStoppedOnProcessExitFalse(t *testing.T) {
+	t.Parallel()
+
+	const managementApiAddress = "localhost:2126"
+	const serviceProxyAddress = "localhost:2127"
+	const testName = "process-exit-during-healthcheck-no-abort"
+	const serviceName = testName + "_dying-process"
+	const proxyTargetPort = "12126"
+
+	// The process exits after 500ms, but the healthcheck loop must keep going
+	// until the 3s StartupTimeout, since ConsiderStoppedOnProcessExit is false.
+	startupTimeoutMs := uint(3000)
+	considerStoppedOnProcessExit := false
+	cfg := Config{
+		ResourcesAvailable: map[string]ResourceAvailable{"TestResource": {Amount: 1}},
+		ManagementApi:      ManagementApi{ListenPort: "2126"},
+		Services: []ServiceConfig{
+			{
+				Name:                            "dying-process",
+				ListenPort:                      "2127",
+				ProxyTargetHost:                 "localhost",
+				ProxyTargetPort:                 proxyTargetPort,
+				Command:                         "./test-server/test-server",
+				Args:                            "-p " + proxyTargetPort + " -sleep-before-listening 30s -exit-after-duration 500ms",
+				HealthcheckCommand:              "false",
+				HealthcheckIntervalMilliseconds: 200,
+				StartupTimeoutMilliseconds:      &startupTimeoutMs,
+				ConsiderStoppedOnProcessExit:    &considerStoppedOnProcessExit,
+				RestartOnConnectionFailure:      false,
+				ResourceRequirements:            map[string]int{"TestResource": 1},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName, t)
+	configFilePath := createTempConfig(t, cfg)
+
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{serviceProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	// Connect a client to trigger startService. The client stays connected while
+	// the service sits in the healthcheck phase.
+	clientConn, err := net.DialTimeout("tcp", serviceProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to service proxy: %v", err)
+	}
+	defer func() { _ = clientConn.Close() }()
+
+	// The service reserves TestResource and enters the healthcheck phase, so the
+	// resource is held: total_in_use == 1. Poll, since the reservation is
+	// observed asynchronously.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		if info, ok := resp.Resources["TestResource"]; ok && info.TotalInUse == 1 {
+			verifyTotalResourceUsage(t, resp, map[string]int{"TestResource": 1})
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resource TestResource was never held (total_in_use never reached 1) within %s", 3*time.Second)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The process exits after 500ms. Because ConsiderStoppedOnProcessExit is
+	// false, monitorProcess does not clean up and performHealthCheck must NOT
+	// abort. So even after the process has exited the resource stays held and
+	// the service stays running until the StartupTimeout (3s) elapses. Waiting
+	// 1s here lands safely past the 500ms process exit but ~2s before the 3s
+	// StartupTimeout, proving the loop kept going.
+	time.Sleep(1 * time.Second)
+	resp := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, resp, serviceName, true, map[string]int{"TestResource": 1})
+	verifyTotalResourceUsage(t, resp, map[string]int{"TestResource": 1})
+
+	// Once the 3s StartupTimeout elapses, the healthcheck times out, startService
+	// returns, and the service stops and frees the resource. The 5s deadline
+	// proves cleanup did happen (as opposed to hanging forever).
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		stopped := false
+		for _, s := range resp.Services {
+			if s.Name == serviceName {
+				stopped = !s.IsRunning
+				break
+			}
+		}
+		if stopped {
+			verifyServiceStatus(t, resp, serviceName, false, map[string]int{"TestResource": 0})
+			verifyTotalResourceUsage(t, resp, map[string]int{"TestResource": 0})
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("service %s did not return to stopped and free TestResource within %s", serviceName, 5*time.Second)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The waiting client connection is closed (EOF) once the healthcheck times
+	// out and the service stops.
+	assertRemoteClosedWithin(t, clientConn, 2*time.Second)
 }

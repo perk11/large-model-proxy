@@ -637,7 +637,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 		startupConnectionTimeout = time.Duration(*serviceConfig.StartupTimeoutMilliseconds) * time.Millisecond
 	}
 	giveUpTime := time.Now().Add(startupConnectionTimeout)
-	err := performHealthCheck(serviceConfig, startupConnectionTimeout)
+	err := performHealthCheck(serviceConfig, startupConnectionTimeout, runningService.exitWaitGroup)
 	if err != nil {
 		log.Printf("[%s] Stopping service due to healthcheck error: %v", serviceConfig.Name, err)
 		runningService.manageMutex.Unlock()
@@ -701,7 +701,7 @@ func startService(serviceConfig ServiceConfig) (net.Conn, error) {
 
 	return serviceConnection, nil
 }
-func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) error {
+func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration, processExitWaitGroup *sync.WaitGroup) error {
 	if serviceConfig.HealthcheckCommand == "" {
 		return nil
 	}
@@ -714,6 +714,25 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 		sleepDuration = 100 * time.Millisecond
 	} else {
 		sleepDuration = time.Duration(serviceConfig.HealthcheckIntervalMilliseconds) * time.Millisecond
+	}
+
+	// processExitedChannel fires as soon as the service process is observed dead
+	// (monitorProcess signals exitWaitGroup). When ConsiderStoppedOnProcessExit is
+	// set, the proxy treats the child process exiting as the service being down,
+	// so selecting on this channel aborts the healthcheck loop the moment the
+	// process exits — mirroring tryConnectingUntilTimeoutOrProcessExit. When
+	// ConsiderStoppedOnProcessExit is false (e.g. detached services such as docker
+	// containers), the child process exiting is expected and the real service may
+	// still be starting up, so the healthcheck must keep retrying until the
+	// startup timeout instead of aborting. Leaving the channel nil makes the
+	// process-exit cases below never selectable, so the loop is unaffected then.
+	var processExitedChannel chan struct{}
+	if *serviceConfig.ConsiderStoppedOnProcessExit {
+		processExitedChannel = make(chan struct{})
+		go func() {
+			processExitWaitGroup.Wait()
+			close(processExitedChannel)
+		}()
 	}
 
 	for {
@@ -743,6 +762,10 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 			_ = cmd.Process.Kill()
 			<-waitResultChan
 			return fmt.Errorf("starting healthcheck command timed out after %s", remainingUntilDeadlineDuration)
+		case <-processExitedChannel:
+			_ = cmd.Process.Kill()
+			<-waitResultChan
+			return fmt.Errorf("service process terminated while waiting for healthcheck, considering the service stopped, set ConsiderStoppedOnProcessExit to true if this is not desired")
 		}
 
 		if waitErr == nil {
@@ -766,13 +789,17 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration) erro
 		remainingUntilDeadlineDuration = time.Until(totalTimeoutDeadlineTime)
 		if sleepDuration > remainingUntilDeadlineDuration {
 			return fmt.Errorf(
-				"healthcheck timed out, not starting another healthcheck command due to less time than %dms left out of %s",
+				"healthcheck timed out, not starting another healthcheck command: not enough time left for another HealthcheckInterval(%v) in StartupTimeout(%v)",
 				sleepDuration,
 				timeout,
 			)
 		}
 		if sleepDuration > 0 {
-			time.Sleep(sleepDuration)
+			select {
+			case <-time.After(sleepDuration):
+			case <-processExitedChannel:
+				return fmt.Errorf("service process terminated while waiting for healthcheck")
+			}
 		}
 	}
 }

@@ -11,9 +11,6 @@ resources are insufficient.
 # Build the proxy
 make executable
 
-# Build the test helper server (required for tests)
-make build-test-server
-
 # Run tests
 make test
 
@@ -91,67 +88,6 @@ Client → large-model-proxy → [Service Process]
 | `management-ui/` | Web dashboard frontend source                                                                 |
 | `test-configs/`  | Test configuration fixtures                                                                   |
 
-## Makefile Targets
-
-| Target                   | Description                                            |
-| ------------------------ | ------------------------------------------------------ |
-| `make all`               | Build executable and test-server (default)             |
-| `make executable`        | Build `large-model-proxy` binary                       |
-| `make test`              | Build everything and run tests with `-v -parallel 500` |
-| `make clean`             | Remove built binaries and test artifacts               |
-| `make build-test-server` | Build the test helper server binary                    |
-
-## Configuration
-
-Configuration uses JSONC (JSON with comments and trailing commas). Each service
-defines:
-
-- `Command` / `Args`: Process to start
-- `ListenPort`: External port clients connect to (optional)
-- `ProxyTargetHost` / `ProxyTargetPort`: Internal port the service binds to
-- `ResourceRequirements`: VRAM, RAM, or any other custom resources needed
-- `HealthcheckCommand` / `HealthcheckIntervalMilliseconds`: Readiness probe
-- `ShutDownAfterInactivitySeconds`: Idle timeout before stopping
-- `StartupTimeoutMilliseconds`: Max time to wait for service startup
-- `RestartOnConnectionFailure`: Whether to restart on connection errors
-- `ConsiderStoppedOnProcessExit`: Track services that detach from the proxy
-- `KillCommand`: Custom termination command (e.g., `docker kill <name>`)
-- `LogFilePath`: Override default `logs/{name}.log`
-- `OpenAiApi`: Enable OpenAI API routing for this service
-- `ServiceUrl`: URL rendered in the dashboard (supports `{{.PORT}}` template)
-
-### Resource Checking
-
-Resources can be specified as static integers:
-
-```jsonc
-"ResourcesAvailable": {
-  "VRAM-GPU-0": 24000,
-  "RAM": 32000
-}
-```
-
-Or backed by `CheckCommand` shell commands for dynamic checking:
-
-```jsonc
-"ResourcesAvailable": {
-  "VRAM-GPU-0": {
-    "Amount": 24000,
-    "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0",
-    "CheckIntervalMilliseconds": 1000
-  }
-}
-```
-
-### Service Identification
-
-- Services are identified by `Name` and mapped to `ListenPort`.
-- `ProxyTargetPort` is the actual port the service binds to internally;
-  `ListenPort` is the external port clients use.
-- If `ListenPort` is omitted, the service is only available via the OpenAI API.
-- `ServiceUrl` is rendered in the management dashboard; if omitted,
-  `DefaultServiceUrl` template is used.
-
 ### Running Tests
 
 ```sh
@@ -162,11 +98,6 @@ make test
 > **Note**: Tests use `test-server/test-server` as a simulated backend. Both
 > binaries must be built before running tests. `make test` handles this
 > automatically.
-
-### Code Style
-
-- Follow standard Go conventions (`gofmt`).
-- Use meaningful variable names; avoid abbreviations.
 
 ### OpenAI API-only Services
 
@@ -183,11 +114,14 @@ Omit `ListenPort` to make a service accessible only via the unified OpenAI API:
 }
 ```
 
-## Contributing
+## Agent rules
 
 Due to its concurrent nature, race conditions are very common in
 large-model-proxy, making manual testing impractical. Therefore, close to 100%
 automated test coverage is required.
 
 - Add tests for new features.
+- Follow TDD, write tests before implementing features.
+- Prefer meaningful and descriptive variable names, avoid abbreviations.
+- Keep comments minimal and to the point. Focus on describing why something is happening, not what is happening.
 - Run `make test` before submitting.

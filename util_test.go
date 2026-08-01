@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // OpenAiApiCompletionResponse is what /v1/completions returns
@@ -436,7 +438,7 @@ func ptrToString(s string) *string {
 // If no service name is provided, one will be allocated based on the index in the config.
 // The resulting service name will be standardized to include both the test name and the service name.
 // The log file will also use the standardized name.
-func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.T) {
+func StandardizeConfigNamesAndPaths(config *Config, testName string) {
 	for i := range config.Services {
 		service := &config.Services[i] // Get a pointer to modify the struct in the slice
 		originalServiceName := service.Name
@@ -451,8 +453,41 @@ func StandardizeConfigNamesAndPaths(config *Config, testName string, t *testing.
 		service.LogFilePath = fmt.Sprintf("test-logs/%s.log", standardizedServiceName)
 	}
 }
+func verifyResourceUsage(t *testing.T, resp StatusResponse, expectedReserved map[string]int, expectedFree map[string]int, expectedUsed map[string]int, expectedTotal map[string]int) {
+	t.Helper()
+	resourcesLen := len(expectedReserved)
+	assert.Len(t, expectedFree, resourcesLen, "Expected %d resources in free list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedUsed, resourcesLen, "Expected %d resources in used list, to match reserved list", resourcesLen)
+	assert.Len(t, expectedTotal, resourcesLen, "Expected %d resources in total list, to match reserved list", resourcesLen)
+	for resource := range expectedReserved {
+		resourceInfo, ok := resp.Resources[resource]
+		if !ok {
+			t.Errorf("Resource %s not found in status response", resource)
+			continue
+		}
+
+		// Ensure all expected maps contain this resource key before comparison.
+		reservedExpected, ok := expectedReserved[resource]
+		assert.True(t, ok, "Expected reserved resources to contain key %s", resource)
+
+		freeExpected, ok := expectedFree[resource]
+		assert.True(t, ok, "Expected free resources to contain key %s", resource)
+
+		usedExpected, ok := expectedUsed[resource]
+		assert.True(t, ok, "Expected used resources to contain key %s", resource)
+
+		totalExpected, ok := expectedTotal[resource]
+		assert.True(t, ok, "Expected total resources to contain key %s", resource)
+
+		assert.Equal(t, reservedExpected, resourceInfo.ReservedByStartingServices, "Resource %s reserved by starting services", resource)
+		assert.Equal(t, freeExpected, resourceInfo.Free, "Resource %s free", resource)
+		assert.Equal(t, usedExpected, resourceInfo.InUse, "Resource %s used", resource)
+		assert.Equal(t, totalExpected, resourceInfo.Total, "Resource %s total available", resource)
+	}
+}
 
 // verifyTotalResourceUsage checks if the total resource usage matches the expected values
+// Deprecated: use verifyResourceUsage instead
 func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage map[string]int) {
 	t.Helper()
 	for resource, expectedAmount := range expectedUsage {
@@ -462,31 +497,15 @@ func verifyTotalResourceUsage(t *testing.T, resp StatusResponse, expectedUsage m
 			continue
 		}
 
-		if resourceInfo.TotalInUse != expectedAmount {
+		if resourceInfo.InUse != expectedAmount {
 			t.Errorf("Expected total %s usage: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalInUse)
-		}
-	}
-}
-
-// verifyTotalResourcesAvailable checks if the total resource availability matches the expected values
-func verifyTotalResourcesAvailable(t *testing.T, resp StatusResponse, expectedAvailable map[string]int) {
-	t.Helper()
-	for resource, expectedAmount := range expectedAvailable {
-		resourceInfo, ok := resp.Resources[resource]
-		if !ok {
-			t.Errorf("Resource %s not found in status response", resource)
-			continue
-		}
-
-		if resourceInfo.TotalAvailable != expectedAmount {
-			t.Errorf("Expected total %s available: %d, actual: %d",
-				resource, expectedAmount, resourceInfo.TotalAvailable)
+				resource, expectedAmount, resourceInfo.InUse)
 		}
 	}
 }
 
 func getStatusFromManagementAPI(t *testing.T, managementApiAddress string) StatusResponse {
+	t.Helper()
 	resp, err := http.Get(fmt.Sprintf("http://%s/status", managementApiAddress))
 	if err != nil {
 		t.Fatalf("Failed to get status from management API: %v", err)
@@ -531,35 +550,36 @@ func getHealthcheckResponse(t *testing.T, address string) HealthCheckResponse {
 	return resp
 }
 
-// verifyServiceStatus checks if a specific service has the expected running status and resource usage
-func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, expectedRunning bool, expectedResources map[string]int) {
+func verifyServiceStatus(
+	t *testing.T,
+	resp StatusResponse,
+	serviceName string,
+	expectedStatus ServiceState,
+	expectedWaitingConnections int,
+	expectedProxiedConnections int,
+	expectedResources map[string]int,
+) {
 	t.Helper()
-	// Find service in Services
-	var found bool
-	var service ServiceStatus
-
-	for _, s := range resp.Services {
-		if s.Name == serviceName {
-			service = s
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	servicePointer := findServiceInStatusResponse(resp, serviceName)
+	if servicePointer == nil {
 		t.Fatalf("Service %s not found in Services", serviceName)
 	}
 
-	// Check running status
-	if service.IsRunning != expectedRunning {
-		t.Errorf("Service %s - expected running: %v, actual: %v", serviceName, expectedRunning, service.IsRunning)
-	}
+	assert.Equal(t, expectedStatus, servicePointer.Status, "Service %s status", serviceName)
+	assert.Equal(t, expectedWaitingConnections, servicePointer.WaitingConnections, "Service %s waiting connections", serviceName)
+	assert.Equal(t, expectedProxiedConnections, servicePointer.ProxiedConnections, "Service %s proxied connections", serviceName)
 
 	// Check resource usage
 	for resource, expectedAmount := range expectedResources {
-		if !expectedRunning {
+		if expectedStatus == ServiceStateStopped {
 			if expectedAmount != 0 {
 				t.Errorf("Service %s - Error in test logic, expected no usage for resource %s when service is not running", serviceName, resource)
+			}
+			if expectedWaitingConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no waiting connections when service is not running", serviceName)
+			}
+			if expectedProxiedConnections != 0 {
+				t.Errorf("Service %s - Error in test logic, expected no proxied connections when service is not running", serviceName)
 			}
 			continue
 		}
@@ -575,10 +595,162 @@ func verifyServiceStatus(t *testing.T, resp StatusResponse, serviceName string, 
 			continue
 		}
 
-		if actualAmount != expectedAmount {
-			t.Errorf("Service %s - expected %s usage: %d, actual: %d",
-				serviceName, resource, expectedAmount, actualAmount)
+		assert.Equal(t, expectedAmount, actualAmount, "Service %s - resource %s usage", serviceName, resource)
+	}
+}
+
+func findServiceInStatusResponse(resp StatusResponse, serviceName string) *ServiceStatus {
+	for i := range resp.Services {
+		if resp.Services[i].Name == serviceName {
+			return &resp.Services[i]
 		}
+	}
+	return nil
+}
+
+// waitForWaitingConnections polls the management API until the given service
+// reports exactly the requested number of waiting connections, or fails the
+// test when the deadline elapses. Useful for asserting transient states
+// without relying on fixed sleeps.
+func waitForWaitingConnections(
+	t *testing.T,
+	managementApiAddress string,
+	serviceName string,
+	expected int,
+	timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		service := findServiceInStatusResponse(resp, serviceName)
+		if service == nil {
+			t.Fatalf("Service %s not found in status response", serviceName)
+		}
+		if service.WaitingConnections == expected {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"Service %s waiting connections was %d, expected %d within %s",
+				serviceName, service.WaitingConnections, expected, timeout,
+			)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForServiceState polls the management API until the given service reports
+// the requested state, returning the final status response, or fails the test
+// when the deadline elapses. Useful for asserting asynchronous transitions
+// (e.g. a service becoming running after another one is evicted) without
+// relying on fixed sleeps that race on slow/loaded machines.
+func waitForServiceState(
+	t *testing.T,
+	managementApiAddress string,
+	serviceName string,
+	expectedStatus ServiceState,
+	timeout time.Duration,
+) StatusResponse {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		service := findServiceInStatusResponse(resp, serviceName)
+		if service == nil {
+			t.Fatalf("Service %s not found in status response", serviceName)
+		}
+		if service.Status == expectedStatus {
+			return resp
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"Service %s status was %s, expected %s within %s",
+				serviceName, service.Status, expectedStatus, timeout,
+			)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForProxiedConnections polls the management API until the given service
+// reports exactly the requested number of proxied connections, or fails the
+// test when the deadline elapses.
+func waitForProxiedConnections(
+	t *testing.T,
+	managementApiAddress string,
+	serviceName string,
+	expected int,
+	timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		resp := getStatusFromManagementAPI(t, managementApiAddress)
+		service := findServiceInStatusResponse(resp, serviceName)
+		if service == nil {
+			t.Fatalf("Service %s not found in status response", serviceName)
+		}
+		if service.ProxiedConnections == expected {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf(
+				"Service %s proxied connections was %d, expected %d within %s",
+				serviceName, service.ProxiedConnections, expected, timeout,
+			)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForHealthcheckResponse polls the service healthcheck endpoint until it
+// responds, or fails the test when the deadline elapses. Unlike
+// getHealthcheckResponse (which fails immediately), this tolerates the endpoint
+// not being ready yet, which races on slow/loaded machines.
+func waitForHealthcheckResponse(t *testing.T, address string, timeout time.Duration) HealthCheckResponse {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		resp, err := attemptReadHealthcheckResponse(t, address)
+		if err == nil {
+			return resp
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("healthcheck at %s did not respond within %s: %v", address, timeout, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForResourceFree polls the management API until the given resource
+// reports the requested Free amount, or fails the test when the deadline
+// elapses. The Free amount is refreshed asynchronously by the resource
+// CheckCommand, so a single read races.
+func waitForResourceFree(
+	t *testing.T,
+	managementApiAddress string,
+	resourceName string,
+	expected int,
+	timeout time.Duration,
+) StatusResponse {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var resp StatusResponse
+	for {
+		resp = getStatusFromManagementAPI(t, managementApiAddress)
+		info, ok := resp.Resources[resourceName]
+		if ok && info.Free == expected {
+			return resp
+		}
+		if time.Now().After(deadline) {
+			actual := -1
+			if ok {
+				actual = info.Free
+			}
+			t.Fatalf("Resource %s free was %d, expected %d within %s", resourceName, actual, expected, timeout)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

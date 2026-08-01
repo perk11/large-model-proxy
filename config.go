@@ -104,6 +104,7 @@ type Config struct {
 	ShutDownAfterInactivitySeconds                                uint
 	MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds *uint
 	OutputServiceLogs                                             *bool
+	ClientRequestBufferLimitBytes                                 *uint
 	LogLevel                                                      LogLevel                     `json:"LogLevel,omitempty"`
 	DefaultServiceUrl                                             *string                      `json:"DefaultServiceUrl"`
 	Services                                                      []ServiceConfig              `json:"Services"`
@@ -134,8 +135,8 @@ type ServiceConfig struct {
 	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
 }
 type ResourceAvailable struct {
-	Amount                    int
-	CheckCommand              string
+	Amount                                 int
+	CheckCommand                           string
 	CheckWhenNotEnoughIntervalMilliseconds uint
 }
 
@@ -155,8 +156,8 @@ func (r *ResourceAvailable) UnmarshalJSON(data []byte) error {
 	}
 
 	var dto struct {
-		Amount                    int    `json:"Amount"`
-		CheckCommand              string `json:"CheckCommand"`
+		Amount                                 int    `json:"Amount"`
+		CheckCommand                           string `json:"CheckCommand"`
 		CheckWhenNotEnoughIntervalMilliseconds uint   `json:"CheckWhenNotEnoughIntervalMilliseconds"`
 	}
 

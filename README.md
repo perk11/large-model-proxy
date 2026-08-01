@@ -64,6 +64,11 @@ Below is an example `config.jsonc`:
     "ListenPort": "7071",
   },
   "MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds": 1200,
+  // Maximum bytes of client->service request data buffered in RAM while a service
+  // is starting up or slow to read. Beyond this, TCP backpressure is applied
+  // to the client instead of buffering unbounded data. Default: 16 MiB (16777216).
+  // Set to 0 to disable the limit (unbounded buffering).
+  "ClientRequestBufferLimitBytes": 16777216,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
     "VRAM-GPU-1": 24000,

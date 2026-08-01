@@ -229,18 +229,32 @@ func createOpenAiApiModel(name string, createdTime int64) OpenAiApiModel {
 
 type rawCaptureConnection struct {
 	net.Conn
-	mutex  sync.Mutex
-	buffer *bytes.Buffer
+	mutex   sync.Mutex
+	buffer  *bytes.Buffer
+	capture bool
 }
 
 func (rcc *rawCaptureConnection) Read(p []byte) (int, error) {
 	n, err := rcc.Conn.Read(p)
 	if n > 0 {
 		rcc.mutex.Lock()
-		rcc.buffer.Write(p[:n])
+		if rcc.capture {
+			rcc.buffer.Write(p[:n])
+		}
 		rcc.mutex.Unlock()
 	}
 	return n, err
+}
+
+// stopBuffering disables further capturing into the buffer and drops the buffer.
+// It is called once the raw request bytes have been extracted for replaying to
+// the backend, so the live client->service stream that follows is not pointlessly
+// duplicated into a buffer that is never read again.
+func (rcc *rawCaptureConnection) stopBuffering() {
+	rcc.mutex.Lock()
+	rcc.capture = false
+	rcc.buffer = nil
+	rcc.mutex.Unlock()
 }
 
 type rawCaptureListener struct {
@@ -253,8 +267,9 @@ func (rawCaptureListener *rawCaptureListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	return &rawCaptureConnection{
-		Conn:   connection,
-		buffer: new(bytes.Buffer),
+		Conn:    connection,
+		buffer:  new(bytes.Buffer),
+		capture: true,
 	}, nil
 }
 
@@ -384,7 +399,10 @@ func resetConnectionBuffer(request *http.Request) {
 	if !ok {
 		panic("Failed to get raw connection")
 	}
+	rawConnection.mutex.Lock()
 	rawConnection.buffer = new(bytes.Buffer)
+	rawConnection.capture = true
+	rawConnection.mutex.Unlock()
 }
 
 // handleCompletions returns true if connection was proxied, false on HTTP error
@@ -428,26 +446,18 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 		http.Error(responseWriter, "Request forwarding is not possible, please use HTTP 1.1", http.StatusInternalServerError)
 		return false
 	}
-	clientConnection, bufrw, err := hijacker.Hijack()
+	clientConnection, _, err := hijacker.Hijack()
 	if err != nil {
 		log.Printf("[OpenAI API Server] Failed to forward connection: %v", err)
 		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
 		return false
 	}
-	//TODO: check if we can stop buffering and clean up the buffer now
 	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
 	if !ok {
 		panic("Failed to get raw connection")
 	}
 	rawRequestBytes := rawConnection.buffer.Bytes()
-
-	if bufrw.Reader.Buffered() > 0 {
-		bufBytes := make([]byte, bufrw.Reader.Buffered())
-		if _, err := bufrw.Read(bufBytes); err != nil {
-			log.Printf("[OpenAI API Server] Error reading buffered data: : %v", err)
-		}
-		bodyBytes = append(bodyBytes, bufBytes...)
-	}
+	rawConnection.stopBuffering()
 	handleConnection(clientConnection, service, rawRequestBytes)
 	return true
 }
@@ -503,11 +513,152 @@ func humanReadableConnection(conn net.Conn) string {
 	return fmt.Sprintf("%s->%s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 }
 
+// bufferedPipe is an in-memory io.Pipe-like reader/writer pair backed by a
+// BOUNDED buffer. Once the accumulated backlog reaches the configured cap, Write
+// blocks (true backpressure) until a Read frees space, rather than growing the
+// buffer without limit. This re-engages TCP flow control on the client during
+// service startup (or any window where the consumer is slow to drain), bounding
+// the proxy's RAM in the face of a large upload or a hostile peer.
+//
+// Unlike io.Pipe, the monitor can still keep issuing Read on the client
+// connection (and thereby detect a client disconnect/EOF) while a bounded backlog
+// is outstanding — that is the whole reason bufferedPipe exists rather than a
+// plain io.Pipe, whose Write would stall the moment the read end is unconsumed
+// and so block the monitor until startup completes, defeating prompt client-disconnect detection. The
+// tradeoff is now BOUNDED rather than unbounded: request bytes are still buffered
+// and preserved for the consumer, but only up to the cap. A limit of 0
+// restores the old unbounded/no-backpressure behavior as an operator escape hatch.
+type bufferedPipe struct {
+	mu         sync.Mutex
+	buf        bytes.Buffer
+	limit      uint64 // max bytes buffered before Write blocks; 0 => unbounded
+	writerDone bool   // set by closeWrite; once set, Reads return io.EOF after the buffer drains
+	closed     bool   // read end closed by the consumer via closeRead
+	cond       *sync.Cond
+}
+
+func newBufferedPipe(limit uint64) *bufferedPipe {
+	bp := &bufferedPipe{limit: limit}
+	bp.cond = sync.NewCond(&bp.mu)
+	return bp
+}
+
+// Write appends to the internal buffer, applying backpressure once the accumulated
+// backlog reaches the cap. A write into an empty buffer is always allowed (even if
+// larger than the cap) so a single large request body still flows; the cap bounds
+// the buffered backlog, not any individual message. It blocks until there is room.
+func (b *bufferedPipe) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// Apply backpressure once the accumulated buffered data reaches the cap. A
+	// write into an empty buffer is always allowed (even if larger than the cap)
+	// so a single large request body still flows — the cap bounds the buffered
+	// backlog, not any individual message. limit == 0 means unbounded.
+	for b.limit > 0 && b.buf.Len() > 0 && uint64(b.buf.Len())+uint64(len(p)) > b.limit {
+		if b.closed {
+			return 0, io.ErrClosedPipe
+		}
+		b.cond.Wait()
+	}
+	if b.closed {
+		return 0, io.ErrClosedPipe
+	}
+	n, _ := b.buf.Write(p) // bytes.Buffer.Write never returns an error
+	b.cond.Broadcast()
+	return n, nil
+}
+
+// closeWrite marks the writer as done. Subsequent Reads, after draining any
+// buffered data, return io.EOF regardless of err (so partially-buffered request
+// bytes are still delivered before EOF). This MUST be tracked with a dedicated
+// flag rather than err != nil: io.Copy returns a nil error on a clean EOF, so
+// gating on err would leave Read blocked forever after a normal client close
+// (which would stall forwardConnection and leak the proxied-connection count).
+func (b *bufferedPipe) closeWrite(_ error) {
+	b.mu.Lock()
+	b.writerDone = true
+	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+// closeRead closes the read end: in-flight and future Writes return io.ErrClosedPipe
+// so the producing goroutine stops.
+func (b *bufferedPipe) closeRead() {
+	b.mu.Lock()
+	b.closed = true
+	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+func (b *bufferedPipe) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.buf.Len() == 0 {
+		if b.writerDone {
+			return 0, io.EOF // writer done and nothing left buffered
+		}
+		if b.closed {
+			return 0, io.ErrClosedPipe
+		}
+		b.cond.Wait()
+	}
+	n, _ := b.buf.Read(p)
+	b.cond.Broadcast() // wake any Write blocked on backpressure now that room freed up
+	return n, nil
+}
+
+// defaultClientRequestBufferLimitBytes bounds how many unread client→service
+// request bytes the proxy will buffer in RAM during service startup (or whenever
+// the service is slow to consume). Beyond this the monitor's Write blocks,
+// re-applying TCP backpressure on the client instead of buffering unbounded data.
+const defaultClientRequestBufferLimitBytes = 16 << 20 // 16 MiB
+
+// startClientReadMonitor takes ownership of reading from clientConnection for the
+// whole lifetime of a proxied connection. All bytes read from the client are
+// available through the returned reader, so no request data is lost. The
+// returned channel is closed as soon as the client's read side reports an error
+// (i.e. the client disconnected), which lets waiting code abort promptly instead
+// of holding a stale "waiting" connection count. The returned close func closes
+// the reader end of the pipe and must be invoked when the caller is done; it
+// unblocks the monitor goroutine if it is stuck writing to a full pipe.
+//
+// The reader/writer pair is a bufferedPipe rather than an io.Pipe: io.Pipe's Write
+// blocks until a Read consumes the data, but the read end is only consumed by
+// forwardConnection, which does not start until after service startup. With an
+// io.Pipe, a client that sends any request bytes during startup (the common case
+// for client-speaks-first protocols) would stall the monitor inside Write, stop
+// reading the client connection, and thus fail to detect the client's disconnect
+// until maxWait/startup timeout — defeating prompt client-disconnect detection. A bufferedPipe keeps
+// reading the client and observes the disconnect promptly, while still preserving
+// the buffered request bytes for the consumer. Unlike the old
+// unbounded version, its buffer is now capped (default 16 MiB,
+// ClientRequestBufferLimitBytes; 0 restores unbounded behavior), so Write only
+// blocks once the backlog reaches that cap rather than growing RAM without limit.
+func startClientReadMonitor(clientConnection net.Conn) (clientReader io.Reader, closeReader func(), disconnected <-chan struct{}) {
+	limit := uint64(defaultClientRequestBufferLimitBytes)
+	if config.ClientRequestBufferLimitBytes != nil {
+		limit = uint64(*config.ClientRequestBufferLimitBytes) // 0 => unbounded (operator escape hatch)
+	}
+	pipe := newBufferedPipe(limit)
+	disconnectedChan := make(chan struct{})
+	go func() {
+		_, err := io.Copy(pipe, clientConnection) // pipe.Write blocks only past the cap, so we keep reading the client → detect disconnect
+		pipe.closeWrite(err)
+		close(disconnectedChan)
+	}()
+	var once sync.Once
+	return pipe, func() {
+		once.Do(func() { pipe.closeRead() })
+	}, disconnectedChan
+}
+
 func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, dataToSendToServiceBeforeForwardingFromClient []byte) {
 	if interrupted.Load() {
 		_ = clientConnection.Close()
 		return
 	}
+	clientReader, closeClientReader, _ := startClientReadMonitor(clientConnection)
+	defer closeClientReader()
 	serviceConnection := startServiceIfNotAlreadyRunningAndConnect(serviceConfig)
 
 	if serviceConnection == nil {
@@ -543,7 +694,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	}
 
 	//forwardConnection will handle closing the connections at this point
-	forwardConnection(clientConnection, serviceConnection, serviceConfig.Name)
+	forwardConnection(clientReader, clientConnection, serviceConnection, serviceConfig.Name)
 
 	trackServiceLastUsed(serviceConfig, false)
 }
@@ -1240,7 +1391,7 @@ func produceStartCommandLogString(serviceConfig ServiceConfig) (string, []any) {
 	return logFormatString, logArguments
 }
 
-func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName string) {
+func forwardConnection(clientReader io.Reader, clientConnection, serviceConnection net.Conn, serviceName string) {
 	defer resourceManager.incrementConnection(serviceName, -1)
 	resourceManager.incrementConnection(serviceName, 1)
 
@@ -1252,7 +1403,7 @@ func forwardConnection(clientConnection, serviceConnection net.Conn, serviceName
 		defer wg.Done()
 		copyAndHandleErrors(
 			serviceConnection,
-			clientConnection,
+			clientReader,
 			fmt.Sprintf("[%s] (service (%s) to client (%s))", serviceName, humanReadableConnection(serviceConnection), humanReadableConnection(clientConnection)),
 		)
 

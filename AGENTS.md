@@ -60,24 +60,31 @@ Client → large-model-proxy → [Service Process]
 
 ### Source Files
 
-| File                   | Purpose                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `main.go`              | Core proxy logic, HTTP handlers, service lifecycle orchestration, signal handling |
-| `config.go`            | Configuration loading, validation, and defaults (JSONC parsing)                   |
-| `management_api.go`    | Management HTTP server and embedded web dashboard assets                          |
-| `monitor_resources.go` | Resource checking                                                                 |
-| `tty.go`               | TTY/terminal handling utilities                                                   |
+| File                              | Purpose                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------ |
+| `main.go`                         | Entry point, signal handling, and ResourceManager bookkeeping (connection counting, lookup) |
+| `config.go`                       | Configuration loading, validation, and defaults (JSONC parsing)                            |
+| `connection.go`                   | Per-service TCP listeners, client connection handling, and bidirectional traffic forwarding |
+| `service.go`                      | Service lifecycle: on-demand start, health checks, and connecting to a running service     |
+| `service_process.go`              | Service process spawning/stopping, output logging, and process-exit monitoring             |
+| `resources.go`                    | Resource reservation, LRU eviction, and resource release logic                             |
+| `openai_api.go`                   | Unified OpenAI API server and request routing to backends by model name                    |
+| `management_api.go`               | Management HTTP server and embedded web dashboard assets                                   |
+| `monitor_resources.go`            | Resource availability monitoring and change broadcasting                                   |
+| `monitor_process_hook.go`         | Test-only synchronization hook for process-exit timing (compiled with the `testhooks` tag) |
+| `monitor_process_hook_default.go` | No-op production stub for `monitor_process_hook.go`                                        |
+| `tty.go`                          | TTY/terminal handling utilities                                                            |
 
 ### Test Files
 
-| File                     | Purpose                                             |
-| ------------------------ | --------------------------------------------------- |
-| `main_test.go`           | Core proxy integration tests                        |
-| `config_test.go`         | Configuration parsing and validation tests          |
-| `management_api_test.go` | Management API endpoint tests                       |
-| `monitor_resources.go`   | Resource monitoring tests                           |
-| `util_test.go`           | Shared test utilities and helpers                   |
-| `test-server/main.go`    | Simulated backend service used in integration tests |
+| File                       | Purpose                                             |
+| -------------------------- | --------------------------------------------------- |
+| `main_test.go`             | Core proxy integration tests                        |
+| `config_test.go`           | Configuration parsing and validation tests          |
+| `management_api_test.go`   | Management API endpoint tests                       |
+| `monitor_resources_test.go` | Resource monitoring tests                          |
+| `util_test.go`             | Shared test utilities and helpers                   |
+| `test-server/main.go`      | Simulated backend service used in integration tests |
 
 ### Other Key Files
 

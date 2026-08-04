@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"

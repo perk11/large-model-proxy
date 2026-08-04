@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -2522,6 +2523,185 @@ func TestProcessExitDuringShutdown(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Errorf("Shutdown took more than 15 seconds — deadlock: exitWaitGroup.Done() was not called before serviceMutex.Lock()")
 		_ = cmd.Process.Kill()
+	}
+}
+
+// TestEvictionOfAlreadyDeadProcessDoesNotLoop is a regression test for issue #119
+// ("Failure to send SIGTERM leads to an endless loop").
+//
+// The bug: when reserveResources evicts a service whose child process has ALREADY
+// exited and been reaped, syscall.Kill(-pgid, SIGTERM) fails with ESRCH ("no such
+// process"). If stopService does not clean up in that case, the evicted service
+// stays in runningServices still holding its resources, so reserveResources loops
+// forever calling stopService on it — visible in the logs as a tight, microsecond-
+// spaced repetition of:
+//
+//   Failed to send SIGTERM to -<pgid>: no such process
+//   Stopping service to free resources for <other>
+//   Sending SIGTERM to service process group: -<pgid>
+//   ...
+//
+// and the requesting service never starts (its client connection hangs).
+//
+// This test reproduces the exact precondition: service-one holds the only unit of
+// CPU, then exits on its own (-exit-after-duration). The test-only PROXY_EXIT_HOOK_FILE
+// blocks monitorProcess AFTER it has reaped the process and called exitWaitGroup.Done()
+// but BEFORE it removes service-one from runningServices — so service-one sits in the
+// map with an already-dead process. A connection to service-two then forces
+// reserveResources to evict service-one, which means sending SIGTERM to a process
+// group that no longer exists (ESRCH).
+//
+// Expected (fixed) behavior: stopService tolerates the ESRCH, cleans service-one up,
+// frees CPU, and service-two starts promptly. The test asserts both that
+// service-two becomes reachable AND that the ESRCH path was actually exercised, while
+// rejecting the runaway repetition of "Stopping service to free resources" that
+// characterizes the loop.
+func TestEvictionOfAlreadyDeadProcessDoesNotLoop(t *testing.T) {
+	t.Parallel()
+
+	// Hook file: monitorProcess blocks here after reaping the exited service-one
+	// process, keeping service-one in runningServices with a dead process.
+	hookDir := t.TempDir()
+	hookFile := hookDir + "/exit-hook"
+	if err := os.WriteFile(hookFile, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create hook file: %v", err)
+	}
+
+	const (
+		managementApiAddress = "localhost:2129"
+		holderProxyAddress   = "localhost:2130"
+		holderTargetPort     = "12310"
+		requesterProxyAddress = "localhost:2131"
+		requesterTargetPort   = "12311"
+		testCaseName          = "eviction-already-dead-process"
+	)
+
+	cfg := Config{
+		ResourcesAvailable: map[string]ResourceAvailable{
+			"CPU": {Amount: 1},
+		},
+		// Keep idle services alive so service-one stays in runningServices after its
+		// client disconnects (we want monitorProcess, not the idle timer, to be the
+		// thing that would remove it — which we then block with the hook).
+		ShutDownAfterInactivitySeconds: 120,
+		ManagementApi:                  ManagementApi{ListenPort: "2129"},
+		Services: []ServiceConfig{
+			{
+				Name:               "holder",
+				ListenPort:         "2130",
+				ProxyTargetHost:    "localhost",
+				ProxyTargetPort:    holderTargetPort,
+				Command:            "./test-server/test-server",
+				Args:               "-p " + holderTargetPort + " -exit-after-duration 800ms",
+				ResourceRequirements: map[string]int{"CPU": 1},
+			},
+			{
+				Name:               "requester",
+				ListenPort:         "2131",
+				ProxyTargetHost:    "localhost",
+				ProxyTargetPort:    requesterTargetPort,
+				Command:            "./test-server/test-server",
+				Args:               "-p " + requesterTargetPort,
+				ResourceRequirements: map[string]int{"CPU": 1},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testCaseName)
+	configFilePath := createTempConfig(t, cfg)
+
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxyWithEnv(
+		testCaseName, configFilePath, "",
+		[]string{fmt.Sprintf("PROXY_EXIT_HOOK_FILE=%s", hookFile)},
+		waitChannel,
+	)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		// Release the hook first so a blocked monitorProcess can finish and the
+		// proxy can shut down cleanly.
+		_ = os.Remove(hookFile)
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+	}()
+
+	// Start service-one (holder). It reserves the only unit of CPU.
+	holderPid := runReadPidCloseConnection(t, holderProxyAddress)
+	if holderPid == 0 {
+		return // runReadPidCloseConnection already failed the test
+	}
+	// Ensure the holder has no proxied connection so it is eligible for eviction
+	// (canBeStopped requires proxied == 0).
+	waitForProxiedConnections(t, managementApiAddress, cfg.Services[0].Name, 0, 3*time.Second)
+
+	// Wait for service-one to die on its own and be reaped by monitorProcess, which
+	// then calls exitWaitGroup.Done() and blocks at the hook — leaving service-one in
+	// runningServices with an already-reaped process.
+	reapDeadline := time.Now().Add(5 * time.Second)
+	for {
+		if !isProcessRunning(holderPid) {
+			break
+		}
+		if time.Now().After(reapDeadline) {
+			t.Fatalf("holder process %d did not exit within %s", holderPid, 5*time.Second)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Give monitorProcess time to run process.Wait() (reap the zombie) and reach the
+	// hook. Until the zombie is reaped the process group still resolves and SIGTERM
+	// would not return ESRCH; we need the reaped state to reproduce the bug.
+	time.Sleep(200 * time.Millisecond)
+
+	// Sanity: the holder is still registered (monitorProcess is blocked at the hook
+	// and has not cleaned it up) and still holds CPU.
+	statusBefore := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusBefore, cfg.Services[0].Name, ServiceStateRunning, 0, 0, map[string]int{"CPU": 1})
+
+	// Trigger eviction: connecting to service-two forces reserveResources to stop
+	// service-one to free CPU. service-one's process is already gone, so the stop
+	// must send SIGTERM to a non-existent process group (ESRCH). If the bug were
+	// present, stopService would not clean up and this connection would hang forever
+	// while the proxy logged the endless SIGTERM/Stopping loop.
+	requesterConn, err := net.DialTimeout("tcp", requesterProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to connect to requester proxy: %v", err)
+	}
+	defer func() { _ = requesterConn.Close() }()
+
+	// service-two must become reachable promptly — proving stopService cleaned up
+	// the already-dead holder, freed CPU, and broke out of reserveResources instead
+	// of looping.
+	if err := requesterConn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		t.Fatalf("Failed to set read deadline: %v", err)
+	}
+	requesterPid := readPidFromOpenConnection(t, requesterConn)
+	if requesterPid == 0 {
+		t.Fatalf("service-two never started within 15s — reserveResources likely looped on an already-dead evicted process (issue #119)")
+	}
+	t.Logf("service-two started with pid %d after evicting the already-dead holder", requesterPid)
+
+	// Confirm the ESRCH path was genuinely exercised and that the eviction did not
+	// repeat uncontrollably (the signature of the loop). Both counts should be tiny
+	// (a handful at most); the bug produced thousands within milliseconds.
+	holderLog := fmt.Sprintf("test-logs/test_%s.log", testCaseName)
+	logBytes, readErr := os.ReadFile(holderLog)
+	if readErr != nil {
+		t.Logf("Could not read proxy log %s for loop check: %v", holderLog, readErr)
+	} else {
+		logText := string(logBytes)
+		if !strings.Contains(logText, "Failed to send SIGTERM") {
+			t.Errorf("Test did not exercise the ESRCH path: expected at least one " +
+				"\"Failed to send SIGTERM\" line in the proxy log")
+		}
+		stopCount := strings.Count(logText, "Stopping service to free resources")
+		if stopCount > 5 {
+			t.Errorf("Expected the eviction to run a handful of times at most, but " +
+				"\"Stopping service to free resources\" appeared %d times in the log — "+
+				"this is the endless loop from issue #119", stopCount)
+		}
+		t.Logf("\"Stopping service to free resources\" appeared %d time(s) in the proxy log", stopCount)
 	}
 }
 

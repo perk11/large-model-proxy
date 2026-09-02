@@ -71,19 +71,17 @@ Below is an example `config.jsonc`:
   "ClientRequestBufferLimitBytes": 16777216,
   "ShutDownAfterInactivitySeconds": 120,
   "ResourcesAvailable": {
-    "VRAM-GPU-1": 24000,
-    //Experimntal syntax below, not yet released
-    //"VRAM-GPU-1": {
-    // "Amount": 24000,
-    // "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
-    // "CheckWhenNotEnoughIntervalMilliseconds": 1000,
-    //},
+    "VRAM-GPU-1": {
+     "Amount": 24000,
+     "CheckCommand": "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0", //Experimental, less stable
+     "CheckWhenNotEnoughIntervalMilliseconds": 1000,
+    },
     "RAM": 32000,
-    // Alternatively use a shell command to check current RAM available (Experimental, less stable):
-    //"RAM": {
-    //    "CheckCommand": "awk '/MemAvailable/ {printf \"%d\\n\", $2/1024}' /proc/meminfo",
-    //     "CheckWhenNotEnoughIntervalMilliseconds": 1000,
-    //}
+    // Alternatively use a shell command to check current RAM available:
+    "RAM": {
+      "CheckCommand": "awk '/MemAvailable/ {printf \"%d\\n\", $2/1024}' /proc/meminfo",
+      "CheckWhenNotEnoughIntervalMilliseconds": 1000,
+    }
   },
   "Services": [
     {

@@ -1327,3 +1327,137 @@ func TestSingleServiceWithContextSizeIsValid(t *testing.T) {
 		t.Fatalf("did not expect an error but got: %v", err)
 	}
 }
+
+// --- automatic listen port selection ---
+
+func TestListenPortAutoIsValid(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	assert.Equal(t, "auto", cfg.Services[0].ListenPort)
+}
+
+func TestMultipleAutoListenPortsAreAllowed(t *testing.T) {
+	t.Parallel()
+	// Two "auto" services each get their own port; they must not be treated
+	// as a shared-port group (which would require context sizes).
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			},
+			{
+				"Name": "two",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+}
+
+func TestAutoListenPortWithStaticPortsIsValid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"OpenAiApi": {"ListenPort": "7070"},
+		"ManagementApi": {"ListenPort": "7071"},
+		"Services": [
+			{
+				"Name": "auto-service",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			},
+			{
+				"Name": "static-service",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+}
+
+func TestAutoListenPortDatabasePathIsParsed(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"AutoListenPortDatabasePath": "/var/lib/large-model-proxy/ports.db",
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	assert.Equal(t, "/var/lib/large-model-proxy/ports.db", cfg.AutoListenPortDatabasePath)
+}
+
+func TestAutoListenPortDatabasePathDefaults(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	assert.Equal(t, defaultAutoListenPortDatabasePath, cfg.AutoListenPortDatabasePath)
+}
+
+func TestAutoListenPortStillRequiresCommand(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "auto"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"has no Command specified"})
+}
+
+func TestAutoListenPortOpenAiApiOnlyServiceStillAllowedWithoutPort(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"OpenAiApi": true,
+				"Command": "/bin/echo"
+			},
+			{
+				"Name": "auto-service",
+				"ListenPort": "auto",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+}

@@ -12,10 +12,18 @@ import (
 
 func startProxy(serviceConfig ServiceConfig) {
 	listener, err := net.Listen("tcp", ":"+serviceConfig.ListenPort)
-	log.Printf("[%s] Listening on port %s", serviceConfig.Name, serviceConfig.ListenPort)
 	if err != nil {
 		log.Fatalf("[%s] Fatal error: cannot listen on port %s: %v", serviceConfig.Name, serviceConfig.ListenPort, err)
 	}
+	startProxyWithListener(listener, serviceConfig)
+}
+
+// startProxyWithListener serves a service on an already bound listener. It is
+// used for automatically selected ports, where the listener created during
+// port allocation is handed over so the port can never be grabbed by another
+// process between allocation and use.
+func startProxyWithListener(listener net.Listener, serviceConfig ServiceConfig) {
+	log.Printf("[%s] Listening on port %s", serviceConfig.Name, serviceConfig.ListenPort)
 	defer func(listener net.Listener) {
 		_ = listener.Close()
 	}(listener)

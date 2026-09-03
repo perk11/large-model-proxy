@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -173,6 +174,31 @@ func main() {
 			)
 		}
 	}
+	// Resolve services with ListenPort "auto" to concrete ports before any
+	// listener starts: the resolved ports end up in config so the management
+	// API, service URLs and logs all report them, and the pre-bound listeners
+	// are handed to the proxies so a chosen port can never be lost to another
+	// process between allocation and use.
+	autoPortListeners := map[string]net.Listener{}
+	hasAutoListenPorts := false
+	for _, service := range config.Services {
+		if service.ListenPort == autoListenPort {
+			hasAutoListenPorts = true
+			break
+		}
+	}
+	if hasAutoListenPorts {
+		listenPortStore, err := openListenPortStore(config.AutoListenPortDatabasePath)
+		if err != nil {
+			log.Fatalf("Error opening listen port database: %v", err)
+		}
+		defer func() { _ = listenPortStore.close() }()
+		autoPortListeners, err = resolveAutoListenPorts(&config, listenPortStore)
+		if err != nil {
+			log.Fatalf("Error selecting listen ports automatically: %v", err)
+		}
+	}
+
 	// Group services by listen port: a port with a single service behaves as a
 	// plain transparent proxy, while a port shared by several services is
 	// served by a context router that picks the smallest context size that
@@ -191,7 +217,11 @@ func main() {
 	for _, listenPort := range listenPortOrder {
 		services := servicesByListenPort[listenPort]
 		if len(services) == 1 {
-			go startProxy(services[0])
+			if listener, found := autoPortListeners[services[0].Name]; found {
+				go startProxyWithListener(listener, services[0])
+			} else {
+				go startProxy(services[0])
+			}
 		} else {
 			go startContextRoutedProxy(listenPort, buildContextRouter(services))
 		}

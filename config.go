@@ -111,6 +111,11 @@ type Config struct {
 	ResourcesAvailable                                            map[string]ResourceAvailable `json:"ResourcesAvailable"`
 	OpenAiApi                                                     OpenAiApi
 	ManagementApi                                                 ManagementApi
+
+	// AutoListenPortDatabasePath is the SQLite database where ports selected
+	// for services with ListenPort "auto" are persisted, so services keep
+	// their port across restarts whenever possible.
+	AutoListenPortDatabasePath string `json:"AutoListenPortDatabasePath"`
 }
 
 type ServiceConfig struct {
@@ -287,6 +292,9 @@ func loadConfigFromReader(r io.Reader) (Config, error) {
 	if config.LogLevel == "" {
 		config.LogLevel = LogLevelNormal
 	}
+	if config.AutoListenPortDatabasePath == "" {
+		config.AutoListenPortDatabasePath = defaultAutoListenPortDatabasePath
+	}
 
 	err = validateConfig(config)
 	if err != nil {
@@ -338,6 +346,12 @@ func validateConfig(cfg Config) error {
 	portOrder := make([]string, 0)
 	for _, svc := range cfg.Services {
 		if svc.ListenPort != "" {
+			// "auto" services each get a port of their own (resolved at startup,
+			// persisted in the listen port database), so they never form
+			// shared-port groups.
+			if svc.ListenPort == autoListenPort {
+				continue
+			}
 			if _, seen := servicesByPort[svc.ListenPort]; !seen {
 				portOrder = append(portOrder, svc.ListenPort)
 			}
@@ -373,6 +387,9 @@ func validateConfig(cfg Config) error {
 			}
 			issues = append(issues,
 				fmt.Sprintf("service %s does not specify ListenPort", nameOrIndex))
+			continue
+		}
+		if svc.ListenPort == autoListenPort {
 			continue
 		}
 		portVal, err := strconv.Atoi(svc.ListenPort)

@@ -287,6 +287,42 @@ smallest tier.
   clients do not pipeline requests (every real HTTP client sends the next
   request only after reading the previous response).
 
+## Automatic listen port selection
+
+A service can ask the proxy to pick its listen port automatically:
+
+```jsonc
+{
+  "Name": "Qwen3-8B",
+  "ListenPort": "auto", // any free port, remembered across restarts
+  "ProxyTargetHost": "localhost",
+  "ProxyTargetPort": "18085",
+  "Command": "llama-server",
+  "Args": "-m Qwen3-8B.gguf --port 18085",
+}
+```
+
+At startup the proxy first tries the port this service used last time, so
+clients keep working across restarts. If that port is no longer free (or the
+service has no history yet), a free port is requested from the OS; ports
+already used elsewhere in the same configuration are never picked. The chosen
+port is then persisted in a small SQLite database
+(`AutoListenPortDatabasePath`, default `auto-listen-ports.db` in the working
+directory, keyed by service name), and the port is bound immediately when
+selected so it cannot be lost to another process before the proxy starts
+listening on it.
+
+Ways to discover the assigned port:
+
+- the startup log line `[ServiceName] Automatically selected listen port N`
+  (and the usual `Listening on port N` line),
+- the `listen_port` field of the service in the Management API `/status`
+  response (also used for the `{{.PORT}}` variable in `ServiceUrl` templates),
+- the SQLite database itself.
+
+Each service with `ListenPort: "auto"` gets a port of its own. Services that
+share one port for context-based routing must use explicit numeric ports.
+
 ## Management API
 
 The management API is a simple HTTP API that allows you to get the status of the proxy and the services it is proxying.

@@ -69,6 +69,7 @@ Client → large-model-proxy → [Service Process]
 | `service_process.go`              | Service process spawning/stopping, output logging, and process-exit monitoring                            |
 | `resources.go`                    | Resource reservation, LRU eviction, and resource release logic                                            |
 | `openai_api.go`                   | Unified OpenAI API server and request routing to backends by model name                                   |
+| `port_allocation.go`              | Automatic listen port selection with SQLite persistence of last used ports                                |
 | `context_router.go`               | Context-based routing: shared-port service tiers, request size measurement, per-connection tier switching |
 | `http_request_splitter.go`        | Incremental HTTP request framing from a raw TCP stream (used by context routing)                          |
 | `tokenizer.go`                    | Named token counters (heuristic, per model family) used to measure request context sizes                  |
@@ -86,6 +87,8 @@ Client → large-model-proxy → [Service Process]
 | `config_test.go`                     | Configuration parsing and validation tests                                           |
 | `management_api_test.go`             | Management API endpoint tests                                                        |
 | `monitor_resources_test.go`          | Resource monitoring tests                                                            |
+| `port_allocation_test.go`            | Listen port store, allocator and config resolution tests                             |
+| `auto_listen_port_e2e_test.go`       | End-to-end automatic port selection test (reuse and reassignment)                    |
 | `context_router_test.go`             | Context routing tier selection and request unit counting tests                       |
 | `context_routing_connection_test.go` | In-process tests for the routed connection handler (routing, switching, passthrough) |
 | `context_routing_e2e_test.go`        | End-to-end context routing test through the real proxy binary                        |

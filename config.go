@@ -133,6 +133,18 @@ type ServiceConfig struct {
 	OpenAiApiModels                 []string
 	ServiceUrl                      *ServiceUrlOption `json:"ServiceUrl,omitempty"`
 	ResourceRequirements            map[string]int    `json:"ResourceRequirements"`
+
+	// ContextSize is this service's context window in tokens. Multiple
+	// services may share a ListenPort when every one of them defines a context
+	// size; requests are routed to the smallest service that fits, switching to
+	// a larger one once the request outgrows the current service.
+	ContextSize *uint
+	// ContextSizeBytes is ContextSize measured in raw bytes instead of tokens;
+	// it cannot be combined with ContextSize or Tokenizer.
+	ContextSizeBytes *uint
+	// Tokenizer names the token counter (see tokenizer.go) used to measure
+	// request sizes for services with a token-based ContextSize.
+	Tokenizer string
 }
 type ResourceAvailable struct {
 	Amount                                 int
@@ -322,9 +334,15 @@ func validateConfig(cfg Config) error {
 	}
 
 	portSet := make(map[string][]string) // port -> list of service names
+	servicesByPort := make(map[string][]ServiceConfig)
+	portOrder := make([]string, 0)
 	for _, svc := range cfg.Services {
 		if svc.ListenPort != "" {
+			if _, seen := servicesByPort[svc.ListenPort]; !seen {
+				portOrder = append(portOrder, svc.ListenPort)
+			}
 			portSet[svc.ListenPort] = append(portSet[svc.ListenPort], svc.Name)
+			servicesByPort[svc.ListenPort] = append(servicesByPort[svc.ListenPort], svc)
 		}
 	}
 	if cfg.OpenAiApi.ListenPort != "" {
@@ -333,10 +351,17 @@ func validateConfig(cfg Config) error {
 	if cfg.ManagementApi.ListenPort != "" {
 		portSet[cfg.ManagementApi.ListenPort] = append(portSet[cfg.ManagementApi.ListenPort], "Management API")
 	}
-	for p, svcs := range portSet {
-		if len(svcs) > 1 {
+	for _, port := range portOrder {
+		servicesOnPort := servicesByPort[port]
+		if len(servicesOnPort) > 1 {
+			issues = append(issues, validateSharedPortContextRouting(port, servicesOnPort)...)
+		}
+	}
+	for port, names := range portSet {
+		// ports shared between services and the OpenAI API / Management API remain conflicts
+		if len(names) > 1 && len(names) > len(servicesByPort[port]) {
 			issues = append(issues,
-				fmt.Sprintf("multiple services listening on port %s: %v", p, svcs))
+				fmt.Sprintf("multiple services listening on port %s: %v", port, names))
 		}
 	}
 
@@ -394,6 +419,33 @@ func validateConfig(cfg Config) error {
 		}
 	}
 
+	for i, svc := range cfg.Services {
+		nameOrIndex := serviceNameOrIndex(svc.Name, i)
+		if svc.ContextSize != nil && svc.ContextSizeBytes != nil {
+			issues = append(issues,
+				fmt.Sprintf("service %s defines both ContextSize and ContextSizeBytes, only one of them can be used", nameOrIndex))
+		}
+		if svc.ContextSize != nil && *svc.ContextSize == 0 {
+			issues = append(issues,
+				fmt.Sprintf("service %s has ContextSize 0, it must be greater than 0", nameOrIndex))
+		}
+		if svc.ContextSizeBytes != nil && *svc.ContextSizeBytes == 0 {
+			issues = append(issues,
+				fmt.Sprintf("service %s has ContextSizeBytes 0, it must be greater than 0", nameOrIndex))
+		}
+		if svc.Tokenizer != "" {
+			if _, found := GetTokenCounter(svc.Tokenizer); !found {
+				knownTokenizers := joinStrings(RegisteredTokenCounterNames(), ", ")
+				issues = append(issues,
+					fmt.Sprintf("service %s specifies unknown tokenizer %q, known tokenizers: %s", nameOrIndex, svc.Tokenizer, knownTokenizers))
+			}
+			if svc.ContextSizeBytes != nil {
+				issues = append(issues,
+					fmt.Sprintf("service %s specifies Tokenizer together with ContextSizeBytes: Tokenizer is only used with a token-based ContextSize", nameOrIndex))
+			}
+		}
+	}
+
 	// Validate ServiceUrl templates if present and not null
 	for i, svc := range cfg.Services {
 		nameOrIndex := serviceNameOrIndex(svc.Name, i)
@@ -424,6 +476,70 @@ func validateConfig(cfg Config) error {
 		return errors.New(" - " + joinStrings(issues, "\n - "))
 	}
 	return nil
+}
+
+// validateSharedPortContextRouting checks a group of services that share a
+// ListenPort. Sharing a port is only allowed for context-based routing, which
+// requires a well-formed, unambiguous set of context size tiers.
+func validateSharedPortContextRouting(port string, services []ServiceConfig) []string {
+	var groupIssues []string
+	names := make([]string, len(services))
+	for i, svc := range services {
+		names[i] = svc.Name
+	}
+
+	tokenModeServices := 0
+	byteModeServices := 0
+	firstTokenizer := ""
+	for _, svc := range services {
+		if svc.ContextSize == nil && svc.ContextSizeBytes == nil {
+			groupIssues = append(groupIssues,
+				fmt.Sprintf("service %q listening on port %s defines neither ContextSize nor ContextSizeBytes", svc.Name, port))
+			continue
+		}
+		if svc.ContextSize != nil {
+			tokenModeServices++
+			if svc.Tokenizer == "" {
+				groupIssues = append(groupIssues,
+					fmt.Sprintf("service %q listening on port %s defines ContextSize but no Tokenizer", svc.Name, port))
+			} else if firstTokenizer == "" {
+				firstTokenizer = svc.Tokenizer
+			} else if svc.Tokenizer != firstTokenizer {
+				groupIssues = append(groupIssues,
+					fmt.Sprintf("services listening on port %s must use the same tokenizer, found %q and %q", port, firstTokenizer, svc.Tokenizer))
+			}
+		} else {
+			byteModeServices++
+		}
+	}
+	if tokenModeServices > 0 && byteModeServices > 0 {
+		groupIssues = append(groupIssues,
+			fmt.Sprintf("services listening on port %s must use the same unit for context sizes: ContextSize (tokens) and ContextSizeBytes (bytes) cannot be mixed", port))
+	}
+
+	seenSizes := make(map[uint64]string)
+	for _, svc := range services {
+		var size uint64
+		if svc.ContextSize != nil {
+			size = uint64(*svc.ContextSize)
+		} else if svc.ContextSizeBytes != nil {
+			size = uint64(*svc.ContextSizeBytes)
+		} else {
+			continue
+		}
+		if otherService, duplicate := seenSizes[size]; duplicate {
+			groupIssues = append(groupIssues,
+				fmt.Sprintf("services %q and %q listening on port %s have a duplicate context size %d, sizes must be unique", otherService, svc.Name, port, size))
+		} else {
+			seenSizes[size] = svc.Name
+		}
+	}
+	if len(groupIssues) == 0 {
+		return nil
+	}
+	return append([]string{fmt.Sprintf(
+		"multiple services listening on port %s: [%s]. When multiple services share a port, context-based routing is enabled: every service must define ContextSize (with a Tokenizer) or ContextSizeBytes, and requests are routed to the service with the smallest context size that fits",
+		port, joinStrings(names, ", "))}, groupIssues...)
 }
 
 // validateGoTemplate validates that the given string is a valid Go template

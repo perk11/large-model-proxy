@@ -173,9 +173,27 @@ func main() {
 			)
 		}
 	}
+	// Group services by listen port: a port with a single service behaves as a
+	// plain transparent proxy, while a port shared by several services is
+	// served by a context router that picks the smallest context size that
+	// fits each request.
+	servicesByListenPort := make(map[string][]ServiceConfig)
+	listenPortOrder := make([]string, 0)
 	for _, service := range config.Services {
-		if service.ListenPort != "" {
-			go startProxy(service)
+		if service.ListenPort == "" {
+			continue
+		}
+		if _, seen := servicesByListenPort[service.ListenPort]; !seen {
+			listenPortOrder = append(listenPortOrder, service.ListenPort)
+		}
+		servicesByListenPort[service.ListenPort] = append(servicesByListenPort[service.ListenPort], service)
+	}
+	for _, listenPort := range listenPortOrder {
+		services := servicesByListenPort[listenPort]
+		if len(services) == 1 {
+			go startProxy(services[0])
+		} else {
+			go startContextRoutedProxy(listenPort, buildContextRouter(services))
 		}
 	}
 	if config.OpenAiApi.ListenPort != "" {

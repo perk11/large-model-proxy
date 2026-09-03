@@ -1,0 +1,35 @@
+{
+  "ResourcesAvailable": {
+    "TestResource": {
+      "Amount": 1
+    }
+  },
+  "LogLevel": "Debug",
+  "ManagementApi": {
+    "ListenPort": "2091"
+  },
+  "Services": [
+    {
+      "Name": "ServiceOne",
+      "ListenPort": "2087",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12087",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12087 -healthcheck-port 2089 -sleep-before-listening 3s",
+      "ResourceRequirements": {
+        "TestResource": 1
+      }
+    },
+    {
+      "Name": "ServiceTwo",
+      "ListenPort": "2088",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12088",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12088 -healthcheck-port 2090 -sleep-before-listening 2s -request-processing-duration 3s",
+      "ResourceRequirements": {
+        "TestResource": 1
+      }
+    }
+  ]
+}

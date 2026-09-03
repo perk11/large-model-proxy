@@ -1,0 +1,35 @@
+{
+  "Services": [
+    {
+      "Name": "service1",
+      "ListenPort": "2055",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12055",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12055 --plain-output"
+    },
+    {
+      "Name": "Service TWO2️⃣ Два",
+      "ListenPort": "2056",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12056",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12056 --plain-output --log-to-stdout"
+    },
+    {
+      "Name": "{Service 3}",
+      "ListenPort": "2059",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12059", //nothing is actually listening there
+      "Command": "./test-server/output-test.sh"
+    },
+    {
+      "Name": "[Service 4]",
+      "ListenPort": "2060",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12060", //nothing is actually listening there
+      "Command": "./test-server/output-test.sh",
+      "Args": "-stderr"
+    }
+  ]
+}

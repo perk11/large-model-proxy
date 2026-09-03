@@ -1,0 +1,42 @@
+{
+  "OpenAiApi": {
+    "ListenPort": "2071"
+  },
+  "ShutDownAfterInactivitySeconds": 3,
+  "Services": [
+    {
+      "Name": "openai-api-1",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12072",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12072",
+      "OpenAiApi": true
+    },
+    {
+      "Name": "openai-api-2",
+      "ListenPort": "2073",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "120723",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12073",
+      "OpenAiApi": true,
+      "OpenAiApiModels": [     "fizz", "buzz", "$-_.+!*'(),проверка"]},
+    {
+      "Name": "non-llm-1",
+      "ListenPort": "2074",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12074",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12074",
+      "OpenAiApi": false
+    },
+    {
+      "Name": "$-_.+!*'(),проверка-2/",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12075",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12075",
+      "OpenAiApi": true
+    }
+  ]
+}

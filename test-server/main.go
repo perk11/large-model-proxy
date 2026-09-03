@@ -29,6 +29,7 @@ func main() {
 	durationToSleepBeforeListeningForHealthCheck := flag.Duration("sleep-before-listening-for-healthcheck", 0, "How much time to sleep before listening for healthcheck starts, such as \"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	exitAfterDuration := flag.Duration("exit-after-duration", time.Duration(1<<63-1), "How much time to exit after the program start, such as \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\". ")
 	OpenAiApiPort := flag.String("openai-api-port", "", "OpenAI API port to listen on. If not specified, OpenAI API is disabled")
+	openAiApiKeepAlive := flag.Bool("openai-api-keep-alive", false, "Enable HTTP keep-alive on the OpenAI API server")
 	procPort := flag.String("procinfo-port", "", "Port to expose process information")
 	plainOutput := flag.Bool("plain-output", false, "Do not add timestamps to log output")
 	logToStdout := flag.Bool("log-to-stdout", false, "Send logs to stdout instead of stderr")
@@ -55,7 +56,7 @@ func main() {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
 	}
 	if *OpenAiApiPort != "" {
-		go OpenAiApiListen(OpenAiApiPort)
+		go OpenAiApiListen(OpenAiApiPort, openAiApiKeepAlive)
 	}
 	if *procPort != "" {
 		go procListen(*procPort)
@@ -322,7 +323,7 @@ type ChatCompletionChoice struct {
 	FinishReason *string `json:"finish_reason,omitempty"`
 }
 
-func OpenAiApiListen(port *string) {
+func OpenAiApiListen(port *string, keepAlive *bool) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/completions", handleCompletions)
 	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
@@ -331,7 +332,7 @@ func OpenAiApiListen(port *string) {
 		Addr:    ":" + *port,
 		Handler: mux,
 	}
-	server.SetKeepAlivesEnabled(false)
+	server.SetKeepAlivesEnabled(*keepAlive)
 	log.Printf("OpenAI API server listening on :%s", *port)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Could not start OpenAI API server: %s\n", err.Error())

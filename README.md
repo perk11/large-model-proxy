@@ -164,6 +164,7 @@ Below is a breakdown of what this configuration does:
 6. When ComfyUI is no longer in use, its container will be killed using the `docker kill comfyui` command. Other services will be terminated normally.
 7. `StartupTimeoutMilliseconds` in starting ComfyUI makes large-model-proxy wait up to 60 seconds before giving up and considering the ComfyUI startup failed (as opposed to the default value of 10 minutes).
 8. Service URLs are configured as follows:
+
    - **Automatic1111**: Uses the default URL template (`DefaultServiceUrl`) which resolves to `http://localhost:7860/`
    - **Gemma27B**: Uses a custom static URL `http://gemma-proxy-server/` (no port templating)
    - **Qwen2.5-7B-Instruct**: Explicitly set to `null`, so no URL will be generated even though a default is available
@@ -195,6 +196,96 @@ Currently, the following OpenAI API endpoints are supported:
 - `/v1/models` (This one makes it work with, e.g., Open WebUI seamlessly).
 - `/v1/models/{model}`
 - More to come
+
+## Context-based routing
+
+Several services can share a single `ListenPort` to form a set of context-size
+tiers. The proxy then routes every request to the service with the **smallest
+context size that still fits** the request, and transparently switches to the
+next larger service once a request outgrows the current one — even in the
+middle of a keep-alive connection. This makes it possible to run, for
+example, a fast 4k-context instance of a model for short conversations and a
+bigger 32k-context instance that is only loaded when conversations actually
+grow that long:
+
+```jsonc
+{
+  "Services": [
+    {
+      "Name": "Qwen3-8B-4k",
+      "ListenPort": "8085",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "18085",
+      "Command": "llama-server",
+      "Args": "-m Qwen3-8B.gguf -c 4096 --port 18085",
+      "ContextSize": 4096, // context window in tokens
+      "Tokenizer": "qwen3.8",
+      "ResourceRequirements": { "VRAM-GPU-1": 9000 },
+    },
+    {
+      "Name": "Qwen3-8B-32k",
+      "ListenPort": "8085", // same port: joins the same routing group
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "18086",
+      "Command": "llama-server",
+      "Args": "-m Qwen3-8B.gguf -c 32768 --port 18086",
+      "ContextSize": 32768,
+      "Tokenizer": "qwen3.8",
+      "ResourceRequirements": { "VRAM-GPU-1": 22000 },
+    },
+  ],
+}
+```
+
+Rules for a shared port:
+
+- Every service on the port must define a context size: either `ContextSize`
+  (tokens, together with a `Tokenizer`) or `ContextSizeBytes` (raw bytes).
+- All services in the group must use the same unit (tokens or bytes), the
+  same tokenizer, and unique context sizes. Starting a larger service follows
+  the usual resource logic: it may have to evict the smaller one (or any other
+  LRU service) first.
+
+### Token counting
+
+`Tokenizer` selects a registered token counter used to measure requests.
+Built-in counters: `qwen3.8` (alias `qwen3`) and `gemma4` (alias `gemma3`).
+Counting is a per-model-family approximation (character-class segmentation
+with per-family ratios) rather than an exact BPE implementation: it is close
+enough for tier selection but tends to slightly overestimate, so configure
+context sizes with headroom for the model's output tokens. Adding a counter
+for another model family is a single `RegisterTokenCounter` call in
+`tokenizer.go`.
+
+For services measured in `ContextSizeBytes`, the raw byte length of the
+request's text content is used instead of a token count — useful for models
+without a known tokenizer or for non-OpenAI-style HTTP backends.
+
+### How requests are measured
+
+Only the text content of the request body is counted: `messages[].content`
+(including content-part arrays, where non-text parts are skipped), `prompt`
+and `input` fields of OpenAI-style JSON requests. Bodies that are not
+recognizable JSON are measured as raw text. Requests that cannot be framed at
+all (no `Content-Length` and not chunked), non-HTTP traffic, and clients that
+send nothing for 60 seconds after connecting are blindly forwarded to the
+smallest tier.
+
+### Behavior details
+
+- Routing decisions happen per request. Switching to a larger tier closes the
+  current service connection, starts the larger service (with the usual
+  transparent startup delay for the client) and continues forwarding on the
+  same client connection. The smaller service then idles out on its own.
+- Switching only ever goes upward within a connection: a small follow-up
+  request (model list, new conversation on the same connection) stays on the
+  current tier so auxiliary requests cannot thrash services.
+- Requests larger than every configured tier are routed to the largest tier
+  (which will report the context-length error to the client).
+- A connection that outgrows all tiers keeps using the largest one.
+- Like all HTTP/1.1 intermediaries that re-route per request, this assumes
+  clients do not pipeline requests (every real HTTP client sends the next
+  request only after reading the previous response).
 
 ## Management API
 

@@ -1,0 +1,36 @@
+{
+  "ResourcesAvailable": {
+    "TestResource": {
+      "CheckCommand": "read -r original_integer < test-logs/resource-check-command.counter.txt; incremented_integer=$((original_integer + 1)); printf '%d\n' \"$incremented_integer\" | tee test-logs/resource-check-command.counter.txt",
+      "CheckIntervalMilliseconds": 1000
+    }
+  },
+  "LogLevel": "Debug",
+  "ManagementApi": {
+    "ListenPort": "2076"
+  },
+  "Services": [
+    {
+      "Name": "service-one",
+      "ListenPort": "2077",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12077",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12077 -healthcheck-port 2080 -sleep-before-listening 10s",
+      "ResourceRequirements": {
+        "TestResource": 4
+      }
+    },
+    {
+      "Name": "service-two",
+      "ListenPort": "2079",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12079",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12079 -healthcheck-port 2081",
+      "ResourceRequirements": {
+        "TestResource": 5
+      }
+    }
+  ]
+}

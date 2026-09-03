@@ -1035,3 +1035,295 @@ func TestLogLevelInvalidValue(t *testing.T) {
 	}
 	assert.Contains(t, err.Error(), "invalid LogLevel")
 }
+
+// --- context-based routing configuration ---
+
+func TestMultipleServicesSamePortWithContextSizesIsValid(t *testing.T) {
+	t.Parallel()
+	cfg, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "qwen-4k",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "qwen-32k",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 32768,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+	assert.Equal(t, uint(4096), *cfg.Services[0].ContextSize)
+	assert.Equal(t, "qwen3.8", cfg.Services[0].Tokenizer)
+	assert.Equal(t, uint(32768), *cfg.Services[1].ContextSize)
+}
+
+func TestMultipleServicesSamePortBytesModeIsValid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "small",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSizeBytes": 16000
+			},
+			{
+				"Name": "large",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSizeBytes": 128000
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+}
+
+func TestMultipleServicesSamePortMissingContextSize(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "sized",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "unsized",
+				"ListenPort": "8080",
+				"Command": "/bin/echo"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"multiple services listening on port 8080",
+		"\"unsized\"",
+		"ContextSize",
+	})
+}
+
+func TestMultipleServicesSamePortMixedContextUnits(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "tokens",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "bytes",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSizeBytes": 16000
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{
+		"port 8080",
+		"ContextSize",
+		"ContextSizeBytes",
+		"same unit",
+	})
+}
+
+func TestServiceWithBothContextSizeKindsInvalid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8",
+				"ContextSizeBytes": 16000
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"\"svc\"", "ContextSize", "ContextSizeBytes", "both"})
+}
+
+func TestMultipleServicesSamePortDuplicateContextSize(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "two",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"port 8080", "4096", "duplicate"})
+}
+
+func TestMultipleServicesSamePortUnknownTokenizer(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "nonexistent-tokenizer"
+			},
+			{
+				"Name": "two",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 8192,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"\"nonexistent-tokenizer\"", "unknown tokenizer", "\"one\""})
+}
+
+func TestUnknownTokenizerOnSingleServiceInvalid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "typo-tokenizer"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"unknown tokenizer", "\"typo-tokenizer\""})
+}
+
+func TestMultipleServicesSamePortMissingTokenizer(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096
+			},
+			{
+				"Name": "two",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 8192,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"Tokenizer", "\"one\"", "port 8080"})
+}
+
+func TestMultipleServicesSamePortInconsistentTokenizer(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "two",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 8192,
+				"Tokenizer": "gemma4"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"port 8080", "Tokenizer", "same tokenizer"})
+}
+
+func TestContextSizeBytesWithTokenizerInvalid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "small",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSizeBytes": 16000,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "large",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSizeBytes": 64000
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"\"small\"", "Tokenizer", "ContextSizeBytes"})
+}
+
+func TestZeroContextSizeInvalid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "one",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 0,
+				"Tokenizer": "qwen3.8"
+			},
+			{
+				"Name": "two",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 8192,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"\"one\"", "ContextSize", "greater than 0"})
+}
+
+func TestSingleServiceWithContextSizeIsValid(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"Services": [
+			{
+				"Name": "svc",
+				"ListenPort": "8080",
+				"Command": "/bin/echo",
+				"ContextSize": 4096,
+				"Tokenizer": "qwen3.8"
+			}
+		]
+	}`)
+	if err != nil {
+		t.Fatalf("did not expect an error but got: %v", err)
+	}
+}

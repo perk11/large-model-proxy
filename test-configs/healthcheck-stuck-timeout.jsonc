@@ -1,0 +1,26 @@
+{
+  "ResourcesAvailable": {
+    "CPU": {
+      "Amount": 1
+    }
+  },
+  "ManagementApi": {
+    "ListenPort": "2065"
+  },
+  "Services": [
+    {
+      "Name": "test-server-stuck-timeout",
+      "ListenPort": "2064",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12064",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12064 -startup-duration 24h",
+      "HealthcheckCommand": "false",
+      "HealthcheckIntervalMilliseconds": 200,
+      "StartupTimeoutMilliseconds": 2000,
+      "ResourceRequirements": {
+        "CPU": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "ResourcesAvailable": {
+    "CPU": 1
+  },
+  "DefaultServiceUrl": "http://localhost/{{.POR}}",
+  "ManagementApi": {
+    "ListenPort": "2035"
+  },
+  "Services": [
+    {
+      "Name": "self-dying-process",
+      "ListenPort": "2036",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12036",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12036 -exit-after-duration 1s --sleep-after-writing-pid-duration 3s",
+      "ResourceRequirements": {
+        "CPU": 1
+      }
+    },
+    {
+      "Name": "not-dying-process",
+      "ListenPort": "2037",
+      "ProxyTargetHost": "localhost",
+      "ProxyTargetPort": "12037",
+      "Command": "./test-server/test-server",
+      "Args": "-p 12037 --sleep-after-writing-pid-duration 3s",
+      "ResourceRequirements": {
+        "CPU": 1
+      }
+    }
+  ]
+}

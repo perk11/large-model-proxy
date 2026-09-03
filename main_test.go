@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -2535,10 +2536,10 @@ func TestProcessExitDuringShutdown(t *testing.T) {
 // forever calling stopService on it — visible in the logs as a tight, microsecond-
 // spaced repetition of:
 //
-//   Failed to send SIGTERM to -<pgid>: no such process
-//   Stopping service to free resources for <other>
-//   Sending SIGTERM to service process group: -<pgid>
-//   ...
+//	Failed to send SIGTERM to -<pgid>: no such process
+//	Stopping service to free resources for <other>
+//	Sending SIGTERM to service process group: -<pgid>
+//	...
 //
 // and the requesting service never starts (its client connection hangs).
 //
@@ -2558,6 +2559,13 @@ func TestProcessExitDuringShutdown(t *testing.T) {
 func TestEvictionOfAlreadyDeadProcessDoesNotLoop(t *testing.T) {
 	t.Parallel()
 
+	// The proxy log is opened in append mode and survives between runs, while
+	// the loop-count assertion below must only consider this run's lines
+	// (same pattern as the resource-check-command SetupFunc).
+	if err := os.Remove("test-logs/test_eviction-already-dead-process.log"); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("Failed to remove stale proxy log: %v", err)
+	}
+
 	// Hook file: monitorProcess blocks here after reaping the exited service-one
 	// process, keeping service-one in runningServices with a dead process.
 	hookDir := t.TempDir()
@@ -2567,9 +2575,9 @@ func TestEvictionOfAlreadyDeadProcessDoesNotLoop(t *testing.T) {
 	}
 
 	const (
-		managementApiAddress = "localhost:2129"
-		holderProxyAddress   = "localhost:2130"
-		holderTargetPort     = "12310"
+		managementApiAddress  = "localhost:2129"
+		holderProxyAddress    = "localhost:2130"
+		holderTargetPort      = "12310"
 		requesterProxyAddress = "localhost:2131"
 		requesterTargetPort   = "12311"
 		testCaseName          = "eviction-already-dead-process"
@@ -2586,21 +2594,21 @@ func TestEvictionOfAlreadyDeadProcessDoesNotLoop(t *testing.T) {
 		ManagementApi:                  ManagementApi{ListenPort: "2129"},
 		Services: []ServiceConfig{
 			{
-				Name:               "holder",
-				ListenPort:         "2130",
-				ProxyTargetHost:    "localhost",
-				ProxyTargetPort:    holderTargetPort,
-				Command:            "./test-server/test-server",
-				Args:               "-p " + holderTargetPort + " -exit-after-duration 800ms",
+				Name:                 "holder",
+				ListenPort:           "2130",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      holderTargetPort,
+				Command:              "./test-server/test-server",
+				Args:                 "-p " + holderTargetPort + " -exit-after-duration 800ms",
 				ResourceRequirements: map[string]int{"CPU": 1},
 			},
 			{
-				Name:               "requester",
-				ListenPort:         "2131",
-				ProxyTargetHost:    "localhost",
-				ProxyTargetPort:    requesterTargetPort,
-				Command:            "./test-server/test-server",
-				Args:               "-p " + requesterTargetPort,
+				Name:                 "requester",
+				ListenPort:           "2131",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      requesterTargetPort,
+				Command:              "./test-server/test-server",
+				Args:                 "-p " + requesterTargetPort,
 				ResourceRequirements: map[string]int{"CPU": 1},
 			},
 		},
@@ -2696,11 +2704,168 @@ func TestEvictionOfAlreadyDeadProcessDoesNotLoop(t *testing.T) {
 		}
 		stopCount := strings.Count(logText, "Stopping service to free resources")
 		if stopCount > 5 {
-			t.Errorf("Expected the eviction to run a handful of times at most, but " +
+			t.Errorf("Expected the eviction to run a handful of times at most, but "+
 				"\"Stopping service to free resources\" appeared %d times in the log — "+
 				"this is the endless loop from issue #119", stopCount)
 		}
 		t.Logf("\"Stopping service to free resources\" appeared %d time(s) in the proxy log", stopCount)
+	}
+}
+
+// TestServiceWaitingForResourcesNotStartedOnInterrupt is a regression test for the
+// shutdown contract fixed in b67f4b0: a service that is starved for resources
+// (parked in reserveResources waiting for a unit held by another service) must
+// NOT be started once an interrupt signal is received, even though interrupting
+// stops the holder and would otherwise free the resource. The proxy must simply
+// close the still-unstarted service's client connection and exit.
+//
+// Without the interrupt exit points, the waiter could be re-evaluated while the
+// proxy is tearing down (e.g. once the holder releases its resource) and proceed
+// to spawn its backend mid-shutdown. This test asserts the observable contract:
+// the waiter's backend process is never spawned (no "Starting"/"Service started"
+// log line for it), its client connection is closed, and the proxy shuts down
+// promptly.
+func TestServiceWaitingForResourcesNotStartedOnInterrupt(t *testing.T) {
+	t.Parallel()
+
+	const managementApiAddress = "localhost:2210"
+	const holderProxyAddress = "localhost:2211"
+	const waiterProxyAddress = "localhost:2212"
+	const testName = "resource-waiter-not-started-on-interrupt"
+	const holderServiceName = testName + "_holder"
+	const waiterServiceName = testName + "_waiter"
+
+	// The waiter's max-wait is far longer than the test, so the only thing that
+	// can unblock it is the resource becoming free — never a self-imposed timeout.
+	// The holder's idle timeout is likewise far longer than the test, so it keeps
+	// holding TestResource (with its proxied connection open, making it
+	// non-evictable) until the proxy is interrupted.
+	maxWaitSeconds := uint(60)
+	holderIdleTimeoutSeconds := uint(300)
+	cfg := Config{
+		MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds: &maxWaitSeconds,
+		ResourcesAvailable: map[string]ResourceAvailable{"TestResource": {Amount: 1}},
+		ManagementApi:      ManagementApi{ListenPort: "2210"},
+		Services: []ServiceConfig{
+			{
+				Name:                           "holder",
+				ListenPort:                     "2211",
+				ProxyTargetHost:                "localhost",
+				ProxyTargetPort:                "12210",
+				Command:                        "./test-server/test-server",
+				Args:                           "-p 12210 -sleep-after-writing-pid-duration 60s",
+				ShutDownAfterInactivitySeconds: holderIdleTimeoutSeconds,
+				ResourceRequirements:           map[string]int{"TestResource": 1},
+			},
+			{
+				Name:                 "waiter",
+				ListenPort:           "2212",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "12211",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 12211",
+				ResourceRequirements: map[string]int{"TestResource": 1},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+
+	// Start from a clean proxy log so the post-shutdown read only reflects this
+	// run (the proxy opens it with O_APPEND, so removing it here yields a fresh
+	// file that captures exactly this run's "Starting"/"Service started" lines).
+	proxyLogPath := fmt.Sprintf("test-logs/test_%s.log", testName)
+	_ = os.Remove(proxyLogPath)
+
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	// Defensive: if the regression fires and the waiter's backend is spawned
+	// mid-shutdown, it is not in the proxy's stop-loop snapshot and would be
+	// orphaned on os.Exit. Kill any such leftover so it cannot outlive the test.
+	defer func() {
+		_ = exec.Command("pkill", "-f", "test-server/test-server -p 12211").Run()
+	}()
+	defer func() {
+		// The proxy exits via the explicit SIGINT below; this is a safety net in
+		// case the test bails out before reaching it.
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Signal(syscall.SIGINT)
+			select {
+			case <-waitChannel:
+			case <-time.After(15 * time.Second):
+				_ = cmd.Process.Kill()
+			}
+		}
+		for _, address := range []string{holderProxyAddress, waiterProxyAddress, managementApiAddress, "localhost:12210", "localhost:12211"} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	// 1. Start the holder and keep its proxied connection open so it holds
+	//    TestResource and is non-evictable.
+	holderConn, err := net.DialTimeout("tcp", holderProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to holder: %v", err)
+	}
+	defer func() { _ = holderConn.Close() }()
+	readPidFromOpenConnection(t, holderConn)
+	statusResponse := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, statusResponse, holderServiceName, ServiceStateRunning, 0, 1, map[string]int{"TestResource": 1})
+
+	// 2. A connection to the waiter must block: TestResource is held by the
+	//    non-evictable holder, so the waiter parks in waiting_for_resources.
+	waiterConn, err := net.DialTimeout("tcp", waiterProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to waiter: %v", err)
+	}
+	defer func() { _ = waiterConn.Close() }()
+	waitForServiceState(t, managementApiAddress, waiterServiceName, ServiceStateWaitingForResources, 3*time.Second)
+
+	// 3. Interrupt the proxy while the waiter is still starved.
+	shutdownStart := time.Now()
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatalf("Failed to send SIGINT to proxy: %v", err)
+	}
+
+	// 4. The proxy must shut down promptly, and the waiter's still-unstarted
+	//    client connection must be closed (the proxy must not keep it open or
+	//    start its backend). Both happen when the proxy exits; bound the waits so
+	//    a hang fails fast.
+	select {
+	case <-waitChannel:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("proxy did not shut down within 10s of SIGINT while a service was waiting for resources")
+	}
+	shutdownDuration := time.Since(shutdownStart)
+	t.Logf("Shutdown completed in %v", shutdownDuration)
+	if shutdownDuration > 8*time.Second {
+		t.Errorf("shutdown took %v, expected prompt (< 8s): a resource-starved service must not be started (and thus delay) shutdown", shutdownDuration)
+	}
+	// The connection is closed as part of the proxy exiting; by now it must be
+	// gone. Re-check (rather than relying on the exit alone) so a regression that
+	// leaves it open is caught explicitly.
+	assertRemoteClosedWithin(t, waiterConn, 3*time.Second)
+
+	// 5. The core contract: the waiter's backend must NEVER have been started.
+	//    runServiceCommand logs "[<name>] Starting \"...\"" the instant resources
+	//    are reserved and the process is spawned, and "Service started with pid"
+	//    once fully up — neither line may appear for the waiter.
+	logContents, readErr := os.ReadFile(proxyLogPath)
+	if readErr != nil {
+		t.Fatalf("failed to read proxy log %s: %v", proxyLogPath, readErr)
+	}
+	logString := string(logContents)
+	startMarker := fmt.Sprintf("[%s] Starting \"", waiterServiceName)
+	if strings.Contains(logString, startMarker) {
+		t.Errorf("the resource-starved waiter's backend was spawned during shutdown (log contains %q); the proxy must not start a service that had not yet started when interrupted", startMarker)
+	}
+	if strings.Contains(logString, fmt.Sprintf("[%s] Service started with pid", waiterServiceName)) {
+		t.Errorf("the resource-starved waiter's backend fully started during shutdown; the proxy must not start a service that had not yet started when interrupted")
 	}
 }
 

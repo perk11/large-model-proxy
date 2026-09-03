@@ -60,31 +60,39 @@ Client → large-model-proxy → [Service Process]
 
 ### Source Files
 
-| File                              | Purpose                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| `main.go`                         | Entry point, signal handling, and ResourceManager bookkeeping (connection counting, lookup) |
-| `config.go`                       | Configuration loading, validation, and defaults (JSONC parsing)                             |
-| `connection.go`                   | Per-service TCP listeners, client connection handling, and bidirectional traffic forwarding |
-| `service.go`                      | Service lifecycle: on-demand start, health checks, and connecting to a running service      |
-| `service_process.go`              | Service process spawning/stopping, output logging, and process-exit monitoring              |
-| `resources.go`                    | Resource reservation, LRU eviction, and resource release logic                              |
-| `openai_api.go`                   | Unified OpenAI API server and request routing to backends by model name                     |
-| `management_api.go`               | Management HTTP server and embedded web dashboard assets                                    |
-| `monitor_resources.go`            | Resource availability monitoring and change broadcasting                                    |
-| `monitor_process_hook.go`         | Test-only synchronization hook for process-exit timing (compiled with the `testhooks` tag)  |
-| `monitor_process_hook_default.go` | No-op production stub for `monitor_process_hook.go`                                         |
-| `tty.go`                          | TTY/terminal handling utilities                                                             |
+| File                              | Purpose                                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `main.go`                         | Entry point, signal handling, and ResourceManager bookkeeping (connection counting, lookup)               |
+| `config.go`                       | Configuration loading, validation, and defaults (JSONC parsing)                                           |
+| `connection.go`                   | Per-service TCP listeners, client connection handling, and bidirectional traffic forwarding               |
+| `service.go`                      | Service lifecycle: on-demand start, health checks, and connecting to a running service                    |
+| `service_process.go`              | Service process spawning/stopping, output logging, and process-exit monitoring                            |
+| `resources.go`                    | Resource reservation, LRU eviction, and resource release logic                                            |
+| `openai_api.go`                   | Unified OpenAI API server and request routing to backends by model name                                   |
+| `context_router.go`               | Context-based routing: shared-port service tiers, request size measurement, per-connection tier switching |
+| `http_request_splitter.go`        | Incremental HTTP request framing from a raw TCP stream (used by context routing)                          |
+| `tokenizer.go`                    | Named token counters (heuristic, per model family) used to measure request context sizes                  |
+| `management_api.go`               | Management HTTP server and embedded web dashboard assets                                                  |
+| `monitor_resources.go`            | Resource availability monitoring and change broadcasting                                                  |
+| `monitor_process_hook.go`         | Test-only synchronization hook for process-exit timing (compiled with the `testhooks` tag)                |
+| `monitor_process_hook_default.go` | No-op production stub for `monitor_process_hook.go`                                                       |
+| `tty.go`                          | TTY/terminal handling utilities                                                                           |
 
 ### Test Files
 
-| File                        | Purpose                                             |
-| --------------------------- | --------------------------------------------------- |
-| `main_test.go`              | Core proxy integration tests                        |
-| `config_test.go`            | Configuration parsing and validation tests          |
-| `management_api_test.go`    | Management API endpoint tests                       |
-| `monitor_resources_test.go` | Resource monitoring tests                           |
-| `util_test.go`              | Shared test utilities and helpers                   |
-| `test-server/main.go`       | Simulated backend service used in integration tests |
+| File                                 | Purpose                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| `main_test.go`                       | Core proxy integration tests                                                         |
+| `config_test.go`                     | Configuration parsing and validation tests                                           |
+| `management_api_test.go`             | Management API endpoint tests                                                        |
+| `monitor_resources_test.go`          | Resource monitoring tests                                                            |
+| `context_router_test.go`             | Context routing tier selection and request unit counting tests                       |
+| `context_routing_connection_test.go` | In-process tests for the routed connection handler (routing, switching, passthrough) |
+| `context_routing_e2e_test.go`        | End-to-end context routing test through the real proxy binary                        |
+| `http_request_splitter_test.go`      | HTTP request framing tests                                                           |
+| `tokenizer_test.go`                  | Token counter tests                                                                  |
+| `util_test.go`                       | Shared test utilities and helpers                                                    |
+| `test-server/main.go`                | Simulated backend service used in integration tests                                  |
 
 ### Other Key Files
 

@@ -132,7 +132,7 @@ Below is an example `config.jsonc`:
     {
       "Name": "ComfyUI",
       "ListenPort": "8188",
-      "TargetPort": "18188",
+      "ProxyTargetPort": "18188",
       "Command": "docker",
       "Args": "run -d --rm --name comfyui --device nvidia.com/gpu=all -v /opt/comfyui:/workspace -p 18188:8188 pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel /bin/bash -c 'cd /workspace && source .venv/bin/activate && apt update && apt install -y git && pip install -r requirements.txt && python main.py --listen'",
       "KillCommand": "docker kill comfyui",

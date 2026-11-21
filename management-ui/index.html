@@ -113,19 +113,28 @@
     <script>
       const refreshIntervalMilliseconds = 1000;
 
+      function compareNames(a, b) {
+        return a.name.toUpperCase().localeCompare(b.name.toUpperCase());
+      }
+
       function getSortFunction(sortOrder) {
         switch (sortOrder) {
           case "last_used":
             return (a, b) => {
-              if (a.last_used === b.last_used)
-                return a.name.toUpperCase() > b.name.toUpperCase();
-              if (a.last_used === null && b.last_used !== null) {
+              if (a.last_used === null && b.last_used === null) {
+                return compareNames(a, b);
+              }
+              if (a.last_used === null) {
                 return 1;
               }
-              if (a.last_used !== null && b.last_used === null) {
+              if (b.last_used === null) {
                 return -1;
               }
-              return a.last_used < b.last_used;
+              // Go trims trailing zeros from fractional seconds, so the strings do not compare lexicographically
+              return (
+                Date.parse(b.last_used) - Date.parse(a.last_used) ||
+                compareNames(a, b)
+              );
             };
           case "connections":
             return (a, b) => {
@@ -133,13 +142,10 @@
                 a.proxied_connections + a.waiting_connections;
               const bConnections =
                 b.proxied_connections + b.waiting_connections;
-              if (aConnections === bConnections) {
-                return a.name.toUpperCase() > b.name.toUpperCase();
-              }
-              return aConnections < bConnections;
+              return bConnections - aConnections || compareNames(a, b);
             };
           case "name":
-            return (a, b) => a.name.toUpperCase() > b.name.toUpperCase();
+            return compareNames;
           default:
             throw `Unexpected sort order: ${sortOrder}`;
         }

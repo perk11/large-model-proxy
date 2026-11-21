@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -18,6 +20,8 @@ import (
 var appStarted = false
 
 var mainPortConnections = 0
+
+var ignoreClientEOF = false
 
 func main() {
 	port := flag.String("p", "", "Main port to listen on")
@@ -36,6 +40,7 @@ func main() {
 	ignoreSigterm := flag.Bool("ignore-sigterm", false, "Ignore SIGTERM signal (for testing)")
 	openAiApiKeepAlive := flag.Bool("openai-api-keep-alive", false, "Keep OpenAI API connections alive between requests, like real inference servers do")
 	name := flag.String("name", "", "If set, OpenAI API responses carry it in the X-Test-Server-Name header")
+	flag.BoolVar(&ignoreClientEOF, "ignore-client-eof", false, "Treat EOF from a client on the main port as a half-close and still respond, instead of treating it as a disconnect")
 	flag.Parse()
 
 	if *plainOutput {
@@ -168,6 +173,9 @@ func handleMainPortConnection(conn net.Conn, requestProcessingDuration *time.Dur
 		buf := make([]byte, 1)
 		for {
 			if _, err := conn.Read(buf); err != nil {
+				if ignoreClientEOF && errors.Is(err, io.EOF) {
+					return
+				}
 				// Check if the server has already signaled a normal close
 				select {
 				case <-srvClosed:

@@ -4644,3 +4644,58 @@ func TestOpenAiApiPipelinedRequestsAreBothAnswered(t *testing.T) {
 		t.Errorf("pipelined chat completion returned %d", chatResponse.StatusCode)
 	}
 }
+
+func TestHalfClosedClientStillReceivesResponse(t *testing.T) {
+	t.Parallel()
+	const testName = "half-close"
+	const serviceProxyAddress = "localhost:3030"
+	const managementApiAddress = "localhost:3031"
+	cfg := Config{
+		ManagementApi: ManagementApi{ListenPort: "3031"},
+		Services: []ServiceConfig{{
+			Name:            "service",
+			ListenPort:      "3030",
+			ProxyTargetHost: "localhost",
+			ProxyTargetPort: "13030",
+			Command:         "./test-server/test-server",
+			Args:            "-p 13030 -request-processing-duration 500ms -ignore-client-eof",
+		}},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{serviceProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	runReadPidCloseConnection(t, serviceProxyAddress)
+
+	connection, err := net.DialTimeout("tcp", serviceProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer func() { _ = connection.Close() }()
+	_ = connection.SetDeadline(time.Now().Add(10 * time.Second))
+	waitForProxiedConnections(t, managementApiAddress, testName+"_service", 1, 3*time.Second)
+	if err := connection.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatalf("CloseWrite failed: %v", err)
+	}
+	// A FIN may also mean the client is gone, so it must not keep the service in use.
+	waitForProxiedConnections(t, managementApiAddress, testName+"_service", 0, 3*time.Second)
+
+	response, _ := io.ReadAll(connection)
+	if len(response) == 0 || !isNumeric(string(response)) {
+		t.Errorf("half-closed client got %q instead of a pid", response)
+	}
+}

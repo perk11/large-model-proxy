@@ -59,7 +59,8 @@ type bufferedPipe struct {
 	mu         sync.Mutex
 	buf        bytes.Buffer
 	limit      uint64 // max bytes buffered before Write blocks; 0 => unbounded
-	writerDone bool   // set by closeWrite; once set, Reads return io.EOF after the buffer drains
+	writerDone bool   // set by closeWrite; once set, Reads return writerErr or io.EOF after the buffer drains
+	writerErr  error  // the error that ended the writer, nil after a clean EOF
 	closed     bool   // read end closed by the consumer via closeRead
 	cond       *sync.Cond
 }
@@ -96,14 +97,15 @@ func (b *bufferedPipe) Write(p []byte) (int, error) {
 }
 
 // closeWrite marks the writer as done. Subsequent Reads, after draining any
-// buffered data, return io.EOF regardless of err (so partially-buffered request
-// bytes are still delivered before EOF). This MUST be tracked with a dedicated
-// flag rather than err != nil: io.Copy returns a nil error on a clean EOF, so
-// gating on err would leave Read blocked forever after a normal client close
-// (which would stall forwardConnection and leak the proxied-connection count).
-func (b *bufferedPipe) closeWrite(_ error) {
+// buffered data, return err, or io.EOF if err is nil, so that the reader can
+// tell a clean close from a broken connection. This MUST be tracked with a
+// dedicated flag rather than err != nil: io.Copy returns a nil error on a clean
+// EOF, so gating on err would leave Read blocked forever after a normal client
+// close (which would stall forwardConnection and leak the proxied-connection count).
+func (b *bufferedPipe) closeWrite(err error) {
 	b.mu.Lock()
 	b.writerDone = true
+	b.writerErr = err
 	b.cond.Broadcast()
 	b.mu.Unlock()
 }
@@ -122,7 +124,10 @@ func (b *bufferedPipe) Read(p []byte) (int, error) {
 	defer b.mu.Unlock()
 	for b.buf.Len() == 0 {
 		if b.writerDone {
-			return 0, io.EOF // writer done and nothing left buffered
+			if b.writerErr != nil {
+				return 0, b.writerErr
+			}
+			return 0, io.EOF
 		}
 		if b.closed {
 			return 0, io.ErrClosedPipe
@@ -204,7 +209,14 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	log.Printf("[%s] Opened service connection %s", serviceConfig.Name, humanReadableConnection(serviceConnection))
 	trackServiceLastUsed(serviceConfig, true)
 	resourceManager.incrementConnection(serviceConfig.Name, 1, -1)
-	defer resourceManager.incrementConnection(serviceConfig.Name, -1, 0)
+	var stopCountingAsInUseOnce sync.Once
+	stopCountingAsInUse := func() {
+		stopCountingAsInUseOnce.Do(func() {
+			trackServiceLastUsed(serviceConfig, false)
+			resourceManager.incrementConnection(serviceConfig.Name, -1, 0)
+		})
+	}
+	defer stopCountingAsInUse()
 
 	if len(dataToSendToServiceBeforeForwardingFromClient) > 0 {
 		if _, err := serviceConnection.Write(dataToSendToServiceBeforeForwardingFromClient); err != nil {
@@ -226,9 +238,7 @@ func handleConnection(clientConnection net.Conn, serviceConfig ServiceConfig, da
 	}
 
 	//forwardConnection will handle closing the connections at this point
-	forwardConnection(clientReader, clientConnection, serviceConnection, serviceConfig.Name)
-
-	trackServiceLastUsed(serviceConfig, false)
+	forwardConnection(clientReader, clientConnection, serviceConnection, serviceConfig.Name, stopCountingAsInUse)
 }
 
 func closeConnectionAndHandleError(connection net.Conn, serviceConfig ServiceConfig, connectionType string, reason string) {
@@ -293,14 +303,20 @@ func (m *channelMutex) LockOrCancel(cancel <-chan struct{}) bool {
 func (m *channelMutex) Unlock() {
 	m.token <- struct{}{}
 }
-func forwardConnection(clientReader io.Reader, clientConnection, serviceConnection net.Conn, serviceName string) {
+
+// forwardConnection copies data both ways until the service closes its side.
+// stopCountingAsInUse is called when the client finishes sending: the client may
+// only have half-closed and still be waiting for the reply, but a FIN may also
+// mean the client is gone, so the connection will no longer keep the service
+// from being stopped.
+func forwardConnection(clientReader io.Reader, clientConnection, serviceConnection net.Conn, serviceName string, stopCountingAsInUse func()) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	var EOFOnWriteFromServerToClient *bool
 
 	go func() {
 		defer wg.Done()
-		copyAndHandleErrors(
+		copyErr := copyAndHandleErrors(
 			serviceConnection,
 			clientReader,
 			fmt.Sprintf("[%s] (service (%s) to client (%s))", serviceName, humanReadableConnection(serviceConnection), humanReadableConnection(clientConnection)),
@@ -310,7 +326,15 @@ func forwardConnection(clientReader io.Reader, clientConnection, serviceConnecti
 			EOFOnWriteFromServerToClient = new(bool)
 			*EOFOnWriteFromServerToClient = true
 		}
-		// Once done copying client->service, close service side.
+		if copyErr == nil {
+			stopCountingAsInUse()
+			if halfCloser, ok := serviceConnection.(interface{ CloseWrite() error }); ok {
+				if err := halfCloser.CloseWrite(); err != nil && !errors.Is(err, net.ErrClosed) {
+					log.Printf("[%s] Error passing the client's end of stream on to the service: %v", serviceName, err)
+				}
+				return
+			}
+		}
 		err := serviceConnection.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("[%s] Error closing service to client connection: %v", serviceName, err)
@@ -333,6 +357,7 @@ func forwardConnection(clientReader io.Reader, clientConnection, serviceConnecti
 		}
 	}()
 	wg.Wait()
+	_ = serviceConnection.Close()
 	var reason string
 	if *EOFOnWriteFromServerToClient {
 		reason = "EOF on write from server to client"
@@ -347,10 +372,11 @@ func forwardConnection(clientReader io.Reader, clientConnection, serviceConnecti
 		reason,
 	)
 }
-func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) {
+func copyAndHandleErrors(dst io.Writer, src io.Reader, logPrefix string) error {
 	_, err := io.Copy(dst, src)
 	//ErrClosed is not logged since it happens routinely when connection is closed without sending/receiving EOF
 	if err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("%s error during data transfer: %v", logPrefix, err)
 	}
+	return err
 }

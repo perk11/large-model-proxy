@@ -322,6 +322,7 @@ func performHealthCheck(serviceConfig ServiceConfig, timeout time.Duration, proc
 
 func connectToService(serviceConfig ServiceConfig, clientDisconnected <-chan struct{}) net.Conn {
 	log.Printf("[%s] Opening new service connection to %s:%s", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort)
+	waitForServiceConnectHook(serviceConfig.Name)
 	serviceConn, err := net.Dial("tcp", net.JoinHostPort(serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort))
 	if err != nil {
 		log.Printf("[%s] Error: failed to connect to %s:%s: %v", serviceConfig.Name, serviceConfig.ProxyTargetHost, serviceConfig.ProxyTargetPort, err)

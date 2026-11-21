@@ -344,7 +344,7 @@ func canBeStopped(serviceName string, runningService *RunningService) bool {
 	resourceManager.connectionStatsMutex.Lock()
 	defer resourceManager.connectionStatsMutex.Unlock()
 	connectionStats := resourceManager.connectionStats[serviceName]
-	return connectionStats.proxied == 0
+	return connectionStats.proxied == 0 && connectionStats.waiting == 0
 }
 
 func releaseResourcesWhenServiceMutexIsLocked(used map[string]int) {

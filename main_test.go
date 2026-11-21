@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -4698,4 +4699,109 @@ func TestHalfClosedClientStillReceivesResponse(t *testing.T) {
 	if len(response) == 0 || !isNumeric(string(response)) {
 		t.Errorf("half-closed client got %q instead of a pid", response)
 	}
+}
+
+func TestIdleTimerDoesNotStopServiceWithWaitingClient(t *testing.T) {
+	t.Parallel()
+	const testName = "idle-timer-waiting-client"
+	const managementApiAddress = "localhost:3041"
+	const serviceProxyAddress = "localhost:3040"
+	connectHookFile := filepath.Join(t.TempDir(), "connect-hook")
+	cfg := Config{
+		ManagementApi: ManagementApi{ListenPort: "3041"},
+		Services: []ServiceConfig{{
+			Name:                           "service",
+			ListenPort:                     "3040",
+			ProxyTargetHost:                "localhost",
+			ProxyTargetPort:                "13040",
+			Command:                        "./test-server/test-server",
+			Args:                           "-p 13040",
+			ShutDownAfterInactivitySeconds: 1,
+		}},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxyWithEnv(testName, configFilePath, "", []string{"PROXY_CONNECT_HOOK_FILE=" + connectHookFile}, waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{serviceProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	connectClientHeldBeforeDialingService(t, serviceProxyAddress, managementApiAddress, testName+"_service", connectHookFile)
+	time.Sleep(2500 * time.Millisecond)
+	status := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, status, testName+"_service", ServiceStateRunning, 1, 0, map[string]int{})
+}
+
+func TestEvictionDoesNotStopServiceWithWaitingClient(t *testing.T) {
+	t.Parallel()
+	const testName = "eviction-waiting-client"
+	const managementApiAddress = "localhost:3044"
+	const victimProxyAddress = "localhost:3042"
+	const requesterProxyAddress = "localhost:3043"
+	connectHookFile := filepath.Join(t.TempDir(), "connect-hook")
+	maxWaitSeconds := uint(3)
+	cfg := Config{
+		MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds: &maxWaitSeconds,
+		ResourcesAvailable: map[string]ResourceAvailable{"R": {Amount: 1}},
+		ManagementApi:      ManagementApi{ListenPort: "3044"},
+		Services: []ServiceConfig{
+			{
+				Name:                 "victim",
+				ListenPort:           "3042",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "13042",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 13042",
+				ResourceRequirements: map[string]int{"R": 1},
+			},
+			{
+				Name:                 "requester",
+				ListenPort:           "3043",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "13043",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 13043",
+				ResourceRequirements: map[string]int{"R": 1},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxyWithEnv(testName, configFilePath, "", []string{"PROXY_CONNECT_HOOK_FILE=" + connectHookFile}, waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{victimProxyAddress, requesterProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	connectClientHeldBeforeDialingService(t, victimProxyAddress, managementApiAddress, testName+"_victim", connectHookFile)
+
+	requesterClient, err := net.DialTimeout("tcp", requesterProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to requester: %v", err)
+	}
+	defer func() { _ = requesterClient.Close() }()
+	time.Sleep(1500 * time.Millisecond)
+	status := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, status, testName+"_victim", ServiceStateRunning, 1, 0, map[string]int{"R": 1})
 }

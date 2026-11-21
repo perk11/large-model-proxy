@@ -60,20 +60,20 @@ Client → large-model-proxy → [Service Process]
 
 ### Source Files
 
-| File                              | Purpose                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| `main.go`                         | Entry point, signal handling, and ResourceManager bookkeeping (connection counting, lookup) |
-| `config.go`                       | Configuration loading, validation, and defaults (JSONC parsing)                             |
-| `connection.go`                   | Per-service TCP listeners, client connection handling, and bidirectional traffic forwarding |
-| `service.go`                      | Service lifecycle: on-demand start, health checks, and connecting to a running service      |
-| `service_process.go`              | Service process spawning/stopping, output logging, and process-exit monitoring              |
-| `resources.go`                    | Resource reservation, LRU eviction, and resource release logic                              |
-| `openai_api.go`                   | Unified OpenAI API server and request routing to backends by model name                     |
-| `management_api.go`               | Management HTTP server and embedded web dashboard assets                                    |
-| `monitor_resources.go`            | Resource availability monitoring and change broadcasting                                    |
-| `monitor_process_hook.go`         | Test-only synchronization hook for process-exit timing (compiled with the `testhooks` tag)  |
-| `monitor_process_hook_default.go` | No-op production stub for `monitor_process_hook.go`                                         |
-| `tty.go`                          | TTY/terminal handling utilities                                                             |
+| File                    | Purpose                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `main.go`               | Entry point, signal handling, and ResourceManager bookkeeping (connection counting, lookup)       |
+| `config.go`             | Configuration loading, validation, and defaults (JSONC parsing)                                   |
+| `connection.go`         | Per-service TCP listeners, client connection handling, and bidirectional traffic forwarding       |
+| `service.go`            | Service lifecycle: on-demand start, health checks, and connecting to a running service            |
+| `service_process.go`    | Service process spawning/stopping, output logging, and process-exit monitoring                    |
+| `resources.go`          | Resource reservation, LRU eviction, and resource release logic                                    |
+| `openai_api.go`         | Unified OpenAI API server and request routing to backends by model name                           |
+| `management_api.go`     | Management HTTP server and embedded web dashboard assets                                          |
+| `monitor_resources.go`  | Resource availability monitoring and change broadcasting                                          |
+| `test_hooks.go`         | Test-only synchronization hooks, e.g. for process-exit timing (compiled with the `testhooks` tag) |
+| `test_hooks_default.go` | No-op production stubs for `test_hooks.go`                                                        |
+| `tty.go`                | TTY/terminal handling utilities                                                                   |
 
 ### Test Files
 

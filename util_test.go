@@ -790,3 +790,27 @@ func assertRemoteClosedWithin(t *testing.T, connection net.Conn, within time.Dur
 func isConnectionReset(err error) bool {
 	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
 }
+
+// connectClientHeldBeforeDialingService leaves the service running with one
+// client stuck in the "waiting" state:
+//  1. A first client starts the service and disconnects.
+//  2. The connect hook file is created, so the proxy pauses right before it
+//     opens a connection to the service.
+//  3. A second client connects. The proxy accepts it but stays paused, so the
+//     client is counted as waiting until the hook file is deleted.
+func connectClientHeldBeforeDialingService(t *testing.T, proxyAddress string, managementApiAddress string, serviceName string, connectHookFile string) {
+	t.Helper()
+	runReadPidCloseConnection(t, proxyAddress)
+	waitForProxiedConnections(t, managementApiAddress, serviceName, 0, 3*time.Second)
+
+	if err := os.WriteFile(connectHookFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to create connect hook file: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(connectHookFile) })
+	waitingClient, err := net.DialTimeout("tcp", proxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect waiting client: %v", err)
+	}
+	t.Cleanup(func() { _ = waitingClient.Close() })
+	waitForWaitingConnections(t, managementApiAddress, serviceName, 1, 3*time.Second)
+}

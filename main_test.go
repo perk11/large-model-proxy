@@ -4805,3 +4805,83 @@ func TestEvictionDoesNotStopServiceWithWaitingClient(t *testing.T) {
 	status := getStatusFromManagementAPI(t, managementApiAddress)
 	verifyServiceStatus(t, status, testName+"_victim", ServiceStateRunning, 1, 0, map[string]int{"R": 1})
 }
+
+func TestEvictionSkippedWhenStoppingIdleServicesCannotFreeEnough(t *testing.T) {
+	t.Parallel()
+	const testName = "futile-eviction"
+	const managementApiAddress = "localhost:3053"
+	const busyProxyAddress = "localhost:3050"
+	const idleProxyAddress = "localhost:3051"
+	const requesterProxyAddress = "localhost:3052"
+	maxWaitSeconds := uint(2)
+	cfg := Config{
+		MaxTimeToWaitForServiceToCloseConnectionBeforeGivingUpSeconds: &maxWaitSeconds,
+		ResourcesAvailable: map[string]ResourceAvailable{"R": {Amount: 10}},
+		ManagementApi:      ManagementApi{ListenPort: "3053"},
+		Services: []ServiceConfig{
+			{
+				Name:                 "busy",
+				ListenPort:           "3050",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "13050",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 13050 -sleep-after-writing-pid-duration 30s",
+				ResourceRequirements: map[string]int{"R": 6},
+			},
+			{
+				Name:                 "idle",
+				ListenPort:           "3051",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "13051",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 13051",
+				ResourceRequirements: map[string]int{"R": 2},
+			},
+			{
+				Name:                 "requester",
+				ListenPort:           "3052",
+				ProxyTargetHost:      "localhost",
+				ProxyTargetPort:      "13052",
+				Command:              "./test-server/test-server",
+				Args:                 "-p 13052",
+				ResourceRequirements: map[string]int{"R": 6},
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		for _, address := range []string{busyProxyAddress, idleProxyAddress, requesterProxyAddress, managementApiAddress} {
+			if err := checkPortClosed(address); err != nil {
+				t.Errorf("port %s is still open after application exit: %v", address, err)
+			}
+		}
+	}()
+
+	runReadPidCloseConnection(t, idleProxyAddress)
+	busyClient, err := net.DialTimeout("tcp", busyProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to busy service: %v", err)
+	}
+	defer func() { _ = busyClient.Close() }()
+	readPidFromOpenConnection(t, busyClient)
+
+	// Even with "idle" stopped only 4 of the 6 required units would be free.
+	requesterClient, err := net.DialTimeout("tcp", requesterProxyAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to requester: %v", err)
+	}
+	defer func() { _ = requesterClient.Close() }()
+	assertRemoteClosedWithin(t, requesterClient, 5*time.Second)
+
+	status := getStatusFromManagementAPI(t, managementApiAddress)
+	verifyServiceStatus(t, status, testName+"_idle", ServiceStateRunning, 0, 0, map[string]int{"R": 2})
+}

@@ -359,11 +359,18 @@ func validateConfig(cfg Config) error {
 
 	for i, svc := range cfg.Services {
 		nameOrIndex := serviceNameOrIndex(svc.Name, i)
-		for resourceName := range svc.ResourceRequirements {
-			if _, ok := cfg.ResourcesAvailable[resourceName]; !ok {
+		for resourceName, requiredAmount := range svc.ResourceRequirements {
+			resourceConfig, ok := cfg.ResourcesAvailable[resourceName]
+			if !ok {
 				issues = append(issues,
 					fmt.Sprintf("service %s requires resource %q but it is not provided in ResourcesAvailable",
 						nameOrIndex, resourceName))
+				continue
+			}
+			if resourceConfig.CheckCommand == "" && requiredAmount > resourceConfig.Amount {
+				issues = append(issues,
+					fmt.Sprintf("service %s requires %d of resource %q but only %d is available in total",
+						nameOrIndex, requiredAmount, resourceName, resourceConfig.Amount))
 			}
 		}
 	}

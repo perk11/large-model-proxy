@@ -1035,3 +1035,14 @@ func TestLogLevelInvalidValue(t *testing.T) {
 	}
 	assert.Contains(t, err.Error(), "invalid LogLevel")
 }
+
+func TestConfigRejectsRequirementLargerThanStaticAmount(t *testing.T) {
+	t.Parallel()
+	_, err := loadConfigFromString(t, `{
+		"ResourcesAvailable": {"R": 10},
+		"Services": [
+			{"Name": "too-big", "ListenPort": "8080", "Command": "/bin/echo", "ResourceRequirements": {"R": 20}}
+		]
+	}`)
+	checkExpectedErrorMessages(t, err, []string{"too-big", "R"})
+}

@@ -64,7 +64,7 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 			continue
 		}
 
-		earliestLastUsedService := findEarliestLastUsedServiceUsingResource(requestingService, *missingResource)
+		earliestLastUsedService := findEarliestLastUsedServiceUsingResource(requestingService, *missingResource, resourceRequirements)
 		if earliestLastUsedService != "" {
 			log.Printf("[%s] Stopping service to free resources for %s", earliestLastUsedService, requestingService)
 			stopService(*findServiceConfigByName(earliestLastUsedService))
@@ -115,12 +115,17 @@ func reserveResources(resourceRequirements map[string]int, requestingService str
 	}
 }
 
-func findEarliestLastUsedServiceUsingResource(requestingService string, missingResource string) string {
+func findEarliestLastUsedServiceUsingResource(requestingService string, missingResource string, resourceRequirements map[string]int) string {
 	earliestTime := time.Now()
 	var earliestLastUsedService string
 
 	resourceManager.serviceMutex.Lock()
 	defer resourceManager.serviceMutex.Unlock()
+
+	if !stoppingServicesCanFreeEnoughWhenServiceMutexIsLocked(requestingService, resourceRequirements) {
+		log.Printf("[%s] Stopping every service that can be stopped would not free enough resources, not stopping any", requestingService)
+		return ""
+	}
 
 	for serviceName := range resourceManager.runningServices {
 		if serviceName == requestingService {
@@ -145,6 +150,33 @@ func findEarliestLastUsedServiceUsingResource(requestingService string, missingR
 	}
 
 	return earliestLastUsedService
+}
+
+// stoppingServicesCanFreeEnoughWhenServiceMutexIsLocked reports whether stopping
+// every running service that can currently be stopped would free enough of each
+// statically tracked resource. Resources with a CheckCommand are not considered:
+// how much a stopped service frees of them is only known once it is measured.
+func stoppingServicesCanFreeEnoughWhenServiceMutexIsLocked(requestingService string, resourceRequirements map[string]int) bool {
+	freeableAmounts := make(map[string]int)
+	for serviceName, runningService := range resourceManager.runningServices {
+		if serviceName == requestingService || !canBeStopped(serviceName, runningService) {
+			continue
+		}
+		for resource, amount := range findServiceConfigByName(serviceName).ResourceRequirements {
+			freeableAmounts[resource] += amount
+		}
+	}
+	for resource, requiredAmount := range resourceRequirements {
+		resourceConfig := config.ResourcesAvailable[resource]
+		if resourceConfig.CheckCommand != "" {
+			continue
+		}
+		availableAfterStopping := resourceConfig.Amount - resourceManager.resourcesInUse[resource] + freeableAmounts[resource]
+		if requiredAmount > availableAfterStopping {
+			return false
+		}
+	}
+	return true
 }
 
 func findFirstMissingResourceWhenServiceMutexIsLocked(

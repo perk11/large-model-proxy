@@ -9,8 +9,12 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -37,56 +41,6 @@ func createOpenAiApiModel(name string, createdTime int64) OpenAiApiModel {
 		Created: createdTime,
 	}
 }
-
-type rawCaptureConnection struct {
-	net.Conn
-	mutex   sync.Mutex
-	buffer  *bytes.Buffer
-	capture bool
-}
-
-func (rcc *rawCaptureConnection) Read(p []byte) (int, error) {
-	n, err := rcc.Conn.Read(p)
-	if n > 0 {
-		rcc.mutex.Lock()
-		if rcc.capture {
-			rcc.buffer.Write(p[:n])
-		}
-		rcc.mutex.Unlock()
-	}
-	return n, err
-}
-
-// stopBuffering disables further capturing into the buffer and drops the buffer.
-// It is called once the raw request bytes have been extracted for replaying to
-// the backend, so the live client->service stream that follows is not pointlessly
-// duplicated into a buffer that is never read again.
-func (rcc *rawCaptureConnection) stopBuffering() {
-	rcc.mutex.Lock()
-	rcc.capture = false
-	rcc.buffer = nil
-	rcc.mutex.Unlock()
-}
-
-type rawCaptureListener struct {
-	net.Listener
-}
-
-func (rawCaptureListener *rawCaptureListener) Accept() (net.Conn, error) {
-	connection, err := rawCaptureListener.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-	return &rawCaptureConnection{
-		Conn:    connection,
-		buffer:  new(bytes.Buffer),
-		capture: true,
-	}, nil
-}
-
-type contextKey string
-
-var rawConnectionContextKey = contextKey("rawConn")
 
 func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	mux := http.NewServeMux()
@@ -139,7 +93,6 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 			}
 			log.Printf("[OpenAI API Server] Model \"%s\" not found\n", requestedModelName)
 		}
-		resetConnectionBuffer(request)
 	})
 	mux.HandleFunc("/v1/models", func(responseWriter http.ResponseWriter, request *http.Request) {
 		printRequestUrl(request)
@@ -149,19 +102,14 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 			http.Error(responseWriter, "{error: \"Failed to produce JSON response\"}", http.StatusInternalServerError)
 			log.Printf("[OpenAI API Server] Failed to produce /v1/models JSON response: %s\n", err.Error())
 		}
-		resetConnectionBuffer(request)
 	})
 	mux.HandleFunc("/v1/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
 		printRequestUrl(request)
-		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
-			resetConnectionBuffer(request)
-		}
+		handleCompletions(responseWriter, request, &modelToServiceMap)
 	})
 	mux.HandleFunc("/v1/chat/completions", func(responseWriter http.ResponseWriter, request *http.Request) {
 		printRequestUrl(request)
-		if !handleCompletions(responseWriter, request, &modelToServiceMap) {
-			resetConnectionBuffer(request)
-		}
+		handleCompletions(responseWriter, request, &modelToServiceMap)
 	})
 	mux.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		//404
@@ -171,21 +119,24 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 			fmt.Sprintf("%s %s is not supported by large-model-proxy", request.Method, request.RequestURI),
 			http.StatusNotFound,
 		)
-		resetConnectionBuffer(request)
 	})
 
-	// Create a custom http.Server that uses ConnContext
-	// to attach the *rawCaptureConnection to each request's Context.
+	var clientConnections sync.Map
 	server := &http.Server{
 		Addr:    ":" + OpenAiApi.ListenPort,
 		Handler: mux,
-		// Whenever the server accepts a new net.Conn, this callback runs.
-		// If it's our rawCaptureConnection, store it in the request context.
-		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			if rcc, ok := c.(*rawCaptureConnection); ok {
-				return context.WithValue(ctx, rawConnectionContextKey, rcc)
+		ConnContext: func(ctx context.Context, connection net.Conn) context.Context {
+			clientConnection := &openAiApiClientConnection{transportsByServiceName: make(map[string]*http.Transport)}
+			clientConnections.Store(connection, clientConnection)
+			return context.WithValue(ctx, openAiApiClientConnectionContextKey, clientConnection)
+		},
+		ConnState: func(connection net.Conn, state http.ConnState) {
+			if state != http.StateClosed && state != http.StateHijacked {
+				return
 			}
-			return ctx
+			if clientConnection, ok := clientConnections.LoadAndDelete(connection); ok {
+				clientConnection.(*openAiApiClientConnection).closeServiceConnections()
+			}
 		},
 	}
 
@@ -193,10 +144,9 @@ func startOpenAiApi(OpenAiApi OpenAiApi, services []ServiceConfig) {
 	if err != nil {
 		log.Fatalf("[OpenAI API Server] Could not listen on %s: %v", server.Addr, err)
 	}
-	wrappedLn := &rawCaptureListener{Listener: ln}
 
 	log.Printf("[OpenAI API Server] Listening on port %s", OpenAiApi.ListenPort)
-	if err := server.Serve(wrappedLn); err != nil {
+	if err := server.Serve(ln); err != nil {
 		log.Fatalf("Could not start OpenAI API Server: %s\n", err.Error())
 	}
 }
@@ -204,23 +154,10 @@ func printRequestUrl(request *http.Request) {
 	log.Printf("[OpenAI API Server] %s %s", request.Method, request.URL)
 }
 
-// resetConnectionBuffer clears the buffer so that if another request is received through the same connection, it starts from scratch
-func resetConnectionBuffer(request *http.Request) {
-	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
-	if !ok {
-		panic("Failed to get raw connection")
-	}
-	rawConnection.mutex.Lock()
-	rawConnection.buffer = new(bytes.Buffer)
-	rawConnection.capture = true
-	rawConnection.mutex.Unlock()
-}
-
-// handleCompletions returns true if connection was proxied, false on HTTP error
-func handleCompletions(responseWriter http.ResponseWriter, request *http.Request, modelToServiceMap *map[string]ServiceConfig) bool {
+func handleCompletions(responseWriter http.ResponseWriter, request *http.Request, modelToServiceMap *map[string]ServiceConfig) {
 	if request.Method != http.MethodPost {
 		http.Error(responseWriter, "Only POST requests allowed", http.StatusBadRequest)
-		return false
+		return
 	}
 	originalBody := request.Body
 	defer func(originalBody io.ReadCloser) {
@@ -234,43 +171,129 @@ func handleCompletions(responseWriter http.ResponseWriter, request *http.Request
 	if err != nil {
 		log.Printf("[OpenAI API Server] Error reading request body: %v\n", err)
 		http.Error(responseWriter, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
-		return false
+		return
 	}
 
 	model, ok := extractModelFromRequest(request.URL.String(), bodyBytes)
 	if !ok {
 		http.Error(responseWriter, fmt.Sprintf("Failed to parse request: %v", err), http.StatusBadRequest)
-		return false
+		return
 	}
 
 	service, ok := (*modelToServiceMap)[model]
 	if !ok {
 		log.Printf("[OpenAI API Server] Unknown model requested: %v\n", model)
 		http.Error(responseWriter, fmt.Sprintf("Unknown model: %v", model), http.StatusBadRequest)
-		return false
+		return
 	}
 	log.Printf("[OpenAI API Server] Sending %s request through to %s\n", request.URL, service.Name)
-	originalWriter := responseWriter
-	hijacker, ok := originalWriter.(http.Hijacker)
-	if !ok {
-		log.Printf("[OpenAI API Server] Error: Failed to forward connection: web server does not support hijacking. This could only happen if OpenAI API Server is running in HTTP/2 mode. Please use HTTP/1.1\n")
-		http.Error(responseWriter, "Request forwarding is not possible, please use HTTP 1.1", http.StatusInternalServerError)
-		return false
+	request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	proxyRequestToService(responseWriter, request, service)
+}
+
+type openAiApiContextKey string
+
+const (
+	openAiApiClientConnectionContextKey openAiApiContextKey = "clientConnection"
+	clientRequestDoneContextKey         openAiApiContextKey = "clientRequestDone"
+)
+
+// openAiApiClientConnection mirrors a client connection to the backends: each
+// service the client talks to gets one keep-alive connection that lives as long
+// as the client connection, so a backend sees the same connection pattern as it
+// would from a direct client.
+type openAiApiClientConnection struct {
+	mutex                   sync.Mutex
+	transportsByServiceName map[string]*http.Transport
+}
+
+func (clientConnection *openAiApiClientConnection) transportFor(service ServiceConfig) *http.Transport {
+	clientConnection.mutex.Lock()
+	defer clientConnection.mutex.Unlock()
+	if transport, ok := clientConnection.transportsByServiceName[service.Name]; ok {
+		return transport
 	}
-	clientConnection, _, err := hijacker.Hijack()
-	if err != nil {
-		log.Printf("[OpenAI API Server] Failed to forward connection: %v", err)
-		http.Error(responseWriter, err.Error(), http.StatusInternalServerError)
-		return false
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 1,
+		DisableCompression:  true,
+		DialContext: func(ctx context.Context, _ string, _ string) (net.Conn, error) {
+			// The Transport detaches dials from request cancellation but keeps context
+			// values, so the client's disconnect is passed as a value to stop waiting
+			// for the service to start when the client is gone.
+			clientRequestDone, _ := ctx.Value(clientRequestDoneContextKey).(<-chan struct{})
+			serviceConnection := startServiceIfNotAlreadyRunningAndConnect(service, clientRequestDone)
+			if serviceConnection == nil {
+				return nil, fmt.Errorf("failed to start or connect to %s", service.Name)
+			}
+			log.Printf("[%s] Opened service connection %s", service.Name, humanReadableConnection(serviceConnection))
+			return serviceConnection, nil
+		},
 	}
-	rawConnection, ok := request.Context().Value(rawConnectionContextKey).(*rawCaptureConnection)
-	if !ok {
-		panic("Failed to get raw connection")
+	clientConnection.transportsByServiceName[service.Name] = transport
+	return transport
+}
+
+func (clientConnection *openAiApiClientConnection) closeServiceConnections() {
+	clientConnection.mutex.Lock()
+	defer clientConnection.mutex.Unlock()
+	for _, transport := range clientConnection.transportsByServiceName {
+		transport.CloseIdleConnections()
 	}
-	rawRequestBytes := rawConnection.buffer.Bytes()
-	rawConnection.stopBuffering()
-	handleConnection(clientConnection, service, rawRequestBytes)
-	return true
+}
+
+// proxyRequestToService forwards a single HTTP request to the service that
+// serves its model. Requests arriving later on the same keep-alive client
+// connection are routed independently, by the model each of them names. The
+// service counts as in use only while a request is being served.
+func proxyRequestToService(responseWriter http.ResponseWriter, request *http.Request, service ServiceConfig) {
+	if interrupted.Load() {
+		http.Error(responseWriter, "large-model-proxy is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	clientConnection := request.Context().Value(openAiApiClientConnectionContextKey).(*openAiApiClientConnection)
+
+	resourceManager.incrementConnection(service.Name, 0, 1)
+	var gotServiceConnection atomic.Bool
+	trace := &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) {
+			if gotServiceConnection.Swap(true) {
+				return
+			}
+			trackServiceLastUsed(service, true)
+			resourceManager.incrementConnection(service.Name, 1, -1)
+		},
+	}
+	ctx := context.WithValue(request.Context(), clientRequestDoneContextKey, request.Context().Done())
+	request = request.WithContext(httptrace.WithClientTrace(ctx, trace))
+
+	reverseProxy := &httputil.ReverseProxy{
+		Rewrite: func(proxyRequest *httputil.ProxyRequest) {
+			proxyRequest.SetURL(&url.URL{Scheme: "http", Host: net.JoinHostPort(service.ProxyTargetHost, service.ProxyTargetPort)})
+			proxyRequest.Out.Host = proxyRequest.In.Host
+			proxyRequest.Out.Close = proxyRequest.In.Close
+			for _, forwardingHeader := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+				if values, ok := proxyRequest.In.Header[forwardingHeader]; ok {
+					proxyRequest.Out.Header[forwardingHeader] = values
+				}
+			}
+		},
+		Transport: clientConnection.transportFor(service),
+		ModifyResponse: func(response *http.Response) error {
+			if response.Close {
+				response.Header.Set("Connection", "close")
+			}
+			return nil
+		},
+		FlushInterval: -1,
+	}
+	reverseProxy.ServeHTTP(responseWriter, request)
+
+	if gotServiceConnection.Load() {
+		trackServiceLastUsed(service, false)
+		resourceManager.incrementConnection(service.Name, -1, 0)
+	} else {
+		resourceManager.incrementConnection(service.Name, 0, -1)
+	}
 }
 
 // extractModelFromRequest returns model name and whether reading model name was successful

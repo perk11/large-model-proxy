@@ -140,7 +140,7 @@ func assertPortsAreClosed(test *testing.T, servicesToCheckForClosedPorts []strin
 
 func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) OpenAiApiChatCompletionResponse {
 	t.Helper()
-	resp := sendChatCompletionRequest(t, address, chatReq)
+	resp := sendChatCompletionRequest(t, address, chatReq, nil)
 	defer func() {
 		_ = resp.Body.Close()
 	}()
@@ -157,7 +157,7 @@ func sendChatCompletionRequestExpectingSuccess(t *testing.T, address string, cha
 }
 
 // sendChatCompletionRequest sends a POST to /v1/chat/completions with the given JSON body
-func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest) *http.Response {
+func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiChatCompletionRequest, client *http.Client) *http.Response {
 	t.Helper()
 	reqBody, err := json.Marshal(chatReq)
 	if err != nil {
@@ -171,7 +171,9 @@ func sendChatCompletionRequest(t *testing.T, address string, chatReq OpenAiApiCh
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("/v1/chat/completions request failed: %v", err)

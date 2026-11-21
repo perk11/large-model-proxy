@@ -34,6 +34,8 @@ func main() {
 	logToStdout := flag.Bool("log-to-stdout", false, "Send logs to stdout instead of stderr")
 	exitScript := flag.String("exit-script", "", "Script to execute after the server exits")
 	ignoreSigterm := flag.Bool("ignore-sigterm", false, "Ignore SIGTERM signal (for testing)")
+	openAiApiKeepAlive := flag.Bool("openai-api-keep-alive", false, "Keep OpenAI API connections alive between requests, like real inference servers do")
+	name := flag.String("name", "", "If set, OpenAI API responses carry it in the X-Test-Server-Name header")
 	flag.Parse()
 
 	if *plainOutput {
@@ -55,7 +57,7 @@ func main() {
 		go healthCheckListen(healthCheckApiPort, durationToSleepBeforeListeningForHealthCheck)
 	}
 	if *OpenAiApiPort != "" {
-		go OpenAiApiListen(OpenAiApiPort)
+		go OpenAiApiListen(OpenAiApiPort, *openAiApiKeepAlive, *name)
 	}
 	if *procPort != "" {
 		go procListen(*procPort)
@@ -322,16 +324,22 @@ type ChatCompletionChoice struct {
 	FinishReason *string `json:"finish_reason,omitempty"`
 }
 
-func OpenAiApiListen(port *string) {
+func OpenAiApiListen(port *string, keepAlive bool, name string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/completions", handleCompletions)
 	mux.HandleFunc("/v1/chat/completions", handleChatCompletions)
 
 	server := &http.Server{
-		Addr:    ":" + *port,
-		Handler: mux,
+		Addr: ":" + *port,
+		Handler: http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+			if name != "" {
+				responseWriter.Header().Set("X-Test-Server-Name", name)
+			}
+			responseWriter.Header().Set("X-Test-Server-Client-Address", request.RemoteAddr)
+			mux.ServeHTTP(responseWriter, request)
+		}),
 	}
-	server.SetKeepAlivesEnabled(false)
+	server.SetKeepAlivesEnabled(keepAlive)
 	log.Printf("OpenAI API server listening on :%s", *port)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Could not start OpenAI API server: %s\n", err.Error())

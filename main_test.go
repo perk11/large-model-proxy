@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -3410,58 +3412,6 @@ func TestQueuedClientDisconnectDropsWaitingCount(t *testing.T) {
 	waitForServiceState(t, managementApiAddress, serviceName, ServiceStateStopped, 10*time.Second)
 }
 
-// TestRawCaptureConnectionStopsBuffering verifies that a rawCaptureConnection
-// captures bytes into its buffer while active, that the bytes extracted before
-// stopping remain valid, and that after stopBuffering further reads are
-// forwarded without being captured (and without panicking on a nil buffer).
-func TestRawCaptureConnectionStopsBuffering(t *testing.T) {
-	t.Parallel()
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
-
-	rcc := &rawCaptureConnection{
-		Conn:    serverConn,
-		buffer:  new(bytes.Buffer),
-		capture: true,
-	}
-
-	readAll := func(want string) {
-		t.Helper()
-		buf := make([]byte, 64)
-		n, err := rcc.Read(buf)
-		if err != nil {
-			t.Fatalf("Read failed: %v", err)
-		}
-		if string(buf[:n]) != want {
-			t.Fatalf("Read got %q, want %q", string(buf[:n]), want)
-		}
-	}
-
-	// While capturing, bytes are stored in the buffer.
-	go func() { _, _ = clientConn.Write([]byte("request")) }()
-	readAll("request")
-	if rcc.buffer.String() != "request" {
-		t.Fatalf("buffer = %q, want %q", rcc.buffer.String(), "request")
-	}
-
-	// Bytes extracted before stopping stay valid after the buffer is dropped.
-	raw := rcc.buffer.Bytes()
-	rcc.stopBuffering()
-	if string(raw) != "request" {
-		t.Fatalf("raw = %q, want %q", string(raw), "request")
-	}
-	if rcc.buffer != nil {
-		t.Fatalf("buffer should be nil after stopBuffering")
-	}
-
-	// After stopping, reads still work but are no longer captured.
-	go func() { _, _ = clientConn.Write([]byte("stream")) }()
-	readAll("stream")
-	if rcc.buffer != nil {
-		t.Fatalf("buffer must remain nil after stopBuffering")
-	}
-}
 
 // TestStartClientReadMonitorPreservesRequestBytes pins that request bytes the
 // client sends during the startup window (before forwardConnection begins draining
@@ -4448,4 +4398,249 @@ func TestProcessExitDuringHealthCheckDoesNotAbortWhenConsiderStoppedOnProcessExi
 	// The waiting client connection is closed (EOF) once the healthcheck times
 	// out and the service stops.
 	assertRemoteClosedWithin(t, clientConn, 2*time.Second)
+}
+
+func TestOpenAiApiRoutesEveryKeepAliveRequestByItsModel(t *testing.T) {
+	t.Parallel()
+	const testName = "keep-alive-routing"
+	const openAiApiAddress = "localhost:3000"
+	cfg := Config{
+		OpenAiApi: OpenAiApi{ListenPort: "3000"},
+		Services: []ServiceConfig{
+			{
+				Name:            "a",
+				OpenAiApi:       true,
+				OpenAiApiModels: []string{"model-a"},
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "13000",
+				Command:         "./test-server/test-server",
+				Args:            "-openai-api-port 13000 -openai-api-keep-alive -name backend-a",
+			},
+			{
+				Name:            "b",
+				OpenAiApi:       true,
+				OpenAiApiModels: []string{"model-b"},
+				ProxyTargetHost: "localhost",
+				ProxyTargetPort: "13001",
+				Command:         "./test-server/test-server",
+				Args:            "-openai-api-port 13001 -openai-api-keep-alive -name backend-b",
+			},
+		},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		if err := checkPortClosed(openAiApiAddress); err != nil {
+			t.Errorf("port %s is still open after application exit: %v", openAiApiAddress, err)
+		}
+	}()
+
+	var dialsToProxy atomic.Int32
+	dialer := &net.Dialer{}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			MaxConnsPerHost:     1,
+			MaxIdleConnsPerHost: 1,
+			DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+				dialsToProxy.Add(1)
+				return dialer.DialContext(ctx, network, address)
+			},
+		},
+	}
+	defer client.CloseIdleConnections()
+	backendClientAddressesByBackend := make(map[string]map[string]bool)
+	for _, expected := range []struct{ model, backend string }{
+		{model: "model-a", backend: "backend-a"},
+		{model: "model-a", backend: "backend-a"},
+		{model: "model-b", backend: "backend-b"},
+		{model: "model-a", backend: "backend-a"},
+	} {
+		response := sendChatCompletionRequest(t, "http://"+openAiApiAddress, OpenAiApiChatCompletionRequest{
+			Model:    expected.model,
+			Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+		}, client)
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+		servedBy := response.Header.Get("X-Test-Server-Name")
+		if servedBy != expected.backend {
+			t.Errorf("request for %s was served by %q", expected.model, servedBy)
+			continue
+		}
+		if backendClientAddressesByBackend[servedBy] == nil {
+			backendClientAddressesByBackend[servedBy] = make(map[string]bool)
+		}
+		backendClientAddressesByBackend[servedBy][response.Header.Get("X-Test-Server-Client-Address")] = true
+	}
+	for backend, clientAddresses := range backendClientAddressesByBackend {
+		if len(clientAddresses) != 1 {
+			t.Errorf("%s received requests over %d connections, expected one kept-alive connection like a direct client's", backend, len(clientAddresses))
+		}
+	}
+
+	modelsResponse := modelsRequestExpectingSuccess(t, "http://"+openAiApiAddress+"/v1/models", client)
+	defer func() { _ = modelsResponse.Body.Close() }()
+	assertModelsResponse(t, []string{"model-a", "model-b"}, modelsResponse)
+
+	if dials := dialsToProxy.Load(); dials != 1 {
+		t.Errorf("client opened %d connections to the proxy, expected its connection to be kept alive", dials)
+	}
+}
+
+func TestOpenAiApiUnreadRequestBodyDoesNotLeakIntoNextRequest(t *testing.T) {
+	t.Parallel()
+	const testName = "unread-body-leak"
+	const openAiApiAddress = "localhost:3010"
+	cfg := Config{
+		OpenAiApi: OpenAiApi{ListenPort: "3010"},
+		Services: []ServiceConfig{{
+			Name:            "a",
+			OpenAiApi:       true,
+			OpenAiApiModels: []string{"model-a"},
+			ProxyTargetHost: "localhost",
+			ProxyTargetPort: "13010",
+			Command:         "./test-server/test-server",
+			Args:            "-openai-api-port 13010 -openai-api-keep-alive",
+		}},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		if err := checkPortClosed(openAiApiAddress); err != nil {
+			t.Errorf("port %s is still open after application exit: %v", openAiApiAddress, err)
+		}
+	}()
+
+	connection, err := net.DialTimeout("tcp", openAiApiAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer func() { _ = connection.Close() }()
+	_ = connection.SetDeadline(time.Now().Add(10 * time.Second))
+	reader := bufio.NewReader(connection)
+
+	unsupportedRequest, err := http.NewRequest(http.MethodPost, "http://"+openAiApiAddress+"/v1/embeddings", strings.NewReader(strings.Repeat("x", 100_000)))
+	if err != nil {
+		t.Fatalf("failed to build request: %v", err)
+	}
+	if err := unsupportedRequest.Write(connection); err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	unsupportedResponse, err := http.ReadResponse(reader, unsupportedRequest)
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, unsupportedResponse.Body)
+	if unsupportedResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for /v1/embeddings, got %d", unsupportedResponse.StatusCode)
+	}
+
+	chatRequest, err := http.NewRequest(http.MethodPost, "http://"+openAiApiAddress+"/v1/chat/completions", strings.NewReader(`{"model":"model-a","messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatalf("failed to build request: %v", err)
+	}
+	if err := chatRequest.Write(connection); err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	chatResponse, err := http.ReadResponse(reader, chatRequest)
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	chatResponseBody, _ := io.ReadAll(chatResponse.Body)
+	if chatResponse.StatusCode != http.StatusOK {
+		t.Errorf("chat completion after a 404 on the same connection returned %d: %.200s", chatResponse.StatusCode, chatResponseBody)
+	}
+}
+
+func TestOpenAiApiPipelinedRequestsAreBothAnswered(t *testing.T) {
+	t.Parallel()
+	const testName = "pipelined-requests"
+	const openAiApiAddress = "localhost:3020"
+	cfg := Config{
+		OpenAiApi: OpenAiApi{ListenPort: "3020"},
+		Services: []ServiceConfig{{
+			Name:            "a",
+			OpenAiApi:       true,
+			OpenAiApiModels: []string{"model-a"},
+			ProxyTargetHost: "localhost",
+			ProxyTargetPort: "13020",
+			Command:         "./test-server/test-server",
+			Args:            "-openai-api-port 13020 -openai-api-keep-alive",
+		}},
+	}
+	StandardizeConfigNamesAndPaths(&cfg, testName)
+	configFilePath := createTempConfig(t, cfg)
+	waitChannel := make(chan error, 1)
+	cmd, err := startLargeModelProxy(testName, configFilePath, "", waitChannel)
+	if err != nil {
+		t.Fatalf("could not start application: %v", err)
+	}
+	defer func() {
+		if err := stopApplication(cmd, waitChannel); err != nil {
+			t.Errorf("failed to stop application: %v", err)
+		}
+		if err := checkPortClosed(openAiApiAddress); err != nil {
+			t.Errorf("port %s is still open after application exit: %v", openAiApiAddress, err)
+		}
+	}()
+
+	modelsRequest, err := http.NewRequest(http.MethodGet, "http://"+openAiApiAddress+"/v1/models", nil)
+	if err != nil {
+		t.Fatalf("failed to build request: %v", err)
+	}
+	chatRequest, err := http.NewRequest(http.MethodPost, "http://"+openAiApiAddress+"/v1/chat/completions", strings.NewReader(`{"model":"model-a","messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatalf("failed to build request: %v", err)
+	}
+	var pipelined bytes.Buffer
+	if err := modelsRequest.Write(&pipelined); err != nil {
+		t.Fatalf("failed to serialize request: %v", err)
+	}
+	if err := chatRequest.Write(&pipelined); err != nil {
+		t.Fatalf("failed to serialize request: %v", err)
+	}
+
+	connection, err := net.DialTimeout("tcp", openAiApiAddress, 3*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer func() { _ = connection.Close() }()
+	_ = connection.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := connection.Write(pipelined.Bytes()); err != nil {
+		t.Fatalf("failed to send pipelined requests: %v", err)
+	}
+	reader := bufio.NewReader(connection)
+
+	modelsResponse, err := http.ReadResponse(reader, modelsRequest)
+	if err != nil {
+		t.Fatalf("failed to read /v1/models response: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, modelsResponse.Body)
+	if modelsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("pipelined /v1/models returned %d", modelsResponse.StatusCode)
+	}
+	chatResponse, err := http.ReadResponse(reader, chatRequest)
+	if err != nil {
+		t.Fatalf("failed to read the pipelined chat completion response: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, chatResponse.Body)
+	if chatResponse.StatusCode != http.StatusOK {
+		t.Errorf("pipelined chat completion returned %d", chatResponse.StatusCode)
+	}
 }

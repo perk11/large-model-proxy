@@ -376,7 +376,7 @@
               if (resource.usage_by_service.hasOwnProperty(service.name)) {
                 usage = resource.usage_by_service[service.name];
               } else {
-                if (!service.hasOwnProperty("resource_requirements")) {
+                if (!service.hasOwnProperty("resource_requirements") || service.resource_requirements === null) {
                   usage = 0;
                 } else if (
                   !service.resource_requirements.hasOwnProperty(resourceName)
